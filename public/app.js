@@ -126,6 +126,89 @@ let isPreviewMode = false;
 // YouTube inspiration reference for scene generation
 let sceneInspirationUrl = null;
 
+// Style Anchor for consistent visual style across scenes
+let styleAnchor = null; // { sceneIndex, imageUrl, style, prompt }
+
+// Style Anchor Functions
+function setStyleAnchor(sceneIndex) {
+  const scene = generatedScenes[sceneIndex];
+  if (!scene || !scene.imageUrl) {
+    showToast('Cannot set anchor - scene has no image');
+    return;
+  }
+
+  styleAnchor = {
+    sceneIndex: sceneIndex,
+    imageUrl: scene.imageUrl,
+    style: document.getElementById('batch-style')?.value || 'cinematic-2d',
+    prompt: scene.text,
+    revisedPrompt: scene.revisedPrompt
+  };
+
+  // Update UI
+  updateAnchorPanel();
+  updateSceneCardAnchorStates();
+  showToast(`Scene ${String(sceneIndex + 1).padStart(2, '0')} set as style anchor`);
+}
+
+function clearStyleAnchor() {
+  styleAnchor = null;
+  updateAnchorPanel();
+  updateSceneCardAnchorStates();
+  showToast('Style anchor cleared');
+}
+
+function updateAnchorPanel() {
+  const panel = document.getElementById('style-anchor-panel');
+  if (!panel) return;
+
+  if (styleAnchor) {
+    panel.hidden = false;
+    document.getElementById('anchor-preview-image').src = styleAnchor.imageUrl;
+    document.getElementById('anchor-scene-label').textContent = `Scene ${String(styleAnchor.sceneIndex + 1).padStart(2, '0')}`;
+  } else {
+    panel.hidden = true;
+  }
+}
+
+function updateSceneCardAnchorStates() {
+  // Remove anchor state from all cards
+  document.querySelectorAll('.scene-card').forEach(card => {
+    card.classList.remove('is-style-anchor');
+  });
+  document.querySelectorAll('.scene-anchor-btn').forEach(btn => {
+    btn.classList.remove('is-anchor');
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="5" r="3"/>
+        <line x1="12" y1="8" x2="12" y2="21"/>
+        <path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
+      </svg>
+      Set as Anchor
+    `;
+  });
+
+  // Add anchor state to current anchor
+  if (styleAnchor !== null) {
+    const anchorCard = document.getElementById(`scene-card-${styleAnchor.sceneIndex}`);
+    if (anchorCard) {
+      anchorCard.classList.add('is-style-anchor');
+      const anchorBtn = anchorCard.querySelector('.scene-anchor-btn');
+      if (anchorBtn) {
+        anchorBtn.classList.add('is-anchor');
+        anchorBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="5" r="3"/>
+            <line x1="12" y1="8" x2="12" y2="21"/>
+            <path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
+          </svg>
+          Style Anchor
+        `;
+      }
+    }
+  }
+}
+
 // Video Settings Elements
 const videoLengthSlider = document.getElementById('video-length');
 const videoLengthDisplay = document.getElementById('video-length-display');
@@ -365,6 +448,15 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
 
   if (styleInfo) {
     basePrompt = `${sceneDescription}. Style: ${styleInfo.prompt}`;
+  }
+
+  // Add style anchor consistency instructions if an anchor is set
+  if (styleAnchor && styleAnchor.revisedPrompt) {
+    // Extract key visual elements from the anchor's revised prompt
+    basePrompt += `. CRITICAL STYLE CONSISTENCY: Match the exact visual style, lighting, color palette, and mood of this reference - ${styleAnchor.revisedPrompt.substring(0, 200)}. Maintain identical art direction, same color grading, same lighting setup, same level of detail`;
+  } else if (styleAnchor) {
+    // Fallback if no revised prompt available
+    basePrompt += `. CRITICAL STYLE CONSISTENCY: Match the exact visual style, lighting, color palette, and artistic approach used in the anchor scene. Maintain identical art direction across all scenes for visual continuity`;
   }
 
   // Add inspiration reference note if available
@@ -651,6 +743,7 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
 
   const truncatedText = text.length > 100 ? text.substring(0, 100) + '...' : text;
 
+  const isAnchor = styleAnchor && styleAnchor.sceneIndex === index;
   card.innerHTML = `
     ${isLoading ? `
       <div class="scene-loading">
@@ -663,10 +756,22 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
       <div class="scene-text">${truncatedText}</div>
     </div>
     <div class="scene-actions">
+      <button class="scene-anchor-btn ${isAnchor ? 'is-anchor' : ''}" onclick="setStyleAnchor(${index})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="5" r="3"/>
+          <line x1="12" y1="8" x2="12" y2="21"/>
+          <path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
+        </svg>
+        ${isAnchor ? 'Style Anchor' : 'Set as Anchor'}
+      </button>
       <button class="btn secondary" onclick="regenerateScene(${index})">Regenerate</button>
       <button class="btn secondary" onclick="downloadScene(${index})">Download</button>
     </div>
   `;
+
+  if (isAnchor) {
+    card.classList.add('is-style-anchor');
+  }
 
   return card;
 }
@@ -979,6 +1084,14 @@ if (previewBtn) {
 // Make functions globally available for onclick handlers
 window.regenerateScene = regenerateScene;
 window.downloadScene = downloadScene;
+window.setStyleAnchor = setStyleAnchor;
+window.clearStyleAnchor = clearStyleAnchor;
+
+// Clear Anchor Button Handler
+const clearAnchorBtn = document.getElementById('clear-anchor-btn');
+if (clearAnchorBtn) {
+  clearAnchorBtn.addEventListener('click', clearStyleAnchor);
+}
 
 // Check API status on load
 async function checkApiStatus() {
