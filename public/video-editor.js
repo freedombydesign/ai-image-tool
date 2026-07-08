@@ -9,9 +9,11 @@ class VideoEditor {
     this.audioBuffer = null;
     this.audioDuration = 0;
     this.isRecording = false;
+    this.isPaused = false;
     this.mediaRecorder = null;
     this.recordingChunks = [];
     this.recordingStartTime = 0;
+    this.recordingElapsed = 0;
     this.recordingInterval = null;
 
     // FFmpeg
@@ -39,6 +41,9 @@ class VideoEditor {
     // Audio
     this.recordAudioBtn = document.getElementById('record-audio-btn');
     this.recordIcon = document.getElementById('record-icon');
+    this.recordingControls = document.getElementById('recording-controls');
+    this.pauseRecordingBtn = document.getElementById('pause-recording-btn');
+    this.stopRecordingBtn = document.getElementById('stop-recording-btn');
     this.recordingTime = document.getElementById('recording-time');
     this.uploadAudioBtn = document.getElementById('upload-audio-btn');
     this.audioFileInput = document.getElementById('audio-file');
@@ -91,7 +96,13 @@ class VideoEditor {
     this.sceneFilesInput.addEventListener('change', (e) => this.handleSceneUpload(e));
 
     // Audio
-    this.recordAudioBtn.addEventListener('click', () => this.toggleRecording());
+    this.recordAudioBtn.addEventListener('click', () => this.startRecording());
+    if (this.pauseRecordingBtn) {
+      this.pauseRecordingBtn.addEventListener('click', () => this.togglePauseRecording());
+    }
+    if (this.stopRecordingBtn) {
+      this.stopRecordingBtn.addEventListener('click', () => this.stopRecording());
+    }
     this.uploadAudioBtn.addEventListener('click', () => this.audioFileInput.click());
     this.audioFileInput.addEventListener('change', (e) => this.handleAudioUpload(e));
     this.removeAudioBtn.addEventListener('click', () => this.removeAudio());
@@ -264,17 +275,15 @@ class VideoEditor {
   }
 
   // Audio Recording
-  async toggleRecording() {
-    if (this.isRecording) {
-      this.stopRecording();
-    } else {
-      await this.startRecording();
-    }
-  }
-
   async startRecording() {
+    // Don't start if already recording
+    if (this.isRecording) {
+      showToast('Already recording. Use pause or stop buttons.');
+      return;
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       // Try different audio formats for better compatibility
       let options = {};
@@ -286,7 +295,7 @@ class VideoEditor {
         options = { mimeType: 'audio/mp4' };
       }
 
-      this.mediaRecorder = new MediaRecorder(stream, options);
+      this.mediaRecorder = new MediaRecorder(this.recordingStream, options);
       this.recordingChunks = [];
 
       this.mediaRecorder.ondataavailable = (e) => {
@@ -298,13 +307,14 @@ class VideoEditor {
       this.mediaRecorder.onerror = (e) => {
         console.error('MediaRecorder error:', e);
         showToast('Recording error occurred. Please try again.');
-        this.stopRecording();
+        this.resetRecordingUI();
       };
 
       this.mediaRecorder.onstop = () => {
         if (this.recordingChunks.length === 0) {
           showToast('No audio was captured. Please try again.');
-          stream.getTracks().forEach(track => track.stop());
+          this.recordingStream.getTracks().forEach(track => track.stop());
+          this.resetRecordingUI();
           return;
         }
 
@@ -313,29 +323,39 @@ class VideoEditor {
 
         if (this.audioBlob.size === 0) {
           showToast('Recording was empty. Please try again.');
-          stream.getTracks().forEach(track => track.stop());
+          this.recordingStream.getTracks().forEach(track => track.stop());
+          this.resetRecordingUI();
           return;
         }
 
         this.loadAudioBlob(this.audioBlob);
-        stream.getTracks().forEach(track => track.stop());
+        this.recordingStream.getTracks().forEach(track => track.stop());
         showToast('Recording saved!', false);
+        this.resetRecordingUI();
       };
 
       // Request data every second to ensure we capture audio
       this.mediaRecorder.start(1000);
       this.isRecording = true;
+      this.isPaused = false;
       this.recordingStartTime = Date.now();
+      this.recordingElapsed = 0;
 
-      if (this.recordIcon) this.recordIcon.textContent = '⏹️';
-      if (this.recordAudioBtn) this.recordAudioBtn.innerHTML = '<span id="record-icon">⏹️</span> Stop Recording';
-      if (this.recordingTime) this.recordingTime.hidden = false;
+      // Show recording controls, hide record button
+      if (this.recordAudioBtn) this.recordAudioBtn.hidden = true;
+      if (this.recordingControls) this.recordingControls.hidden = false;
+      if (this.recordingTime) {
+        this.recordingTime.textContent = '00:00';
+        this.recordingTime.classList.remove('paused');
+      }
 
       this.recordingInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-        const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
-        const secs = (elapsed % 60).toString().padStart(2, '0');
-        if (this.recordingTime) this.recordingTime.textContent = `${mins}:${secs}`;
+        if (!this.isPaused) {
+          const elapsed = this.recordingElapsed + Math.floor((Date.now() - this.recordingStartTime) / 1000);
+          const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+          const secs = (elapsed % 60).toString().padStart(2, '0');
+          if (this.recordingTime) this.recordingTime.textContent = `${mins}:${secs}`;
+        }
       }, 1000);
 
       showToast('Recording started...', false);
@@ -352,16 +372,51 @@ class VideoEditor {
     }
   }
 
+  togglePauseRecording() {
+    if (!this.mediaRecorder || !this.isRecording) return;
+
+    if (this.isPaused) {
+      // Resume
+      this.mediaRecorder.resume();
+      this.isPaused = false;
+      this.recordingStartTime = Date.now();
+      if (this.pauseRecordingBtn) this.pauseRecordingBtn.innerHTML = '⏸️ Pause';
+      if (this.recordingTime) this.recordingTime.classList.remove('paused');
+      showToast('Recording resumed', false);
+    } else {
+      // Pause
+      this.mediaRecorder.pause();
+      this.isPaused = true;
+      this.recordingElapsed += Math.floor((Date.now() - this.recordingStartTime) / 1000);
+      if (this.pauseRecordingBtn) this.pauseRecordingBtn.innerHTML = '▶️ Resume';
+      if (this.recordingTime) this.recordingTime.classList.add('paused');
+      showToast('Recording paused', false);
+    }
+  }
+
   stopRecording() {
     if (this.mediaRecorder && this.isRecording) {
+      // If paused, resume briefly to ensure final data is captured
+      if (this.isPaused) {
+        this.mediaRecorder.resume();
+      }
       this.mediaRecorder.stop();
       this.isRecording = false;
-
+      this.isPaused = false;
       clearInterval(this.recordingInterval);
-      this.recordIcon.textContent = '🎙️';
-      this.recordAudioBtn.innerHTML = '<span id="record-icon">🎙️</span> Record Audio';
-      this.recordingTime.hidden = true;
     }
+  }
+
+  resetRecordingUI() {
+    // Hide recording controls, show record button
+    if (this.recordAudioBtn) this.recordAudioBtn.hidden = false;
+    if (this.recordingControls) this.recordingControls.hidden = true;
+    if (this.pauseRecordingBtn) this.pauseRecordingBtn.innerHTML = '⏸️ Pause';
+    if (this.recordingTime) {
+      this.recordingTime.textContent = '00:00';
+      this.recordingTime.classList.remove('paused');
+    }
+    this.recordingElapsed = 0;
   }
 
   handleAudioUpload(e) {

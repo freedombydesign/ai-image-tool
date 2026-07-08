@@ -213,7 +213,11 @@
                 <button class="btn secondary" id="record-audio-btn">
                   <span id="record-icon">🎙️</span> Record Audio
                 </button>
-                <span id="recording-time" class="recording-time" hidden>00:00</span>
+                <div id="recording-controls" class="recording-controls" hidden>
+                  <button class="btn secondary small" id="pause-recording-btn">⏸️ Pause</button>
+                  <button class="btn primary small" id="stop-recording-btn">⏹️ Stop & Save</button>
+                  <span id="recording-time" class="recording-time">00:00</span>
+                </div>
               </div>
               <span class="or-divider">or</span>
               <div class="audio-option">

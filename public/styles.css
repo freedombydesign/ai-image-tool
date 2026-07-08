@@ -1080,11 +1080,32 @@ footer {
   gap: 0.5rem;
 }
 
+.recording-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+}
+
+.recording-controls .btn {
+  padding: 0.4rem 0.75rem;
+}
+
 .recording-time {
   font-family: monospace;
   font-size: 1.1rem;
   color: var(--error);
   animation: pulse 1s infinite;
+  margin-left: auto;
+}
+
+.recording-time.paused {
+  color: var(--warning, #f59e0b);
+  animation: none;
 }
 
 @keyframes pulse {
