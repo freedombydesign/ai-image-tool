@@ -253,19 +253,29 @@ function formatDate(isoString) {
 
 // Show preview modal
 function showHistoryPreview(id) {
+  if (!generationHistory) return;
+
   const item = generationHistory.getById(id);
   if (!item) return;
 
   const modal = document.getElementById('history-modal');
   if (!modal) return;
 
-  document.getElementById('modal-image').src = item.imageUrl;
-  document.getElementById('modal-prompt').textContent = item.prompt || 'No prompt';
-  document.getElementById('modal-type').textContent = item.type;
-  document.getElementById('modal-model').textContent = item.settings?.model || 'dall-e-3';
-  document.getElementById('modal-size').textContent = item.settings?.size || 'N/A';
-  document.getElementById('modal-quality').textContent = item.settings?.quality || 'N/A';
-  document.getElementById('modal-date').textContent = new Date(item.timestamp).toLocaleString();
+  const modalImage = document.getElementById('modal-image');
+  const modalPrompt = document.getElementById('modal-prompt');
+  const modalType = document.getElementById('modal-type');
+  const modalModel = document.getElementById('modal-model');
+  const modalSize = document.getElementById('modal-size');
+  const modalQuality = document.getElementById('modal-quality');
+  const modalDate = document.getElementById('modal-date');
+
+  if (modalImage) modalImage.src = item.imageUrl || '';
+  if (modalPrompt) modalPrompt.textContent = item.prompt || 'No prompt';
+  if (modalType) modalType.textContent = item.type || 'N/A';
+  if (modalModel) modalModel.textContent = item.settings?.model || 'dall-e-3';
+  if (modalSize) modalSize.textContent = item.settings?.size || 'N/A';
+  if (modalQuality) modalQuality.textContent = item.settings?.quality || 'N/A';
+  if (modalDate) modalDate.textContent = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A';
 
   modal.dataset.currentId = id;
   modal.hidden = false;
