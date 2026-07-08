@@ -242,6 +242,57 @@
           </div>
         </div>
 
+        <!-- Brand Block Panel -->
+        <div id="brand-block-panel" class="brand-block-panel">
+          <div class="panel-header" onclick="toggleBrandPanel()">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <path d="M12 8v8"/>
+                <path d="M8 12h8"/>
+              </svg>
+              <span>Brand Rules</span>
+              <span class="brand-status" id="brand-status">Off</span>
+            </div>
+            <svg class="panel-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div class="panel-content" id="brand-panel-content" hidden>
+            <p class="panel-description">Define brand styling rules that auto-apply to every generation. Great for maintaining consistent mood, lighting, and avoiding unwanted elements.</p>
+
+            <div class="brand-toggle-row">
+              <label class="toggle-switch">
+                <input type="checkbox" id="brand-enabled" onchange="toggleBrandBlock()">
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Enable Brand Rules</span>
+            </div>
+
+            <div class="brand-rules-section" id="brand-rules-section">
+              <div class="brand-rule-group">
+                <label class="rule-label">Mood & Atmosphere</label>
+                <textarea id="brand-mood" class="textarea" rows="2" placeholder="e.g., calm, warm, emotionally restrained, professional, inviting"></textarea>
+              </div>
+
+              <div class="brand-rule-group">
+                <label class="rule-label">Lighting Style</label>
+                <textarea id="brand-lighting" class="textarea" rows="2" placeholder="e.g., soft natural lighting, warm golden hour tones, even diffused light"></textarea>
+              </div>
+
+              <div class="brand-rule-group">
+                <label class="rule-label">Color Palette</label>
+                <textarea id="brand-colors" class="textarea" rows="2" placeholder="e.g., warm earth tones, soft pastels, muted professional colors"></textarea>
+              </div>
+
+              <div class="brand-rule-group">
+                <label class="rule-label avoid">NEVER Include (Avoid)</label>
+                <textarea id="brand-avoid" class="textarea" rows="2" placeholder="e.g., dark dramatic backgrounds, harsh shadows, neon colors, cluttered scenes"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Generated Scenes Grid -->
         <div id="scenes-container" class="scenes-container" hidden>
           <div class="scenes-header">

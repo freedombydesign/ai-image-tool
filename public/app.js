@@ -311,6 +311,63 @@ function getCharacterInstructions(sceneText) {
   return `. CHARACTER CONSISTENCY - these characters must match their exact descriptions: ${charInstructions}`;
 }
 
+// Brand Block for consistent brand styling rules
+let brandBlockEnabled = false;
+
+function toggleBrandPanel() {
+  const panel = document.getElementById('brand-block-panel');
+  const content = document.getElementById('brand-panel-content');
+  if (panel && content) {
+    panel.classList.toggle('expanded');
+    content.hidden = !content.hidden;
+  }
+}
+
+function toggleBrandBlock() {
+  const checkbox = document.getElementById('brand-enabled');
+  const statusEl = document.getElementById('brand-status');
+
+  brandBlockEnabled = checkbox?.checked || false;
+
+  if (statusEl) {
+    statusEl.textContent = brandBlockEnabled ? 'Active' : 'Off';
+    statusEl.classList.toggle('active', brandBlockEnabled);
+  }
+
+  showToast(brandBlockEnabled ? 'Brand rules enabled' : 'Brand rules disabled');
+}
+
+function getBrandInstructions() {
+  if (!brandBlockEnabled) return '';
+
+  const mood = document.getElementById('brand-mood')?.value.trim() || '';
+  const lighting = document.getElementById('brand-lighting')?.value.trim() || '';
+  const colors = document.getElementById('brand-colors')?.value.trim() || '';
+  const avoid = document.getElementById('brand-avoid')?.value.trim() || '';
+
+  const parts = [];
+
+  if (mood) {
+    parts.push(`BRAND MOOD: ${mood}`);
+  }
+
+  if (lighting) {
+    parts.push(`LIGHTING: ${lighting}`);
+  }
+
+  if (colors) {
+    parts.push(`COLOR PALETTE: ${colors}`);
+  }
+
+  if (avoid) {
+    parts.push(`ABSOLUTELY AVOID: ${avoid}`);
+  }
+
+  if (parts.length === 0) return '';
+
+  return `. BRAND STYLING RULES - ${parts.join('. ')}`;
+}
+
 // Video Settings Elements
 const videoLengthSlider = document.getElementById('video-length');
 const videoLengthDisplay = document.getElementById('video-length-display');
@@ -565,6 +622,12 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
   const charInstructions = getCharacterInstructions(sceneDescription);
   if (charInstructions) {
     basePrompt += charInstructions;
+  }
+
+  // Add brand styling rules if enabled
+  const brandInstructions = getBrandInstructions();
+  if (brandInstructions) {
+    basePrompt += brandInstructions;
   }
 
   // Add inspiration reference note if available
@@ -1197,6 +1260,8 @@ window.clearStyleAnchor = clearStyleAnchor;
 window.toggleCharacterPanel = toggleCharacterPanel;
 window.addCharacter = addCharacter;
 window.removeCharacter = removeCharacter;
+window.toggleBrandPanel = toggleBrandPanel;
+window.toggleBrandBlock = toggleBrandBlock;
 
 // Clear Anchor Button Handler
 const clearAnchorBtn = document.getElementById('clear-anchor-btn');
