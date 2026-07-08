@@ -209,6 +209,108 @@ function updateSceneCardAnchorStates() {
   }
 }
 
+// Character Lock for consistent recurring characters
+let lockedCharacters = []; // Array of { name, description }
+
+function toggleCharacterPanel() {
+  const panel = document.getElementById('character-lock-panel');
+  const content = document.getElementById('character-panel-content');
+  if (panel && content) {
+    panel.classList.toggle('expanded');
+    content.hidden = !content.hidden;
+  }
+}
+
+function addCharacter() {
+  const nameInput = document.getElementById('char-name');
+  const descInput = document.getElementById('char-description');
+
+  const name = nameInput.value.trim();
+  const description = descInput.value.trim();
+
+  if (!name) {
+    showToast('Please enter a character name');
+    return;
+  }
+
+  if (!description) {
+    showToast('Please enter a character description');
+    return;
+  }
+
+  // Check for duplicate names
+  if (lockedCharacters.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+    showToast('A character with this name already exists');
+    return;
+  }
+
+  lockedCharacters.push({ name, description });
+  nameInput.value = '';
+  descInput.value = '';
+
+  renderCharactersList();
+  showToast(`Character "${name}" added`);
+}
+
+function removeCharacter(index) {
+  const char = lockedCharacters[index];
+  if (char) {
+    lockedCharacters.splice(index, 1);
+    renderCharactersList();
+    showToast(`Character "${char.name}" removed`);
+  }
+}
+
+function renderCharactersList() {
+  const list = document.getElementById('characters-list');
+  const countEl = document.getElementById('character-count');
+
+  if (!list) return;
+
+  if (lockedCharacters.length === 0) {
+    list.innerHTML = '';
+  } else {
+    list.innerHTML = lockedCharacters.map((char, index) => `
+      <div class="character-item">
+        <div class="character-avatar">${char.name.charAt(0).toUpperCase()}</div>
+        <div class="character-details">
+          <div class="character-name">${char.name}</div>
+          <div class="character-desc">${char.description}</div>
+        </div>
+        <button class="character-remove" onclick="removeCharacter(${index})" title="Remove character">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    `).join('');
+  }
+
+  if (countEl) {
+    countEl.textContent = `${lockedCharacters.length} character${lockedCharacters.length !== 1 ? 's' : ''}`;
+  }
+}
+
+function getCharacterInstructions(sceneText) {
+  if (lockedCharacters.length === 0) return '';
+
+  // Check which characters are mentioned in the scene
+  const mentionedChars = lockedCharacters.filter(char => {
+    const regex = new RegExp(char.name, 'i');
+    return regex.test(sceneText);
+  });
+
+  if (mentionedChars.length === 0) return '';
+
+  // Build character consistency instructions
+  const charInstructions = mentionedChars.map(char =>
+    `"${char.name}": ${char.description}`
+  ).join('; ');
+
+  return `. CHARACTER CONSISTENCY - these characters must match their exact descriptions: ${charInstructions}`;
+}
+
 // Video Settings Elements
 const videoLengthSlider = document.getElementById('video-length');
 const videoLengthDisplay = document.getElementById('video-length-display');
@@ -457,6 +559,12 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
   } else if (styleAnchor) {
     // Fallback if no revised prompt available
     basePrompt += `. CRITICAL STYLE CONSISTENCY: Match the exact visual style, lighting, color palette, and artistic approach used in the anchor scene. Maintain identical art direction across all scenes for visual continuity`;
+  }
+
+  // Add character consistency instructions if locked characters are mentioned
+  const charInstructions = getCharacterInstructions(sceneDescription);
+  if (charInstructions) {
+    basePrompt += charInstructions;
   }
 
   // Add inspiration reference note if available
@@ -1086,6 +1194,9 @@ window.regenerateScene = regenerateScene;
 window.downloadScene = downloadScene;
 window.setStyleAnchor = setStyleAnchor;
 window.clearStyleAnchor = clearStyleAnchor;
+window.toggleCharacterPanel = toggleCharacterPanel;
+window.addCharacter = addCharacter;
+window.removeCharacter = removeCharacter;
 
 // Clear Anchor Button Handler
 const clearAnchorBtn = document.getElementById('clear-anchor-btn');

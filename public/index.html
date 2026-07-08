@@ -204,6 +204,44 @@
           </div>
         </div>
 
+        <!-- Character Reference Lock Panel -->
+        <div id="character-lock-panel" class="character-lock-panel">
+          <div class="panel-header" onclick="toggleCharacterPanel()">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              <span>Character Lock</span>
+              <span class="character-count" id="character-count">0 characters</span>
+            </div>
+            <svg class="panel-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div class="panel-content" id="character-panel-content" hidden>
+            <p class="panel-description">Define recurring characters to maintain visual consistency across scenes. Reference them in prompts by name.</p>
+
+            <div id="characters-list" class="characters-list"></div>
+
+            <div class="add-character-form" id="add-character-form">
+              <div class="form-row">
+                <input type="text" id="char-name" placeholder="Character name (e.g., Sarah, The Boss)" class="input">
+              </div>
+              <div class="form-row">
+                <textarea id="char-description" placeholder="Physical description (e.g., mid-30s woman, shoulder-length brown hair, wearing a blue blazer, warm smile)" class="textarea" rows="3"></textarea>
+              </div>
+              <button class="btn primary" onclick="addCharacter()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Character
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Generated Scenes Grid -->
         <div id="scenes-container" class="scenes-container" hidden>
           <div class="scenes-header">
