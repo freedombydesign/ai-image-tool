@@ -3,35 +3,144 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Image Studio</title>
+  <title>AI Image Studio - Faceless Video Scene Generator</title>
   <link rel="stylesheet" href="styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
   <div class="app">
     <header>
-      <h1>🎨 AI Image Studio</h1>
-      <p>Generate, edit, and transform images with AI</p>
+      <h1>AI Image Studio</h1>
+      <p>Generate faceless video scenes with AI</p>
     </header>
 
     <main>
       <!-- Tab Navigation -->
       <nav class="tabs">
-        <button class="tab active" data-tab="generate">Generate</button>
+        <button class="tab active" data-tab="batch-scenes">Batch Scenes</button>
+        <button class="tab" data-tab="generate">Single Image</button>
         <button class="tab" data-tab="edit">Edit</button>
         <button class="tab" data-tab="variations">Variations</button>
-        <button class="tab" data-tab="character-swap">Character Swap</button>
       </nav>
 
-      <!-- Generate Tab -->
-      <section id="generate" class="tab-content active">
+      <!-- Batch Scenes Tab -->
+      <section id="batch-scenes" class="tab-content active">
         <div class="card">
-          <h2>Generate New Image</h2>
-          <p>Create images from text descriptions using DALL-E 3</p>
+          <h2>Scene Generator</h2>
+          <p>Paste your YouTube script and generate a batch of visual scenes in one go.</p>
+
+          <!-- Visual Style Selector -->
+          <div class="form-group">
+            <label>Visual Style</label>
+            <div class="style-grid">
+              <div class="style-option selected" data-style="cinematic-2d">
+                <div class="style-preview" style="background: linear-gradient(135deg, #4a90d9, #67b26f);">2D</div>
+                <span>Cinematic 2D Animation</span>
+              </div>
+              <div class="style-option" data-style="hand-drawn">
+                <div class="style-preview" style="background: linear-gradient(135deg, #f5af19, #f12711);">HD</div>
+                <span>Hand-Drawn Sketch</span>
+              </div>
+              <div class="style-option" data-style="stickman">
+                <div class="style-preview" style="background: linear-gradient(135deg, #232526, #414345);">SM</div>
+                <span>Stickman Style</span>
+              </div>
+              <div class="style-option" data-style="pixel-art">
+                <div class="style-preview" style="background: linear-gradient(135deg, #8e2de2, #4a00e0);">8B</div>
+                <span>8-Bit Pixel Art</span>
+              </div>
+              <div class="style-option" data-style="soft-cartoon">
+                <div class="style-preview" style="background: linear-gradient(135deg, #ff9a9e, #fecfef);">SC</div>
+                <span>Soft Cartoon Explainer</span>
+              </div>
+              <div class="style-option" data-style="yellow-character">
+                <div class="style-preview" style="background: linear-gradient(135deg, #f7b733, #fc4a1a);">YC</div>
+                <span>Yellow Character Style</span>
+              </div>
+              <div class="style-option" data-style="3d-cinematic">
+                <div class="style-preview" style="background: linear-gradient(135deg, #0f2027, #2c5364);">3D</div>
+                <span>3D Cinematic Style</span>
+              </div>
+              <div class="style-option" data-style="minimalist">
+                <div class="style-preview" style="background: linear-gradient(135deg, #ece9e6, #ffffff);">MN</div>
+                <span>Minimalist Flat</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="script-input">YouTube Script</label>
+            <textarea id="script-input" rows="10" placeholder="Paste your video script here. Each paragraph or line break will become a separate scene..."></textarea>
+            <div class="script-stats">
+              <span id="scene-count">0 scenes detected</span>
+              <span id="char-count">0/20,000</span>
+            </div>
+          </div>
+
+          <div class="options-row">
+            <div class="form-group">
+              <label for="batch-size">Size</label>
+              <select id="batch-size">
+                <option value="1024x1024">Square (1024x1024)</option>
+                <option value="1792x1024" selected>Landscape (1792x1024)</option>
+                <option value="1024x1792">Portrait (1024x1792)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="batch-quality">Quality</label>
+              <select id="batch-quality">
+                <option value="standard" selected>Standard ($0.04-0.08)</option>
+                <option value="hd">HD ($0.08-0.12)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="cost-estimate">
+            <span>Estimated cost: </span>
+            <strong id="cost-estimate">$0.00</strong>
+          </div>
+
+          <button class="btn primary" id="generate-batch-btn">Generate All Scenes</button>
+        </div>
+
+        <!-- Generated Scenes Grid -->
+        <div id="scenes-container" class="scenes-container" hidden>
+          <div class="scenes-header">
+            <h3>Generated Scenes</h3>
+            <div class="scenes-actions">
+              <button class="btn secondary" id="download-all-btn">Download All (ZIP)</button>
+            </div>
+          </div>
+          <div id="scenes-grid" class="scenes-grid"></div>
+        </div>
+      </section>
+
+      <!-- Single Image Generate Tab -->
+      <section id="generate" class="tab-content">
+        <div class="card">
+          <h2>Generate Single Image</h2>
+          <p>Create an image from a text description using DALL-E 3</p>
+
+          <!-- Style selector for single images too -->
+          <div class="form-group">
+            <label>Visual Style</label>
+            <select id="single-style">
+              <option value="">No preset (custom prompt)</option>
+              <option value="cinematic-2d">Cinematic 2D Animation</option>
+              <option value="hand-drawn">Hand-Drawn Sketch</option>
+              <option value="stickman">Stickman Style</option>
+              <option value="pixel-art">8-Bit Pixel Art</option>
+              <option value="soft-cartoon">Soft Cartoon Explainer</option>
+              <option value="yellow-character">Yellow Character Style</option>
+              <option value="3d-cinematic">3D Cinematic Style</option>
+              <option value="minimalist">Minimalist Flat</option>
+            </select>
+          </div>
 
           <div class="form-group">
             <label for="generate-prompt">Describe your image</label>
-            <textarea id="generate-prompt" placeholder="A serene mountain landscape at sunset with a crystal clear lake reflecting the orange sky..."></textarea>
+            <textarea id="generate-prompt" placeholder="A serene mountain landscape at sunset..."></textarea>
           </div>
 
           <div class="options-row">
@@ -43,15 +152,6 @@
                 <option value="1024x1792">Portrait (1024x1792)</option>
               </select>
             </div>
-
-            <div class="form-group">
-              <label for="generate-style">Style</label>
-              <select id="generate-style">
-                <option value="vivid">Vivid</option>
-                <option value="natural">Natural</option>
-              </select>
-            </div>
-
             <div class="form-group">
               <label for="generate-quality">Quality</label>
               <select id="generate-quality">
@@ -85,15 +185,6 @@
             <textarea id="edit-prompt" placeholder="Replace the background with a beach scene..."></textarea>
           </div>
 
-          <div class="upload-area small" id="mask-upload">
-            <input type="file" id="mask-file" accept="image/*" hidden>
-            <div class="upload-placeholder">
-              <span class="upload-icon">🎭</span>
-              <p>Optional: Upload mask (white = edit area)</p>
-            </div>
-            <img id="mask-preview" class="preview-image" hidden>
-          </div>
-
           <button class="btn primary" id="edit-btn">Apply Edit</button>
         </div>
       </section>
@@ -117,36 +208,15 @@
         </div>
       </section>
 
-      <!-- Character Swap Tab -->
-      <section id="character-swap" class="tab-content">
-        <div class="card">
-          <h2>Character Swap</h2>
-          <p>Replace a person in the image with a different character</p>
-
-          <div class="upload-area" id="swap-upload">
-            <input type="file" id="swap-file" accept="image/*" hidden>
-            <div class="upload-placeholder">
-              <span class="upload-icon">📤</span>
-              <p>Click or drag image here</p>
-            </div>
-            <img id="swap-preview" class="preview-image" hidden>
-          </div>
-
-          <div class="form-group">
-            <label for="swap-prompt">Describe the new character</label>
-            <textarea id="swap-prompt" placeholder="A young woman with curly red hair wearing a blue dress..."></textarea>
-          </div>
-
-          <button class="btn primary" id="swap-btn">Swap Character</button>
-        </div>
-      </section>
-
-      <!-- Result Display -->
+      <!-- Single Result Display -->
       <section id="result" class="result-section" hidden>
         <div class="card">
           <div class="result-header">
             <h2>Result</h2>
-            <button class="btn secondary" id="download-btn">Download</button>
+            <div class="result-actions">
+              <button class="btn secondary" id="regenerate-btn">Regenerate</button>
+              <button class="btn secondary" id="download-btn">Download</button>
+            </div>
           </div>
           <img id="result-image" class="result-image">
           <p id="revised-prompt" class="revised-prompt"></p>
@@ -154,16 +224,17 @@
       </section>
 
       <!-- Loading Overlay -->
-      <div id="loading" class="loading-overlay" hidden>
+      <div id="loading" class="loading-overlay" hidden style="display: none;">
         <div class="loading-content">
           <div class="spinner"></div>
-          <p>Creating your image...</p>
+          <p id="loading-text">Creating your image...</p>
+          <p id="loading-progress" class="loading-progress"></p>
         </div>
       </div>
     </main>
 
     <footer>
-      <p>Powered by OpenAI DALL-E</p>
+      <p>Powered by OpenAI DALL-E 3</p>
     </footer>
   </div>
 

@@ -391,3 +391,194 @@ footer {
     opacity: 1;
   }
 }
+
+/* Style Grid */
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.style-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0.5rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.style-option:hover {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.style-option.selected {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.style-preview {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.style-option span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.style-option.selected span {
+  color: var(--text);
+}
+
+/* Script Stats */
+.script-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Cost Estimate */
+.cost-estimate {
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: 8px;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.cost-estimate strong {
+  color: var(--success);
+  font-size: 1.25rem;
+}
+
+/* Scenes Container */
+.scenes-container {
+  margin-top: 2rem;
+}
+
+.scenes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.scenes-header h3 {
+  font-size: 1.25rem;
+}
+
+.scenes-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Scenes Grid */
+.scenes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.scene-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.scene-card img {
+  width: 100%;
+  aspect-ratio: 16/9;
+  object-fit: cover;
+}
+
+.scene-card.loading img {
+  display: none;
+}
+
+.scene-card .scene-loading {
+  width: 100%;
+  aspect-ratio: 16/9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.scene-card .scene-loading .spinner {
+  width: 40px;
+  height: 40px;
+}
+
+.scene-info {
+  padding: 1rem;
+}
+
+.scene-number {
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 0.25rem;
+}
+
+.scene-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scene-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 1rem 1rem;
+}
+
+.scene-actions .btn {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* Result Actions */
+.result-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Loading Progress */
+.loading-progress {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+/* Error state for scene cards */
+.scene-card.error .scene-loading {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.scene-card.error .scene-loading::after {
+  content: 'Failed to generate';
+  color: var(--error);
+  font-size: 0.9rem;
+}
