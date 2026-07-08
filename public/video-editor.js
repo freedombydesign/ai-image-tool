@@ -275,7 +275,18 @@ class VideoEditor {
   async startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.mediaRecorder = new MediaRecorder(stream);
+
+      // Try different audio formats for better compatibility
+      let options = {};
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options = { mimeType: 'audio/webm;codecs=opus' };
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        options = { mimeType: 'audio/webm' };
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options = { mimeType: 'audio/mp4' };
+      }
+
+      this.mediaRecorder = new MediaRecorder(stream, options);
       this.recordingChunks = [];
 
       this.mediaRecorder.ondataavailable = (e) => {
@@ -284,30 +295,60 @@ class VideoEditor {
         }
       };
 
-      this.mediaRecorder.onstop = () => {
-        this.audioBlob = new Blob(this.recordingChunks, { type: 'audio/webm' });
-        this.loadAudioBlob(this.audioBlob);
-        stream.getTracks().forEach(track => track.stop());
+      this.mediaRecorder.onerror = (e) => {
+        console.error('MediaRecorder error:', e);
+        showToast('Recording error occurred. Please try again.');
+        this.stopRecording();
       };
 
-      this.mediaRecorder.start();
+      this.mediaRecorder.onstop = () => {
+        if (this.recordingChunks.length === 0) {
+          showToast('No audio was captured. Please try again.');
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        const mimeType = this.mediaRecorder.mimeType || 'audio/webm';
+        this.audioBlob = new Blob(this.recordingChunks, { type: mimeType });
+
+        if (this.audioBlob.size === 0) {
+          showToast('Recording was empty. Please try again.');
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        this.loadAudioBlob(this.audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+        showToast('Recording saved!', false);
+      };
+
+      // Request data every second to ensure we capture audio
+      this.mediaRecorder.start(1000);
       this.isRecording = true;
       this.recordingStartTime = Date.now();
 
-      this.recordIcon.textContent = '⏹️';
-      this.recordAudioBtn.querySelector('span:last-child') ||
-        (this.recordAudioBtn.innerHTML = '<span id="record-icon">⏹️</span> Stop Recording');
-      this.recordingTime.hidden = false;
+      if (this.recordIcon) this.recordIcon.textContent = '⏹️';
+      if (this.recordAudioBtn) this.recordAudioBtn.innerHTML = '<span id="record-icon">⏹️</span> Stop Recording';
+      if (this.recordingTime) this.recordingTime.hidden = false;
 
       this.recordingInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
         const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
         const secs = (elapsed % 60).toString().padStart(2, '0');
-        this.recordingTime.textContent = `${mins}:${secs}`;
+        if (this.recordingTime) this.recordingTime.textContent = `${mins}:${secs}`;
       }, 1000);
 
+      showToast('Recording started...', false);
+
     } catch (error) {
-      showToast('Could not access microphone. Please grant permission.');
+      console.error('Microphone access error:', error);
+      if (error.name === 'NotAllowedError') {
+        showToast('Microphone access denied. Please allow microphone permission in your browser.');
+      } else if (error.name === 'NotFoundError') {
+        showToast('No microphone found. Please connect a microphone.');
+      } else {
+        showToast('Could not access microphone: ' + error.message);
+      }
     }
   }
 
@@ -332,24 +373,30 @@ class VideoEditor {
   }
 
   async loadAudioBlob(blob) {
-    const url = URL.createObjectURL(blob);
-    this.audioPlayer.src = url;
-    this.audioPreview.hidden = false;
-
-    // Decode audio for waveform and duration
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
     try {
+      const url = URL.createObjectURL(blob);
+      this.audioPlayer.src = url;
+      this.audioPreview.hidden = false;
+
+      // Decode audio for waveform and duration
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
       this.audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       this.audioDuration = this.audioBuffer.duration;
 
       this.renderWaveform();
       this.updateTotalDuration();
 
-      showToast('Audio loaded successfully!', false);
+      console.log('Audio loaded:', this.audioDuration, 'seconds');
     } catch (error) {
-      showToast('Could not decode audio file.');
+      console.error('Audio decode error:', error);
+      // Even if waveform fails, audio player should still work
+      if (this.audioPlayer.src) {
+        showToast('Audio loaded (waveform unavailable)', false);
+      } else {
+        showToast('Could not load audio file. Try a different format (MP3, WAV, M4A).');
+      }
     }
   }
 
