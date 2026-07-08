@@ -408,6 +408,19 @@ async function generateImage() {
     lastGenerateParams = { prompt: styledPrompt, size, quality };
     showResult(data.image, data.revised_prompt);
     showToast('Image generated successfully!', false);
+
+    // Save to history
+    if (typeof generationHistory !== 'undefined') {
+      generationHistory.add({
+        type: 'single',
+        prompt: styledPrompt,
+        imageUrl: data.image,
+        model: 'dall-e-3',
+        size: size,
+        quality: quality,
+        style: style || null
+      });
+    }
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -479,10 +492,11 @@ async function generatePreviewScenes() {
     updateLoadingProgress(i + 1, previewScenes.length);
 
     try {
+      const model = document.getElementById('batch-model')?.value || 'dall-e-3';
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: styledPrompt, size, quality })
+        body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
       });
 
       const data = await response.json();
@@ -502,6 +516,19 @@ async function generatePreviewScenes() {
 
       updateSceneCard(index, data.image);
       successCount++;
+
+      // Save to history
+      if (typeof generationHistory !== 'undefined') {
+        generationHistory.add({
+          type: 'batch',
+          prompt: styledPrompt,
+          imageUrl: data.image,
+          model: model,
+          size: size,
+          quality: quality,
+          style: selectedStyle
+        });
+      }
 
     } catch (error) {
       console.error(`Failed to generate preview scene ${index + 1}:`, error);
@@ -712,6 +739,18 @@ async function regenerateScene(index) {
 
     updateSceneCard(index, data.image);
     showToast('Scene regenerated!', false);
+
+    // Save to history
+    if (typeof generationHistory !== 'undefined') {
+      generationHistory.add({
+        type: 'batch',
+        prompt: scene.prompt,
+        imageUrl: data.image,
+        model: model,
+        size: size,
+        quality: quality
+      });
+    }
 
   } catch (error) {
     markSceneError(index);
@@ -1047,7 +1086,7 @@ async function generateThumbnail() {
       thumbnailResult.hidden = false;
     }
 
-    // Add to history
+    // Add to session history
     thumbnailHistory.unshift({
       imageUrl: data.image,
       prompt: prompt,
@@ -1060,6 +1099,19 @@ async function generateThumbnail() {
     }
 
     updateThumbnailGallery();
+
+    // Save to persistent history
+    if (typeof generationHistory !== 'undefined') {
+      generationHistory.add({
+        type: 'thumbnail',
+        prompt: prompt,
+        imageUrl: data.image,
+        model: 'dall-e-3',
+        size: '1792x1024',
+        quality: quality,
+        style: selectedThumbnailStyle
+      });
+    }
 
     showToast('Thumbnail generated!', false);
     thumbnailResult.scrollIntoView({ behavior: 'smooth' });
@@ -1097,7 +1149,7 @@ async function regenerateThumbnail() {
       thumbnailImage.src = data.image;
     }
 
-    // Add to history
+    // Add to session history
     thumbnailHistory.unshift({
       imageUrl: data.image,
       prompt: lastThumbnailParams.prompt,
@@ -1109,6 +1161,18 @@ async function regenerateThumbnail() {
     }
 
     updateThumbnailGallery();
+
+    // Save to persistent history
+    if (typeof generationHistory !== 'undefined') {
+      generationHistory.add({
+        type: 'thumbnail',
+        prompt: lastThumbnailParams.prompt,
+        imageUrl: data.image,
+        model: 'dall-e-3',
+        size: lastThumbnailParams.size,
+        quality: lastThumbnailParams.quality
+      });
+    }
 
     showToast('Thumbnail regenerated!', false);
 

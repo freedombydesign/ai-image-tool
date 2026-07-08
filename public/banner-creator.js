@@ -363,6 +363,18 @@ class BannerCreator {
         this.render();
         hideLoading();
         showToast('Background generated successfully!');
+
+        // Save to persistent history
+        if (typeof generationHistory !== 'undefined') {
+          generationHistory.add({
+            type: 'banner',
+            prompt: enhancedPrompt,
+            imageUrl: data.image,
+            model: 'dall-e-3',
+            size: '1792x1024',
+            quality: 'standard'
+          });
+        }
       };
       img.onerror = () => {
         hideLoading();
