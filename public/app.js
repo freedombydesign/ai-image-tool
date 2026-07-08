@@ -1011,9 +1011,19 @@ const thumbnailImage = document.getElementById('thumbnail-image');
 const downloadThumbnailBtn = document.getElementById('download-thumbnail-btn');
 const regenerateThumbnailBtn = document.getElementById('regenerate-thumbnail-btn');
 
+// Reference Thumbnail Elements
+const refThumbUploadArea = document.getElementById('reference-thumb-upload');
+const refThumbFileInput = document.getElementById('reference-thumb-file');
+const refThumbPlaceholder = document.getElementById('reference-placeholder');
+const refThumbPreview = document.getElementById('reference-thumb-preview');
+const refThumbImage = document.getElementById('reference-thumb-image');
+const refTypeButtons = document.querySelectorAll('.ref-type-btn');
+const clearRefThumbBtn = document.getElementById('clear-reference-thumb');
+
 let selectedThumbnailStyle = 'dramatic';
 let lastThumbnailParams = null;
 let thumbnailHistory = [];
+let referenceThumbData = null; // Stores { type: 'do-this' | 'dont-do-this', imageDescription: string }
 
 // Thumbnail Style Selection
 if (thumbnailStyleOptions) {
@@ -1027,7 +1037,7 @@ if (thumbnailStyleOptions) {
 }
 
 // Build Thumbnail Prompt
-function buildThumbnailPrompt(description, style, textHook = '') {
+function buildThumbnailPrompt(description, style, textHook = '', referenceData = null) {
   const styleInfo = THUMBNAIL_STYLES[style];
   let prompt = description;
 
@@ -1037,6 +1047,15 @@ function buildThumbnailPrompt(description, style, textHook = '') {
 
   if (textHook) {
     prompt += `. Include bold readable text saying "${textHook}" as part of the composition`;
+  }
+
+  // Add reference guidance if provided
+  if (referenceData && referenceData.type) {
+    if (referenceData.type === 'do-this') {
+      prompt += `. IMPORTANT: Create something similar in style and approach to this successful thumbnail concept. Follow the visual patterns, color schemes, and composition techniques that make it effective`;
+    } else if (referenceData.type === 'dont-do-this') {
+      prompt += `. IMPORTANT: Avoid the approach shown in the reference. Do NOT use similar colors, composition, or style. Create the OPPOSITE - make it more eye-catching, professional, and engaging. Avoid these common thumbnail mistakes`;
+    }
   }
 
   prompt += '. YouTube thumbnail format, 16:9 aspect ratio, designed to get clicks, no small details that won\'t be visible at thumbnail size.';
@@ -1056,9 +1075,12 @@ async function generateThumbnail() {
     return;
   }
 
-  const prompt = buildThumbnailPrompt(description, selectedThumbnailStyle, textHook);
+  const prompt = buildThumbnailPrompt(description, selectedThumbnailStyle, textHook, referenceThumbData);
 
-  showLoading('Creating your thumbnail...');
+  const loadingMsg = referenceThumbData
+    ? `Creating your thumbnail (using reference: ${referenceThumbData.type === 'do-this' ? 'DO this' : "DON'T do this"})...`
+    : 'Creating your thumbnail...';
+  showLoading(loadingMsg);
 
   try {
     const response = await fetch('/api/generate', {
@@ -1249,6 +1271,116 @@ if (downloadThumbnailBtn) {
 
 if (regenerateThumbnailBtn) {
   regenerateThumbnailBtn.addEventListener('click', regenerateThumbnail);
+}
+
+// ============================================
+// REFERENCE THUMBNAIL UPLOAD
+// ============================================
+
+// Handle reference thumbnail upload area click
+if (refThumbUploadArea) {
+  refThumbUploadArea.addEventListener('click', (e) => {
+    // Only trigger file input if clicking on the upload area, not on buttons
+    if (!e.target.closest('.reference-controls') && !e.target.closest('.ref-type-btn')) {
+      refThumbFileInput?.click();
+    }
+  });
+
+  // Drag and drop support
+  refThumbUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    refThumbUploadArea.classList.add('dragover');
+  });
+
+  refThumbUploadArea.addEventListener('dragleave', () => {
+    refThumbUploadArea.classList.remove('dragover');
+  });
+
+  refThumbUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    refThumbUploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      handleReferenceThumbUpload(file);
+    }
+  });
+}
+
+// Handle file input change
+if (refThumbFileInput) {
+  refThumbFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      handleReferenceThumbUpload(file);
+    }
+  });
+}
+
+// Handle reference type toggle buttons
+refTypeButtons.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent triggering upload area click
+    refTypeButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (referenceThumbData) {
+      referenceThumbData.type = btn.dataset.refType;
+    }
+  });
+});
+
+// Clear reference thumbnail
+if (clearRefThumbBtn) {
+  clearRefThumbBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent triggering upload area click
+    clearReferenceThumbnail();
+  });
+}
+
+// Handle reference thumbnail upload
+function handleReferenceThumbUpload(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const imageData = e.target.result;
+
+    // Set the preview image
+    if (refThumbImage) {
+      refThumbImage.src = imageData;
+    }
+
+    // Show preview, hide placeholder
+    if (refThumbPlaceholder) refThumbPlaceholder.hidden = true;
+    if (refThumbPreview) refThumbPreview.hidden = false;
+
+    // Get currently selected type
+    const activeTypeBtn = document.querySelector('.ref-type-btn.active');
+    const selectedType = activeTypeBtn ? activeTypeBtn.dataset.refType : 'do-this';
+
+    // Store the reference data
+    referenceThumbData = {
+      type: selectedType,
+      hasImage: true
+    };
+
+    showToast(`Reference uploaded! Using as "${selectedType === 'do-this' ? 'Do This' : "Don't Do This"}" example.`, false);
+  };
+  reader.readAsDataURL(file);
+}
+
+// Clear reference thumbnail
+function clearReferenceThumbnail() {
+  referenceThumbData = null;
+
+  if (refThumbImage) refThumbImage.src = '';
+  if (refThumbPlaceholder) refThumbPlaceholder.hidden = false;
+  if (refThumbPreview) refThumbPreview.hidden = true;
+  if (refThumbFileInput) refThumbFileInput.value = '';
+
+  // Reset to "Do This" as default
+  refTypeButtons.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.refType === 'do-this');
+  });
+
+  showToast('Reference thumbnail cleared', false);
 }
 
 // ============================================
