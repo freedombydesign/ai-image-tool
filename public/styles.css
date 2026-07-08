@@ -2211,18 +2211,19 @@ footer {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  z-index: 1000;
   transition: background 0.2s;
+  pointer-events: auto;
 }
 
 .modal-close-btn:hover {
@@ -2487,4 +2488,122 @@ footer {
 .reference-indicator.dont-do-this {
   background: rgba(239, 68, 68, 0.15);
   color: var(--error);
+}
+
+/* ===== Style Anchor Panel ===== */
+.style-anchor-panel {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+  border: 2px solid var(--primary);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  animation: anchorPulse 2s ease-in-out infinite;
+}
+
+@keyframes anchorPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.3); }
+  50% { box-shadow: 0 0 20px 4px rgba(99, 102, 241, 0.15); }
+}
+
+.anchor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.anchor-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.anchor-badge svg {
+  width: 20px;
+  height: 20px;
+}
+
+.anchor-content {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.anchor-content img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--primary);
+}
+
+.anchor-info {
+  flex: 1;
+}
+
+.anchor-info p {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.anchor-scene-label {
+  display: inline-block;
+  background: var(--primary);
+  color: white;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Scene Card Anchor Button */
+.scene-anchor-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.scene-anchor-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.scene-anchor-btn.is-anchor {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.scene-anchor-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.scene-card.is-style-anchor {
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+}
+
+.scene-card.is-style-anchor::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--purple-500, #a855f7));
+  border-radius: 10px 10px 0 0;
 }

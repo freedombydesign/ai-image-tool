@@ -182,6 +182,28 @@
           </div>
         </div>
 
+        <!-- Style Anchor Panel (shows when an anchor is set) -->
+        <div id="style-anchor-panel" class="style-anchor-panel" hidden>
+          <div class="anchor-header">
+            <div class="anchor-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="5" r="3"/>
+                <line x1="12" y1="8" x2="12" y2="21"/>
+                <path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
+              </svg>
+              <span>Style Anchor Locked</span>
+            </div>
+            <button class="btn text small" id="clear-anchor-btn">Clear Anchor</button>
+          </div>
+          <div class="anchor-content">
+            <img id="anchor-preview-image" alt="Style Anchor">
+            <div class="anchor-info">
+              <p id="anchor-description">All subsequent generations will match this style.</p>
+              <span class="anchor-scene-label" id="anchor-scene-label">Scene 01</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Generated Scenes Grid -->
         <div id="scenes-container" class="scenes-container" hidden>
           <div class="scenes-header">
@@ -951,7 +973,7 @@
       <!-- History Preview Modal -->
       <div id="history-modal" class="history-modal" hidden>
         <div class="history-modal-content">
-          <button id="modal-close-btn" class="modal-close-btn">
+          <button id="modal-close-btn" class="modal-close-btn" onclick="document.getElementById('history-modal').hidden = true; document.body.style.overflow = '';">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
