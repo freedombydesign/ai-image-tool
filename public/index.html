@@ -480,6 +480,16 @@
           <!-- Thumbnail Options -->
           <div class="options-row">
             <div class="form-group">
+              <label for="thumbnail-model">AI Model</label>
+              <select id="thumbnail-model">
+                <option value="dall-e-3" selected>DALL-E 3 (~$0.04-0.08)</option>
+                <option value="flux-schnell">Flux Schnell (~$0.003)</option>
+                <option value="flux-pro">Flux Pro (~$0.05)</option>
+                <option value="stable-diffusion-xl">SDXL (~$0.002)</option>
+                <option value="stable-diffusion-3">SD3 (~$0.065)</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label for="thumbnail-quality">Quality</label>
               <select id="thumbnail-quality">
                 <option value="hd" selected>HD (Recommended)</option>
@@ -747,7 +757,7 @@
       <section id="generate" class="tab-content">
         <div class="card">
           <h2>Generate Single Image</h2>
-          <p>Create an image from a text description using DALL-E 3</p>
+          <p>Create an image from a text description using AI</p>
 
           <!-- Style selector for single images too -->
           <div class="form-group">
@@ -773,6 +783,16 @@
           </div>
 
           <div class="options-row">
+            <div class="form-group">
+              <label for="generate-model">AI Model</label>
+              <select id="generate-model">
+                <option value="dall-e-3" selected>DALL-E 3 (~$0.04-0.08)</option>
+                <option value="flux-schnell">Flux Schnell (~$0.003)</option>
+                <option value="flux-pro">Flux Pro (~$0.05)</option>
+                <option value="stable-diffusion-xl">SDXL (~$0.002)</option>
+                <option value="stable-diffusion-3">SD3 (~$0.065)</option>
+              </select>
+            </div>
             <div class="form-group">
               <label for="generate-size">Size</label>
               <select id="generate-size">

@@ -382,6 +382,7 @@ async function generateImage() {
   const size = document.getElementById('generate-size').value;
   const style = document.getElementById('single-style').value;
   const quality = document.getElementById('generate-quality').value;
+  const model = document.getElementById('generate-model')?.value || 'dall-e-3';
 
   if (!prompt) {
     showToast('Please enter a prompt');
@@ -396,7 +397,7 @@ async function generateImage() {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: styledPrompt, size, quality })
+      body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
     });
 
     const data = await response.json();
@@ -405,7 +406,7 @@ async function generateImage() {
       throw new Error(data.error);
     }
 
-    lastGenerateParams = { prompt: styledPrompt, size, quality };
+    lastGenerateParams = { prompt: styledPrompt, size, quality, model };
     showResult(data.image, data.revised_prompt);
     showToast('Image generated successfully!', false);
 
@@ -415,7 +416,7 @@ async function generateImage() {
         type: 'single',
         prompt: styledPrompt,
         imageUrl: data.image,
-        model: 'dall-e-3',
+        model: model,
         size: size,
         quality: quality,
         style: style || null
@@ -1048,6 +1049,7 @@ async function generateThumbnail() {
   const description = thumbnailPromptInput ? thumbnailPromptInput.value.trim() : '';
   const textHook = thumbnailHookInput ? thumbnailHookInput.value.trim() : '';
   const quality = thumbnailQualitySelect ? thumbnailQualitySelect.value : 'hd';
+  const model = document.getElementById('thumbnail-model')?.value || 'dall-e-3';
 
   if (!description) {
     showToast('Please describe your thumbnail');
@@ -1065,7 +1067,8 @@ async function generateThumbnail() {
       body: JSON.stringify({
         prompt: prompt,
         size: '1792x1024', // YouTube thumbnail aspect ratio
-        quality: quality
+        quality: quality,
+        model: model
       })
     });
 
@@ -1076,7 +1079,7 @@ async function generateThumbnail() {
     }
 
     // Store params for regeneration
-    lastThumbnailParams = { prompt, size: '1792x1024', quality };
+    lastThumbnailParams = { prompt, size: '1792x1024', quality, model };
 
     // Show result
     if (thumbnailImage) {
@@ -1106,7 +1109,7 @@ async function generateThumbnail() {
         type: 'thumbnail',
         prompt: prompt,
         imageUrl: data.image,
-        model: 'dall-e-3',
+        model: model,
         size: '1792x1024',
         quality: quality,
         style: selectedThumbnailStyle
