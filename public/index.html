@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 </head>
 <body>
   <div class="app">
@@ -19,6 +21,7 @@
       <!-- Tab Navigation -->
       <nav class="tabs">
         <button class="tab active" data-tab="batch-scenes">Batch Scenes</button>
+        <button class="tab" data-tab="video-editor">Video Editor</button>
         <button class="tab" data-tab="generate">Single Image</button>
         <button class="tab" data-tab="edit">Edit</button>
         <button class="tab" data-tab="variations">Variations</button>
@@ -121,6 +124,182 @@
             </div>
           </div>
           <div id="scenes-grid" class="scenes-grid"></div>
+        </div>
+      </section>
+
+      <!-- Video Editor Tab -->
+      <section id="video-editor" class="tab-content">
+        <div class="card">
+          <h2>Video Editor</h2>
+          <p>Create videos from your scenes with voiceover, captions, and effects</p>
+
+          <!-- Step 1: Import Scenes -->
+          <div class="editor-section">
+            <h3>1. Import Scenes</h3>
+            <div class="scene-import-options">
+              <button class="btn secondary" id="import-from-batch">Import from Batch Generator</button>
+              <span class="or-divider">or</span>
+              <div class="upload-area small" id="scene-upload-area">
+                <input type="file" id="scene-files" accept="image/*" multiple hidden>
+                <div class="upload-placeholder">
+                  <span class="upload-icon">📁</span>
+                  <p>Upload images</p>
+                </div>
+              </div>
+            </div>
+            <div id="imported-scenes" class="imported-scenes-grid"></div>
+          </div>
+
+          <!-- Step 2: Audio -->
+          <div class="editor-section">
+            <h3>2. Add Voiceover</h3>
+            <div class="audio-controls">
+              <div class="audio-option">
+                <button class="btn secondary" id="record-audio-btn">
+                  <span id="record-icon">🎙️</span> Record Audio
+                </button>
+                <span id="recording-time" class="recording-time" hidden>00:00</span>
+              </div>
+              <span class="or-divider">or</span>
+              <div class="audio-option">
+                <input type="file" id="audio-file" accept="audio/*" hidden>
+                <button class="btn secondary" id="upload-audio-btn">📤 Upload Audio</button>
+              </div>
+            </div>
+            <div id="audio-preview" class="audio-preview" hidden>
+              <audio id="audio-player" controls></audio>
+              <button class="btn secondary small" id="remove-audio-btn">Remove</button>
+            </div>
+          </div>
+
+          <!-- Step 3: Timeline -->
+          <div class="editor-section">
+            <h3>3. Timeline</h3>
+            <div class="timeline-container">
+              <div class="timeline-toolbar">
+                <button class="btn secondary small" id="play-preview-btn">▶️ Preview</button>
+                <button class="btn secondary small" id="auto-sync-btn">🔄 Auto-Sync to Audio</button>
+                <span class="timeline-duration">Duration: <span id="total-duration">0:00</span></span>
+              </div>
+              <div id="waveform-container" class="waveform-container"></div>
+              <div id="timeline" class="timeline">
+                <div id="timeline-playhead" class="timeline-playhead"></div>
+                <div id="timeline-scenes" class="timeline-scenes"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Captions -->
+          <div class="editor-section">
+            <h3>4. Captions</h3>
+            <div class="caption-controls">
+              <div class="form-group">
+                <label for="caption-style">Caption Style</label>
+                <select id="caption-style">
+                  <option value="bottom-center">Bottom Center</option>
+                  <option value="top-center">Top Center</option>
+                  <option value="bottom-left">Bottom Left</option>
+                  <option value="custom">Custom Position</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="caption-font-size">Font Size</label>
+                <select id="caption-font-size">
+                  <option value="24">Small (24px)</option>
+                  <option value="32" selected>Medium (32px)</option>
+                  <option value="48">Large (48px)</option>
+                  <option value="64">Extra Large (64px)</option>
+                </select>
+              </div>
+            </div>
+            <div id="captions-list" class="captions-list">
+              <p class="muted">Captions will appear here for each scene</p>
+            </div>
+          </div>
+
+          <!-- Step 5: Effects -->
+          <div class="editor-section">
+            <h3>5. Effects</h3>
+            <div class="effects-grid">
+              <div class="form-group">
+                <label for="transition-type">Transitions</label>
+                <select id="transition-type">
+                  <option value="none">None (Cut)</option>
+                  <option value="fade" selected>Fade</option>
+                  <option value="slide-left">Slide Left</option>
+                  <option value="slide-right">Slide Right</option>
+                  <option value="zoom">Zoom</option>
+                  <option value="dissolve">Dissolve</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="transition-duration">Transition Duration</label>
+                <select id="transition-duration">
+                  <option value="0.3">Fast (0.3s)</option>
+                  <option value="0.5" selected>Medium (0.5s)</option>
+                  <option value="1">Slow (1s)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="zoom-effect">Ken Burns Effect</label>
+                <select id="zoom-effect">
+                  <option value="none">None</option>
+                  <option value="zoom-in">Slow Zoom In</option>
+                  <option value="zoom-out">Slow Zoom Out</option>
+                  <option value="pan-left">Pan Left</option>
+                  <option value="pan-right">Pan Right</option>
+                  <option value="random">Random per Scene</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 6: Export -->
+          <div class="editor-section">
+            <h3>6. Export Video</h3>
+            <div class="export-options">
+              <div class="form-group">
+                <label for="export-resolution">Resolution</label>
+                <select id="export-resolution">
+                  <option value="1280x720">720p (1280x720)</option>
+                  <option value="1920x1080" selected>1080p (1920x1080)</option>
+                  <option value="2560x1440">1440p (2560x1440)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="export-fps">Frame Rate</label>
+                <select id="export-fps">
+                  <option value="24">24 FPS (Film)</option>
+                  <option value="30" selected>30 FPS (Standard)</option>
+                  <option value="60">60 FPS (Smooth)</option>
+                </select>
+              </div>
+            </div>
+            <div id="export-progress" class="export-progress" hidden>
+              <div class="progress-bar">
+                <div id="export-progress-bar" class="progress-fill"></div>
+              </div>
+              <span id="export-status">Preparing...</span>
+            </div>
+            <button class="btn primary" id="export-video-btn">Export MP4</button>
+          </div>
+        </div>
+
+        <!-- Video Preview Modal -->
+        <div id="video-preview-modal" class="modal" hidden>
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>Video Preview</h3>
+              <button class="modal-close" id="close-preview">&times;</button>
+            </div>
+            <div class="preview-canvas-container">
+              <canvas id="preview-canvas"></canvas>
+            </div>
+            <div class="preview-controls">
+              <button class="btn secondary" id="preview-play-pause">▶️ Play</button>
+              <span id="preview-time">0:00 / 0:00</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -249,5 +428,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="video-editor.js"></script>
 </body>
 </html>
