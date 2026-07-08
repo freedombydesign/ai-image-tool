@@ -44,6 +44,20 @@ const upload = multer({
   }
 });
 
+// Audio upload config for transcription (25MB limit for Whisper)
+const audioUpload = multer({
+  storage,
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/m4a', 'audio/ogg'];
+    if (allowedTypes.includes(file.mimetype) || file.originalname.match(/\.(webm|mp3|mp4|wav|m4a|ogg)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Audio file format not supported'));
+    }
+  }
+});
+
 // Helper: Convert image to PNG and ensure correct size for DALL-E
 async function prepareImageForDalle(imagePath) {
   const outputPath = imagePath.replace(/\.[^.]+$/, '-prepared.png');
@@ -256,6 +270,159 @@ app.post('/api/character-swap', upload.single('image'), async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Transcribe audio using Whisper API with timestamps
+app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Audio file is required' });
+    }
+
+    console.log('Transcribing audio:', req.file.path);
+
+    // Get scene descriptions from request body
+    const scenes = req.body.scenes ? JSON.parse(req.body.scenes) : [];
+
+    // Transcribe with Whisper - request word-level timestamps
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(req.file.path),
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['segment', 'word']
+    });
+
+    // Cleanup audio file
+    fs.unlinkSync(req.file.path);
+
+    // If no scenes provided, just return the transcription
+    if (scenes.length === 0) {
+      return res.json({
+        success: true,
+        transcription: transcription.text,
+        segments: transcription.segments,
+        words: transcription.words
+      });
+    }
+
+    // Intelligent scene matching
+    const sceneTimings = matchScenesToTranscription(scenes, transcription);
+
+    res.json({
+      success: true,
+      transcription: transcription.text,
+      segments: transcription.segments,
+      sceneTimings
+    });
+
+  } catch (error) {
+    console.error('Transcription error:', error);
+    // Cleanup on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper: Match scenes to transcription segments using text similarity
+function matchScenesToTranscription(scenes, transcription) {
+  const segments = transcription.segments || [];
+  const sceneTimings = [];
+
+  // Tokenize and normalize text for comparison
+  const normalize = (text) => {
+    return text.toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 2); // Remove tiny words
+  };
+
+  // Calculate similarity between two texts (Jaccard-like)
+  const similarity = (text1, text2) => {
+    const words1 = new Set(normalize(text1));
+    const words2 = new Set(normalize(text2));
+    const intersection = [...words1].filter(w => words2.has(w));
+    const union = new Set([...words1, ...words2]);
+    return union.size > 0 ? intersection.length / union.size : 0;
+  };
+
+  // For each scene, find the best matching segment(s)
+  let usedSegments = new Set();
+
+  scenes.forEach((scene, sceneIndex) => {
+    let bestMatch = null;
+    let bestScore = 0;
+    let bestSegmentIndex = -1;
+
+    // Find the segment that best matches this scene
+    segments.forEach((segment, segIndex) => {
+      if (usedSegments.has(segIndex)) return; // Skip already used segments
+
+      const score = similarity(scene.text || scene.description || '', segment.text);
+
+      // Prefer segments that come after previous scene's segment (maintain order)
+      const orderBonus = (sceneIndex === 0 || segIndex > (sceneTimings[sceneIndex - 1]?.segmentIndex || -1)) ? 0.1 : 0;
+
+      if (score + orderBonus > bestScore) {
+        bestScore = score + orderBonus;
+        bestMatch = segment;
+        bestSegmentIndex = segIndex;
+      }
+    });
+
+    if (bestMatch && bestScore > 0.05) {
+      // Found a matching segment
+      usedSegments.add(bestSegmentIndex);
+      sceneTimings.push({
+        sceneIndex,
+        startTime: bestMatch.start,
+        endTime: bestMatch.end,
+        duration: bestMatch.end - bestMatch.start,
+        matchedText: bestMatch.text,
+        confidence: bestScore,
+        segmentIndex: bestSegmentIndex
+      });
+    } else {
+      // No good match found - will be handled by fallback distribution
+      sceneTimings.push({
+        sceneIndex,
+        startTime: null,
+        endTime: null,
+        duration: null,
+        matchedText: null,
+        confidence: 0,
+        segmentIndex: -1
+      });
+    }
+  });
+
+  // Fill in gaps for unmatched scenes using interpolation
+  const totalDuration = transcription.duration || (segments.length > 0 ? segments[segments.length - 1].end : 0);
+  let lastEndTime = 0;
+
+  sceneTimings.forEach((timing, index) => {
+    if (timing.startTime === null) {
+      // Find next matched scene
+      let nextMatchedIndex = index + 1;
+      while (nextMatchedIndex < sceneTimings.length && sceneTimings[nextMatchedIndex].startTime === null) {
+        nextMatchedIndex++;
+      }
+
+      const nextStartTime = nextMatchedIndex < sceneTimings.length ? sceneTimings[nextMatchedIndex].startTime : totalDuration;
+      const gapDuration = nextStartTime - lastEndTime;
+      const unmatchedCount = nextMatchedIndex - index;
+      const durationPerScene = gapDuration / unmatchedCount;
+
+      timing.startTime = lastEndTime;
+      timing.endTime = lastEndTime + durationPerScene;
+      timing.duration = durationPerScene;
+    }
+
+    lastEndTime = timing.endTime;
+  });
+
+  return sceneTimings;
+}
 
 // Health check
 app.get('/api/health', (req, res) => {

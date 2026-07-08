@@ -503,14 +503,132 @@ class VideoEditor {
     this.waveformContainer.appendChild(canvas);
   }
 
-  // Auto-sync scenes to audio
-  autoSyncScenes() {
-    if (!this.audioBuffer || this.scenes.length === 0) {
+  // Auto-sync scenes to audio using intelligent speech recognition
+  async autoSyncScenes() {
+    if (!this.audioBlob || this.scenes.length === 0) {
       showToast('Need both audio and scenes to auto-sync.');
       return;
     }
 
-    // Simple approach: detect silence/pauses and distribute scenes
+    // Show syncing state
+    this.autoSyncBtn.disabled = true;
+    this.autoSyncBtn.innerHTML = '⏳ Analyzing Audio...';
+
+    try {
+      // Prepare scene descriptions for matching
+      const sceneDescriptions = this.scenes.map((scene, index) => ({
+        index,
+        text: scene.text || scene.caption || `Scene ${index + 1}`,
+        description: scene.text || scene.caption || ''
+      }));
+
+      // Create form data with audio and scene info
+      const formData = new FormData();
+      formData.append('audio', this.audioBlob, 'recording.webm');
+      formData.append('scenes', JSON.stringify(sceneDescriptions));
+
+      // Call transcription API
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Transcription failed');
+      }
+
+      console.log('Transcription result:', result);
+
+      // Apply scene timings from intelligent matching
+      if (result.sceneTimings && result.sceneTimings.length > 0) {
+        result.sceneTimings.forEach((timing, index) => {
+          if (this.scenes[index]) {
+            this.scenes[index].startTime = timing.startTime;
+            this.scenes[index].duration = timing.duration;
+
+            // Log matching confidence for debugging
+            if (timing.confidence > 0.1) {
+              console.log(`Scene ${index + 1} matched to: "${timing.matchedText}" (confidence: ${(timing.confidence * 100).toFixed(1)}%)`);
+            }
+          }
+        });
+
+        this.renderTimeline();
+        this.renderCaptions();
+        this.updateTotalDuration();
+        showToast(`Scenes synced using speech recognition! Transcription: "${result.transcription.substring(0, 50)}..."`, false);
+      } else {
+        // Fallback to basic transcription-based timing using segments
+        this.applyBasicSegmentTiming(result.segments);
+      }
+
+    } catch (error) {
+      console.error('Smart sync error:', error);
+
+      // Fallback to silence-based sync
+      showToast('Speech recognition unavailable, using pause detection...', false);
+      this.fallbackSilenceSync();
+    } finally {
+      this.autoSyncBtn.disabled = false;
+      this.autoSyncBtn.innerHTML = '🎯 Auto-Sync';
+    }
+  }
+
+  // Apply basic timing from transcription segments (fallback)
+  applyBasicSegmentTiming(segments) {
+    if (!segments || segments.length === 0) {
+      this.fallbackSilenceSync();
+      return;
+    }
+
+    const totalDuration = this.audioDuration || segments[segments.length - 1].end;
+
+    // Distribute scenes across segments
+    if (segments.length >= this.scenes.length) {
+      // More segments than scenes - group them
+      const segmentsPerScene = Math.ceil(segments.length / this.scenes.length);
+
+      this.scenes.forEach((scene, index) => {
+        const startSegIdx = index * segmentsPerScene;
+        const endSegIdx = Math.min(startSegIdx + segmentsPerScene - 1, segments.length - 1);
+
+        scene.startTime = segments[startSegIdx].start;
+        scene.duration = segments[endSegIdx].end - segments[startSegIdx].start;
+      });
+    } else {
+      // More scenes than segments - distribute evenly within segments
+      const durationPerScene = totalDuration / this.scenes.length;
+      this.scenes.forEach((scene, index) => {
+        scene.startTime = index * durationPerScene;
+        scene.duration = durationPerScene;
+      });
+    }
+
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateTotalDuration();
+    showToast('Scenes synced to speech segments!', false);
+  }
+
+  // Fallback silence-based sync
+  fallbackSilenceSync() {
+    if (!this.audioBuffer) {
+      // Ultimate fallback - even distribution
+      const totalDuration = this.audioDuration || (this.scenes.length * 3);
+      const durationPerScene = totalDuration / this.scenes.length;
+      this.scenes.forEach((scene, index) => {
+        scene.startTime = index * durationPerScene;
+        scene.duration = durationPerScene;
+      });
+      this.renderTimeline();
+      this.updateTotalDuration();
+      showToast('Scenes distributed evenly.', false);
+      return;
+    }
+
+    // Detect silence/pauses and distribute scenes
     const silenceThreshold = 0.02;
     const minSilenceDuration = 0.3;
     const data = this.audioBuffer.getChannelData(0);
@@ -568,7 +686,7 @@ class VideoEditor {
 
     this.renderTimeline();
     this.updateTotalDuration();
-    showToast('Scenes synced to audio!', false);
+    showToast('Scenes synced to audio pauses!', false);
   }
 
   renderTimeline() {
