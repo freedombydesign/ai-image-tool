@@ -295,22 +295,38 @@ class VideoEditor {
     try {
       this.recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Try different audio formats for better compatibility
+      // Try different audio formats - Safari prefers mp4/aac, Chrome prefers webm
       let options = {};
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        options = { mimeType: 'audio/webm;codecs=opus' };
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        options = { mimeType: 'audio/webm' };
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        options = { mimeType: 'audio/mp4' };
+      const formatPriority = [
+        'audio/mp4',
+        'audio/aac',
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus'
+      ];
+
+      for (const format of formatPriority) {
+        if (MediaRecorder.isTypeSupported(format)) {
+          options = { mimeType: format };
+          console.log('Using audio format:', format);
+          break;
+        }
+      }
+
+      // If no specific format supported, let browser choose default
+      if (!options.mimeType) {
+        console.log('Using browser default audio format');
       }
 
       this.mediaRecorder = new MediaRecorder(this.recordingStream, options);
       this.recordingChunks = [];
+      this.recordingMimeType = this.mediaRecorder.mimeType;
+      console.log('MediaRecorder initialized with mimeType:', this.recordingMimeType);
 
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           this.recordingChunks.push(e.data);
+          console.log('Audio chunk received:', e.data.size, 'bytes');
         }
       };
 
@@ -321,6 +337,8 @@ class VideoEditor {
       };
 
       this.mediaRecorder.onstop = () => {
+        console.log('Recording stopped, chunks:', this.recordingChunks.length);
+
         if (this.recordingChunks.length === 0) {
           showToast('No audio was captured. Please try again.');
           this.recordingStream.getTracks().forEach(track => track.stop());
@@ -328,8 +346,12 @@ class VideoEditor {
           return;
         }
 
-        const mimeType = this.mediaRecorder.mimeType || 'audio/webm';
+        // Use the actual mimeType from the recorder
+        const mimeType = this.recordingMimeType || 'audio/mp4';
+        console.log('Creating blob with mimeType:', mimeType);
+
         this.audioBlob = new Blob(this.recordingChunks, { type: mimeType });
+        console.log('Audio blob created:', this.audioBlob.size, 'bytes, type:', this.audioBlob.type);
 
         if (this.audioBlob.size === 0) {
           showToast('Recording was empty. Please try again.');
@@ -344,8 +366,8 @@ class VideoEditor {
         this.resetRecordingUI();
       };
 
-      // Request data every second to ensure we capture audio
-      this.mediaRecorder.start(1000);
+      // Request data when stopped (timeslice can cause issues on some browsers)
+      this.mediaRecorder.start();
       this.isRecording = true;
       this.isPaused = false;
       this.recordingStartTime = Date.now();
@@ -410,6 +432,12 @@ class VideoEditor {
       if (this.isPaused) {
         this.mediaRecorder.resume();
       }
+
+      // Request any remaining data before stopping
+      if (this.mediaRecorder.state === 'recording') {
+        this.mediaRecorder.requestData();
+      }
+
       this.mediaRecorder.stop();
       this.isRecording = false;
       this.isPaused = false;
@@ -439,29 +467,60 @@ class VideoEditor {
 
   async loadAudioBlob(blob) {
     try {
+      // Revoke any previous URL to prevent memory leaks
+      if (this.currentAudioUrl) {
+        URL.revokeObjectURL(this.currentAudioUrl);
+      }
+
       const url = URL.createObjectURL(blob);
+      this.currentAudioUrl = url;
+
+      // Set up audio player with error handling
+      this.audioPlayer.onerror = (e) => {
+        console.error('Audio player error:', e);
+        // Try to get more info about the error
+        const error = this.audioPlayer.error;
+        if (error) {
+          console.error('Audio error code:', error.code, 'message:', error.message);
+        }
+      };
+
+      // Wait for the audio to be loadable
+      this.audioPlayer.onloadedmetadata = () => {
+        console.log('Audio metadata loaded, duration:', this.audioPlayer.duration);
+        this.audioDuration = this.audioPlayer.duration;
+        this.updateTotalDuration();
+      };
+
+      this.audioPlayer.oncanplay = () => {
+        console.log('Audio can play');
+      };
+
       this.audioPlayer.src = url;
+      this.audioPlayer.load(); // Force reload
       this.audioPreview.hidden = false;
 
-      // Decode audio for waveform and duration
-      const arrayBuffer = await blob.arrayBuffer();
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      // Try to decode audio for waveform (may fail for some formats)
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-      this.audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      this.audioDuration = this.audioBuffer.duration;
+        this.audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        this.audioDuration = this.audioBuffer.duration;
 
-      this.renderWaveform();
-      this.updateTotalDuration();
+        this.renderWaveform();
+        this.updateTotalDuration();
 
-      console.log('Audio loaded:', this.audioDuration, 'seconds');
-    } catch (error) {
-      console.error('Audio decode error:', error);
-      // Even if waveform fails, audio player should still work
-      if (this.audioPlayer.src) {
-        showToast('Audio loaded (waveform unavailable)', false);
-      } else {
-        showToast('Could not load audio file. Try a different format (MP3, WAV, M4A).');
+        console.log('Audio decoded:', this.audioDuration, 'seconds');
+      } catch (decodeError) {
+        console.warn('Waveform decode failed, using player duration:', decodeError);
+        // Still show the player, just without waveform
+        // Duration will come from onloadedmetadata
       }
+
+    } catch (error) {
+      console.error('Audio load error:', error);
+      showToast('Could not load audio. Try recording again or upload an MP3/WAV file.');
     }
   }
 
