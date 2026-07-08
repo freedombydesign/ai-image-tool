@@ -64,6 +64,8 @@ class VideoEditor {
     this.captionStyle = document.getElementById('caption-style');
     this.captionFontSize = document.getElementById('caption-font-size');
     this.captionsList = document.getElementById('captions-list');
+    this.generateCaptionsBtn = document.getElementById('generate-captions-btn');
+    this.clearCaptionsBtn = document.getElementById('clear-captions-btn');
 
     // Effects
     this.transitionType = document.getElementById('transition-type');
@@ -110,6 +112,14 @@ class VideoEditor {
     // Timeline
     this.playPreviewBtn.addEventListener('click', () => this.openPreview());
     this.autoSyncBtn.addEventListener('click', () => this.autoSyncScenes());
+
+    // Captions
+    if (this.generateCaptionsBtn) {
+      this.generateCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio());
+    }
+    if (this.clearCaptionsBtn) {
+      this.clearCaptionsBtn.addEventListener('click', () => this.clearCaptions());
+    }
 
     // Export
     this.exportVideoBtn.addEventListener('click', () => this.exportVideo());
@@ -768,6 +778,128 @@ class VideoEditor {
     if (this.scenes[index]) {
       this.scenes[index].caption = text;
     }
+  }
+
+  // Generate captions from audio transcription
+  async generateCaptionsFromAudio() {
+    if (!this.audioBlob) {
+      showToast('Record or upload audio first to generate captions.');
+      return;
+    }
+
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first before generating captions.');
+      return;
+    }
+
+    // Show generating state
+    this.generateCaptionsBtn.disabled = true;
+    this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
+
+    try {
+      // Create form data with just the audio (no scenes - we want full transcription)
+      const formData = new FormData();
+      formData.append('audio', this.audioBlob, 'recording.webm');
+
+      // Call transcription API
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Transcription failed');
+      }
+
+      console.log('Transcription for captions:', result);
+
+      // Distribute transcription segments across scenes
+      if (result.segments && result.segments.length > 0) {
+        this.applyCaptionsFromSegments(result.segments);
+      } else if (result.transcription) {
+        // Fallback: split transcription evenly across scenes
+        this.applyCaptionsFromText(result.transcription);
+      } else {
+        throw new Error('No transcription content received');
+      }
+
+      this.renderCaptions();
+      showToast('Captions generated from audio!', false);
+
+    } catch (error) {
+      console.error('Caption generation error:', error);
+      showToast('Failed to generate captions: ' + error.message);
+    } finally {
+      this.generateCaptionsBtn.disabled = false;
+      this.generateCaptionsBtn.innerHTML = '🎤 Generate from Audio';
+    }
+  }
+
+  // Apply captions from transcription segments
+  applyCaptionsFromSegments(segments) {
+    const totalDuration = this.audioDuration || segments[segments.length - 1].end;
+
+    this.scenes.forEach((scene, index) => {
+      // Find segments that overlap with this scene's time range
+      const sceneStart = scene.startTime;
+      const sceneEnd = scene.startTime + scene.duration;
+
+      const overlappingSegments = segments.filter(seg => {
+        return seg.end > sceneStart && seg.start < sceneEnd;
+      });
+
+      if (overlappingSegments.length > 0) {
+        // Combine text from overlapping segments
+        scene.caption = overlappingSegments
+          .map(seg => seg.text.trim())
+          .join(' ')
+          .trim();
+      } else {
+        // No overlapping segment - find the closest one
+        const closestSegment = segments.reduce((closest, seg) => {
+          const segMidpoint = (seg.start + seg.end) / 2;
+          const sceneMidpoint = (sceneStart + sceneEnd) / 2;
+          const distance = Math.abs(segMidpoint - sceneMidpoint);
+
+          if (!closest || distance < closest.distance) {
+            return { segment: seg, distance };
+          }
+          return closest;
+        }, null);
+
+        if (closestSegment) {
+          scene.caption = closestSegment.segment.text.trim();
+        }
+      }
+    });
+  }
+
+  // Fallback: apply captions from full text
+  applyCaptionsFromText(text) {
+    // Split text into sentences
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+
+    // Distribute sentences across scenes
+    const sentencesPerScene = Math.max(1, Math.ceil(sentences.length / this.scenes.length));
+
+    this.scenes.forEach((scene, index) => {
+      const start = index * sentencesPerScene;
+      const end = Math.min(start + sentencesPerScene, sentences.length);
+      const sceneSentences = sentences.slice(start, end);
+
+      scene.caption = sceneSentences.join(' ').trim();
+    });
+  }
+
+  // Clear all captions
+  clearCaptions() {
+    this.scenes.forEach(scene => {
+      scene.caption = '';
+    });
+    this.renderCaptions();
+    showToast('Captions cleared.', false);
   }
 
   getTotalDuration() {
