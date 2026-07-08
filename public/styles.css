@@ -424,6 +424,72 @@ input[type="text"]::placeholder {
   margin-top: 0;
 }
 
+/* YouTube Inspiration Section */
+.inspiration-section {
+  margin-bottom: 1.5rem;
+}
+
+.inspiration-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.youtube-input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.youtube-input-row input {
+  flex: 1;
+}
+
+.btn.small {
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+}
+
+.btn.text {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.btn.text:hover {
+  color: var(--error);
+}
+
+.youtube-preview {
+  margin-top: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.youtube-preview img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+}
+
+.youtube-preview .preview-info {
+  padding: 0.75rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.youtube-preview .preview-info span {
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+
 /* Thumbnail Gallery */
 .thumbnail-gallery {
   margin-top: 2rem;

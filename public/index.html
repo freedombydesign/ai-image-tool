@@ -376,6 +376,24 @@
             </div>
           </div>
 
+          <!-- YouTube Inspiration -->
+          <div class="form-group inspiration-section">
+            <label>Inspiration (Optional)</label>
+            <div class="inspiration-inputs">
+              <div class="youtube-input-row">
+                <input type="text" id="thumbnail-youtube-url" placeholder="Paste YouTube URL for thumbnail inspiration...">
+                <button class="btn secondary small" id="fetch-youtube-thumb">Fetch</button>
+              </div>
+            </div>
+            <div id="youtube-thumb-preview" class="youtube-preview" hidden>
+              <img id="youtube-thumb-image" alt="YouTube Thumbnail">
+              <div class="preview-info">
+                <span id="youtube-thumb-title">Video Title</span>
+                <button class="btn text" id="clear-youtube-thumb">Clear</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Thumbnail Description -->
           <div class="form-group">
             <label for="thumbnail-prompt">Describe your thumbnail</label>

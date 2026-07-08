@@ -1168,3 +1168,93 @@ if (downloadThumbnailBtn) {
 if (regenerateThumbnailBtn) {
   regenerateThumbnailBtn.addEventListener('click', regenerateThumbnail);
 }
+
+// ============================================
+// YOUTUBE INSPIRATION
+// ============================================
+
+// Extract YouTube video ID from URL
+function extractYouTubeVideoId(url) {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+// Get YouTube thumbnail URL (multiple quality options)
+function getYouTubeThumbnailUrl(videoId, quality = 'maxresdefault') {
+  // Try maxresdefault first, then fall back to hqdefault
+  return `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
+}
+
+// Fetch YouTube Thumbnail for Thumbnail Maker
+const fetchYoutubeThumbBtn = document.getElementById('fetch-youtube-thumb');
+const thumbnailYoutubeUrl = document.getElementById('thumbnail-youtube-url');
+const youtubeThumbPreview = document.getElementById('youtube-thumb-preview');
+const youtubeThumbImage = document.getElementById('youtube-thumb-image');
+const youtubeThumbTitle = document.getElementById('youtube-thumb-title');
+const clearYoutubeThumbBtn = document.getElementById('clear-youtube-thumb');
+
+if (fetchYoutubeThumbBtn && thumbnailYoutubeUrl) {
+  fetchYoutubeThumbBtn.addEventListener('click', () => {
+    const url = thumbnailYoutubeUrl.value.trim();
+
+    if (!url) {
+      showToast('Please enter a YouTube URL');
+      return;
+    }
+
+    const videoId = extractYouTubeVideoId(url);
+
+    if (!videoId) {
+      showToast('Invalid YouTube URL. Please paste a valid YouTube video link.');
+      return;
+    }
+
+    // Get high-quality thumbnail
+    const thumbUrl = getYouTubeThumbnailUrl(videoId, 'maxresdefault');
+
+    // Test if maxresdefault exists, fall back to hqdefault if not
+    const img = new Image();
+    img.onload = function() {
+      if (youtubeThumbImage) youtubeThumbImage.src = thumbUrl;
+      if (youtubeThumbTitle) youtubeThumbTitle.textContent = `Video ID: ${videoId}`;
+      if (youtubeThumbPreview) youtubeThumbPreview.hidden = false;
+      showToast('Thumbnail loaded! Use it as inspiration.', false);
+    };
+    img.onerror = function() {
+      // Fall back to hqdefault
+      const fallbackUrl = getYouTubeThumbnailUrl(videoId, 'hqdefault');
+      if (youtubeThumbImage) youtubeThumbImage.src = fallbackUrl;
+      if (youtubeThumbTitle) youtubeThumbTitle.textContent = `Video ID: ${videoId}`;
+      if (youtubeThumbPreview) youtubeThumbPreview.hidden = false;
+      showToast('Thumbnail loaded! Use it as inspiration.', false);
+    };
+    img.src = thumbUrl;
+  });
+}
+
+if (clearYoutubeThumbBtn) {
+  clearYoutubeThumbBtn.addEventListener('click', () => {
+    if (thumbnailYoutubeUrl) thumbnailYoutubeUrl.value = '';
+    if (youtubeThumbImage) youtubeThumbImage.src = '';
+    if (youtubeThumbPreview) youtubeThumbPreview.hidden = true;
+  });
+}
+
+// Allow pressing Enter in YouTube URL field to fetch
+if (thumbnailYoutubeUrl) {
+  thumbnailYoutubeUrl.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      fetchYoutubeThumbBtn?.click();
+    }
+  });
+}
