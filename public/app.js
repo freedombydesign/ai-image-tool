@@ -368,6 +368,228 @@ function getBrandInstructions() {
   return `. BRAND STYLING RULES - ${parts.join('. ')}`;
 }
 
+// ============================================
+// TEXT OVERLAY LAYER
+// Programmatic text overlay (not AI-generated)
+// ============================================
+
+let textOverlayState = {
+  sceneIndex: null,
+  imageUrl: null,
+  originalImage: null
+};
+
+function openTextOverlay(sceneIndex) {
+  const scene = generatedScenes[sceneIndex];
+  if (!scene || !scene.imageUrl) {
+    showToast('Cannot add text - scene has no image');
+    return;
+  }
+
+  textOverlayState.sceneIndex = sceneIndex;
+  textOverlayState.imageUrl = scene.imageUrl;
+
+  const modal = document.getElementById('text-overlay-modal');
+  const canvas = document.getElementById('text-overlay-canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Load the image
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function() {
+    // Set canvas size to match image aspect ratio
+    const maxWidth = 600;
+    const maxHeight = 400;
+    let width = img.width;
+    let height = img.height;
+
+    if (width > maxWidth) {
+      height = (maxWidth / width) * height;
+      width = maxWidth;
+    }
+    if (height > maxHeight) {
+      width = (maxHeight / height) * width;
+      height = maxHeight;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    textOverlayState.originalImage = img;
+
+    // Draw image
+    ctx.drawImage(img, 0, 0, width, height);
+
+    // Show modal
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+
+    // Initial text render
+    updateTextOverlay();
+  };
+
+  img.onerror = function() {
+    showToast('Failed to load image for text overlay');
+  };
+
+  img.src = scene.imageUrl;
+}
+
+function closeTextOverlay() {
+  const modal = document.getElementById('text-overlay-modal');
+  modal.hidden = true;
+  document.body.style.overflow = '';
+  textOverlayState = { sceneIndex: null, imageUrl: null, originalImage: null };
+
+  // Reset form
+  document.getElementById('overlay-text').value = '';
+  document.getElementById('overlay-font-size').value = 48;
+  document.getElementById('font-size-value').textContent = '48px';
+}
+
+function updateTextOverlay() {
+  const canvas = document.getElementById('text-overlay-canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!textOverlayState.originalImage) return;
+
+  // Clear and redraw image
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(textOverlayState.originalImage, 0, 0, canvas.width, canvas.height);
+
+  // Get text settings
+  const text = document.getElementById('overlay-text').value;
+  if (!text.trim()) return;
+
+  const fontSize = parseInt(document.getElementById('overlay-font-size').value) || 48;
+  const fontFamily = document.getElementById('overlay-font').value || 'Arial Black';
+  const position = document.getElementById('overlay-position').value || 'center';
+  const textColor = document.getElementById('overlay-text-color').value || '#ffffff';
+  const strokeColor = document.getElementById('overlay-stroke-color').value || '#000000';
+  const strokeWidth = parseInt(document.getElementById('overlay-stroke-width').value) || 3;
+
+  // Update font size display
+  document.getElementById('font-size-value').textContent = `${fontSize}px`;
+  document.getElementById('stroke-width-value').textContent = `${strokeWidth}px`;
+
+  // Set font
+  ctx.font = `bold ${fontSize}px "${fontFamily}"`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Calculate position
+  const lines = text.split('\n');
+  const lineHeight = fontSize * 1.2;
+  const totalHeight = lines.length * lineHeight;
+
+  let startY;
+  switch (position) {
+    case 'top':
+      startY = fontSize + 20;
+      break;
+    case 'bottom':
+      startY = canvas.height - totalHeight - 20 + (lineHeight / 2);
+      break;
+    case 'center':
+    default:
+      startY = (canvas.height - totalHeight) / 2 + (lineHeight / 2);
+  }
+
+  // Draw each line
+  lines.forEach((line, i) => {
+    const y = startY + (i * lineHeight);
+    const x = canvas.width / 2;
+
+    // Draw stroke
+    if (strokeWidth > 0) {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth * 2;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(line, x, y);
+    }
+
+    // Draw fill
+    ctx.fillStyle = textColor;
+    ctx.fillText(line, x, y);
+  });
+}
+
+function downloadWithTextOverlay() {
+  const canvas = document.getElementById('text-overlay-canvas');
+  const text = document.getElementById('overlay-text').value;
+
+  if (!textOverlayState.originalImage) {
+    showToast('No image loaded');
+    return;
+  }
+
+  // Create a full-resolution canvas for download
+  const downloadCanvas = document.createElement('canvas');
+  const downloadCtx = downloadCanvas.getContext('2d');
+  const img = textOverlayState.originalImage;
+
+  downloadCanvas.width = img.naturalWidth || img.width;
+  downloadCanvas.height = img.naturalHeight || img.height;
+
+  // Draw original image at full resolution
+  downloadCtx.drawImage(img, 0, 0, downloadCanvas.width, downloadCanvas.height);
+
+  // If there's text, render it at full resolution
+  if (text.trim()) {
+    const scaleFactor = downloadCanvas.width / canvas.width;
+
+    const fontSize = (parseInt(document.getElementById('overlay-font-size').value) || 48) * scaleFactor;
+    const fontFamily = document.getElementById('overlay-font').value || 'Arial Black';
+    const position = document.getElementById('overlay-position').value || 'center';
+    const textColor = document.getElementById('overlay-text-color').value || '#ffffff';
+    const strokeColor = document.getElementById('overlay-stroke-color').value || '#000000';
+    const strokeWidth = (parseInt(document.getElementById('overlay-stroke-width').value) || 3) * scaleFactor;
+
+    downloadCtx.font = `bold ${fontSize}px "${fontFamily}"`;
+    downloadCtx.textAlign = 'center';
+    downloadCtx.textBaseline = 'middle';
+
+    const lines = text.split('\n');
+    const lineHeight = fontSize * 1.2;
+    const totalHeight = lines.length * lineHeight;
+
+    let startY;
+    switch (position) {
+      case 'top':
+        startY = fontSize + (20 * scaleFactor);
+        break;
+      case 'bottom':
+        startY = downloadCanvas.height - totalHeight - (20 * scaleFactor) + (lineHeight / 2);
+        break;
+      case 'center':
+      default:
+        startY = (downloadCanvas.height - totalHeight) / 2 + (lineHeight / 2);
+    }
+
+    lines.forEach((line, i) => {
+      const y = startY + (i * lineHeight);
+      const x = downloadCanvas.width / 2;
+
+      if (strokeWidth > 0) {
+        downloadCtx.strokeStyle = strokeColor;
+        downloadCtx.lineWidth = strokeWidth * 2;
+        downloadCtx.lineJoin = 'round';
+        downloadCtx.strokeText(line, x, y);
+      }
+
+      downloadCtx.fillStyle = textColor;
+      downloadCtx.fillText(line, x, y);
+    });
+  }
+
+  // Download
+  const link = document.createElement('a');
+  link.download = `scene-${textOverlayState.sceneIndex + 1}-with-text-${Date.now()}.png`;
+  link.href = downloadCanvas.toDataURL('image/png');
+  link.click();
+
+  showToast('Image with text overlay downloaded!', false);
+}
+
 // Video Settings Elements
 const videoLengthSlider = document.getElementById('video-length');
 const videoLengthDisplay = document.getElementById('video-length-display');
@@ -937,6 +1159,14 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
       </button>
       <button class="btn secondary" onclick="regenerateScene(${index})">Regenerate</button>
       <button class="btn secondary" onclick="downloadScene(${index})">Download</button>
+      <button class="btn secondary text-overlay-btn" onclick="openTextOverlay(${index})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <path d="M4 7V4h16v3"/>
+          <path d="M9 20h6"/>
+          <path d="M12 4v16"/>
+        </svg>
+        Add Text
+      </button>
     </div>
   `;
 
@@ -1262,6 +1492,29 @@ window.addCharacter = addCharacter;
 window.removeCharacter = removeCharacter;
 window.toggleBrandPanel = toggleBrandPanel;
 window.toggleBrandBlock = toggleBrandBlock;
+window.openTextOverlay = openTextOverlay;
+window.closeTextOverlay = closeTextOverlay;
+window.updateTextOverlay = updateTextOverlay;
+window.downloadWithTextOverlay = downloadWithTextOverlay;
+
+// Text Overlay Control Event Listeners
+document.addEventListener('DOMContentLoaded', function() {
+  const overlayText = document.getElementById('overlay-text');
+  const overlayFontSize = document.getElementById('overlay-font-size');
+  const overlayFont = document.getElementById('overlay-font');
+  const overlayPosition = document.getElementById('overlay-position');
+  const overlayTextColor = document.getElementById('overlay-text-color');
+  const overlayStrokeColor = document.getElementById('overlay-stroke-color');
+  const overlayStrokeWidth = document.getElementById('overlay-stroke-width');
+
+  if (overlayText) overlayText.addEventListener('input', updateTextOverlay);
+  if (overlayFontSize) overlayFontSize.addEventListener('input', updateTextOverlay);
+  if (overlayFont) overlayFont.addEventListener('change', updateTextOverlay);
+  if (overlayPosition) overlayPosition.addEventListener('change', updateTextOverlay);
+  if (overlayTextColor) overlayTextColor.addEventListener('input', updateTextOverlay);
+  if (overlayStrokeColor) overlayStrokeColor.addEventListener('input', updateTextOverlay);
+  if (overlayStrokeWidth) overlayStrokeWidth.addEventListener('input', updateTextOverlay);
+});
 
 // Clear Anchor Button Handler
 const clearAnchorBtn = document.getElementById('clear-anchor-btn');

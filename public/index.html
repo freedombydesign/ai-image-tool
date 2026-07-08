@@ -1130,6 +1130,90 @@
         </div>
       </div>
 
+      <!-- Text Overlay Modal -->
+      <div id="text-overlay-modal" class="text-overlay-modal" hidden>
+        <div class="text-overlay-content">
+          <div class="text-overlay-header">
+            <h3>Add Text Overlay</h3>
+            <button class="modal-close-btn" onclick="closeTextOverlay()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="text-overlay-body">
+            <div class="text-overlay-preview">
+              <canvas id="text-overlay-canvas"></canvas>
+            </div>
+
+            <div class="text-overlay-controls">
+              <div class="control-group">
+                <label>Text</label>
+                <textarea id="overlay-text" class="textarea" rows="2" placeholder="Enter your text here..." oninput="updateTextOverlay()"></textarea>
+              </div>
+
+              <div class="control-row">
+                <div class="control-group">
+                  <label>Font Size: <span id="font-size-value">48px</span></label>
+                  <input type="range" id="overlay-font-size" min="12" max="120" value="48" oninput="updateTextOverlay()">
+                </div>
+              </div>
+
+              <div class="control-row">
+                <div class="control-group">
+                  <label>Font</label>
+                  <select id="overlay-font" class="select" onchange="updateTextOverlay()">
+                    <option value="Arial Black">Arial Black</option>
+                    <option value="Impact">Impact</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Trebuchet MS">Trebuchet MS</option>
+                    <option value="Comic Sans MS">Comic Sans MS</option>
+                  </select>
+                </div>
+                <div class="control-group">
+                  <label>Position</label>
+                  <select id="overlay-position" class="select" onchange="updateTextOverlay()">
+                    <option value="top">Top</option>
+                    <option value="center">Center</option>
+                    <option value="bottom" selected>Bottom</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="control-row">
+                <div class="control-group">
+                  <label>Text Color</label>
+                  <input type="color" id="overlay-text-color" value="#ffffff" oninput="updateTextOverlay()">
+                </div>
+                <div class="control-group">
+                  <label>Stroke Color</label>
+                  <input type="color" id="overlay-stroke-color" value="#000000" oninput="updateTextOverlay()">
+                </div>
+                <div class="control-group">
+                  <label>Stroke: <span id="stroke-width-value">3px</span></label>
+                  <input type="range" id="overlay-stroke-width" min="0" max="10" value="3" oninput="updateTextOverlay()">
+                </div>
+              </div>
+
+              <div class="text-overlay-actions">
+                <button class="btn secondary" onclick="closeTextOverlay()">Cancel</button>
+                <button class="btn primary" onclick="downloadWithTextOverlay()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Download with Text
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Loading Overlay -->
       <div id="loading" class="loading-overlay" hidden style="display: none;">
         <div class="loading-content">
