@@ -293,10 +293,14 @@ select {
   right: 0;
   bottom: 0;
   background: rgba(15, 23, 42, 0.9);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+}
+
+.loading-overlay:not([hidden]) {
+  display: flex;
   backdrop-filter: blur(4px);
 }
 

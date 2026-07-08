@@ -23,11 +23,13 @@ const downloadBtn = document.getElementById('download-btn');
 
 // Utility Functions
 function showLoading() {
-  loading.hidden = false;
+  loading.removeAttribute('hidden');
+  loading.style.display = 'flex';
 }
 
 function hideLoading() {
-  loading.hidden = true;
+  loading.setAttribute('hidden', '');
+  loading.style.display = 'none';
 }
 
 function showResult(imageUrl, prompt = null) {
