@@ -16,6 +16,12 @@ class VideoEditor {
     this.recordingElapsed = 0;
     this.recordingInterval = null;
 
+    // Background Music
+    this.bgMusicBlob = null;
+    this.bgMusicVolume = 0.3; // 30% default
+    this.bgMusicLoop = true;
+    this.bgMusicDuck = true; // Duck during voiceover
+
     // FFmpeg
     this.ffmpeg = null;
     this.ffmpegLoaded = false;
@@ -50,6 +56,17 @@ class VideoEditor {
     this.audioPreview = document.getElementById('audio-preview');
     this.audioPlayer = document.getElementById('audio-player');
     this.removeAudioBtn = document.getElementById('remove-audio-btn');
+
+    // Background Music
+    this.bgMusicFileInput = document.getElementById('bg-music-file');
+    this.uploadBgMusicBtn = document.getElementById('upload-bg-music-btn');
+    this.bgMusicPreview = document.getElementById('bg-music-preview');
+    this.bgMusicPlayer = document.getElementById('bg-music-player');
+    this.bgMusicVolumeSlider = document.getElementById('bg-music-volume');
+    this.bgMusicVolumeDisplay = document.getElementById('bg-music-volume-display');
+    this.bgMusicLoopCheckbox = document.getElementById('bg-music-loop');
+    this.bgMusicDuckCheckbox = document.getElementById('bg-music-duck');
+    this.removeBgMusicBtn = document.getElementById('remove-bg-music-btn');
 
     // Timeline
     this.playPreviewBtn = document.getElementById('play-preview-btn');
@@ -108,6 +125,31 @@ class VideoEditor {
     this.uploadAudioBtn.addEventListener('click', () => this.audioFileInput.click());
     this.audioFileInput.addEventListener('change', (e) => this.handleAudioUpload(e));
     this.removeAudioBtn.addEventListener('click', () => this.removeAudio());
+
+    // Background Music
+    if (this.uploadBgMusicBtn) {
+      this.uploadBgMusicBtn.addEventListener('click', () => this.bgMusicFileInput.click());
+    }
+    if (this.bgMusicFileInput) {
+      this.bgMusicFileInput.addEventListener('change', (e) => this.handleBgMusicUpload(e));
+    }
+    if (this.removeBgMusicBtn) {
+      this.removeBgMusicBtn.addEventListener('click', () => this.removeBgMusic());
+    }
+    if (this.bgMusicVolumeSlider) {
+      this.bgMusicVolumeSlider.addEventListener('input', (e) => this.updateBgMusicVolume(e.target.value));
+    }
+    if (this.bgMusicLoopCheckbox) {
+      this.bgMusicLoopCheckbox.addEventListener('change', (e) => {
+        this.bgMusicLoop = e.target.checked;
+        if (this.bgMusicPlayer) this.bgMusicPlayer.loop = this.bgMusicLoop;
+      });
+    }
+    if (this.bgMusicDuckCheckbox) {
+      this.bgMusicDuckCheckbox.addEventListener('change', (e) => {
+        this.bgMusicDuck = e.target.checked;
+      });
+    }
 
     // Timeline
     this.playPreviewBtn.addEventListener('click', () => this.openPreview());
@@ -525,13 +567,94 @@ class VideoEditor {
   }
 
   removeAudio() {
+    // Revoke any existing audio URL to prevent memory leaks
+    if (this.currentAudioUrl) {
+      URL.revokeObjectURL(this.currentAudioUrl);
+      this.currentAudioUrl = null;
+    }
+
     this.audioBlob = null;
     this.audioBuffer = null;
     this.audioDuration = 0;
-    this.audioPlayer.src = '';
+
+    // Clear audio player without triggering error
+    this.audioPlayer.pause();
+    this.audioPlayer.removeAttribute('src');
+    this.audioPlayer.load();
+
     this.audioPreview.hidden = true;
     this.waveformContainer.innerHTML = '';
     this.updateTotalDuration();
+    showToast('Audio removed.', false);
+  }
+
+  // Background Music Methods
+  handleBgMusicUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    this.bgMusicBlob = file;
+    this.loadBgMusicBlob(file);
+  }
+
+  loadBgMusicBlob(blob) {
+    try {
+      // Revoke any previous URL
+      if (this.currentBgMusicUrl) {
+        URL.revokeObjectURL(this.currentBgMusicUrl);
+      }
+
+      const url = URL.createObjectURL(blob);
+      this.currentBgMusicUrl = url;
+
+      this.bgMusicPlayer.onerror = (e) => {
+        console.error('Background music player error:', e);
+        showToast('Could not load background music. Try a different audio file.');
+      };
+
+      this.bgMusicPlayer.onloadedmetadata = () => {
+        console.log('Background music loaded, duration:', this.bgMusicPlayer.duration);
+      };
+
+      this.bgMusicPlayer.src = url;
+      this.bgMusicPlayer.volume = this.bgMusicVolume;
+      this.bgMusicPlayer.loop = this.bgMusicLoop;
+      this.bgMusicPlayer.load();
+
+      this.bgMusicPreview.hidden = false;
+      showToast('Background music added!', false);
+    } catch (error) {
+      console.error('Background music load error:', error);
+      showToast('Could not load background music.');
+    }
+  }
+
+  updateBgMusicVolume(value) {
+    this.bgMusicVolume = parseInt(value) / 100;
+    if (this.bgMusicPlayer) {
+      this.bgMusicPlayer.volume = this.bgMusicVolume;
+    }
+    if (this.bgMusicVolumeDisplay) {
+      this.bgMusicVolumeDisplay.textContent = `${value}%`;
+    }
+  }
+
+  removeBgMusic() {
+    // Revoke URL to prevent memory leaks
+    if (this.currentBgMusicUrl) {
+      URL.revokeObjectURL(this.currentBgMusicUrl);
+      this.currentBgMusicUrl = null;
+    }
+
+    this.bgMusicBlob = null;
+
+    // Clear player without triggering error
+    this.bgMusicPlayer.pause();
+    this.bgMusicPlayer.removeAttribute('src');
+    this.bgMusicPlayer.load();
+
+    this.bgMusicPreview.hidden = true;
+    showToast('Background music removed.', false);
   }
 
   renderWaveform() {
@@ -1016,9 +1139,17 @@ class VideoEditor {
     this.previewPlayPauseBtn.textContent = '⏸️ Pause';
     this.lastFrameTime = performance.now();
 
-    if (this.audioBuffer) {
+    // Play voiceover
+    if (this.audioBuffer || this.audioBlob) {
       this.audioPlayer.currentTime = this.playbackTime;
-      this.audioPlayer.play();
+      this.audioPlayer.play().catch(e => console.log('Voiceover play error:', e));
+    }
+
+    // Play background music
+    if (this.bgMusicBlob && this.bgMusicPlayer) {
+      this.bgMusicPlayer.currentTime = this.playbackTime % (this.bgMusicPlayer.duration || 1);
+      this.bgMusicPlayer.volume = this.bgMusicVolume;
+      this.bgMusicPlayer.play().catch(e => console.log('Background music play error:', e));
     }
 
     this.animate();
@@ -1034,6 +1165,11 @@ class VideoEditor {
 
     if (this.audioPlayer) {
       this.audioPlayer.pause();
+    }
+
+    // Stop background music
+    if (this.bgMusicPlayer) {
+      this.bgMusicPlayer.pause();
     }
   }
 
@@ -1300,22 +1436,55 @@ class VideoEditor {
         this.exportStatus.textContent = `Generating frames: ${frame + 1}/${totalFrames}`;
       }
 
-      // Write audio if available
-      if (this.audioBlob) {
+      // Write voiceover audio if available
+      const hasVoiceover = !!this.audioBlob;
+      if (hasVoiceover) {
         const audioData = new Uint8Array(await this.audioBlob.arrayBuffer());
-        await this.ffmpeg.writeFile('audio.webm', audioData);
+        await this.ffmpeg.writeFile('voiceover.webm', audioData);
+      }
+
+      // Write background music if available
+      const hasBgMusic = !!this.bgMusicBlob;
+      if (hasBgMusic) {
+        const bgMusicData = new Uint8Array(await this.bgMusicBlob.arrayBuffer());
+        const bgMusicExt = this.bgMusicBlob.name ? this.bgMusicBlob.name.split('.').pop() : 'mp3';
+        await this.ffmpeg.writeFile(`bgmusic.${bgMusicExt}`, bgMusicData);
       }
 
       this.exportStatus.textContent = 'Encoding video...';
 
-      // Encode video
+      // Build FFmpeg command based on available audio
       const ffmpegArgs = [
         '-framerate', String(fps),
         '-i', 'frame%06d.png',
       ];
 
-      if (this.audioBlob) {
-        ffmpegArgs.push('-i', 'audio.webm');
+      if (hasVoiceover && hasBgMusic) {
+        // Both voiceover and background music - mix them
+        const bgMusicExt = this.bgMusicBlob.name ? this.bgMusicBlob.name.split('.').pop() : 'mp3';
+        ffmpegArgs.push('-i', 'voiceover.webm');
+        ffmpegArgs.push('-i', `bgmusic.${bgMusicExt}`);
+
+        // Audio filter to mix: voiceover at full volume, bg music at user-set volume
+        // If ducking is enabled, we lower bg music (already at lower volume)
+        const bgVolume = this.bgMusicDuck ? this.bgMusicVolume * 0.5 : this.bgMusicVolume;
+        ffmpegArgs.push('-filter_complex', `[1:a]volume=1.0[voice];[2:a]volume=${bgVolume.toFixed(2)},aloop=loop=-1:size=2e+09[music];[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]`);
+        ffmpegArgs.push('-map', '0:v');
+        ffmpegArgs.push('-map', '[aout]');
+        ffmpegArgs.push('-c:a', 'aac');
+        ffmpegArgs.push('-shortest');
+      } else if (hasVoiceover) {
+        // Only voiceover
+        ffmpegArgs.push('-i', 'voiceover.webm');
+        ffmpegArgs.push('-c:a', 'aac');
+        ffmpegArgs.push('-shortest');
+      } else if (hasBgMusic) {
+        // Only background music
+        const bgMusicExt = this.bgMusicBlob.name ? this.bgMusicBlob.name.split('.').pop() : 'mp3';
+        ffmpegArgs.push('-i', `bgmusic.${bgMusicExt}`);
+        ffmpegArgs.push('-filter_complex', `[1:a]volume=${this.bgMusicVolume.toFixed(2)},aloop=loop=-1:size=2e+09[aout]`);
+        ffmpegArgs.push('-map', '0:v');
+        ffmpegArgs.push('-map', '[aout]');
         ffmpegArgs.push('-c:a', 'aac');
         ffmpegArgs.push('-shortest');
       }
@@ -1348,8 +1517,12 @@ class VideoEditor {
         await this.ffmpeg.deleteFile(`frame${String(frame).padStart(6, '0')}.png`);
       }
       await this.ffmpeg.deleteFile('output.mp4');
-      if (this.audioBlob) {
-        await this.ffmpeg.deleteFile('audio.webm');
+      if (hasVoiceover) {
+        await this.ffmpeg.deleteFile('voiceover.webm');
+      }
+      if (hasBgMusic) {
+        const bgMusicExt = this.bgMusicBlob.name ? this.bgMusicBlob.name.split('.').pop() : 'mp3';
+        await this.ffmpeg.deleteFile(`bgmusic.${bgMusicExt}`);
       }
 
       this.exportProgressBar.style.width = '100%';

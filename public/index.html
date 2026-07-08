@@ -229,6 +229,36 @@
               <audio id="audio-player" controls></audio>
               <button class="btn secondary small" id="remove-audio-btn">Remove</button>
             </div>
+
+            <!-- Background Music -->
+            <div class="background-music-section">
+              <h4>🎵 Background Music (Optional)</h4>
+              <div class="audio-controls">
+                <div class="audio-option">
+                  <input type="file" id="bg-music-file" accept="audio/*" hidden>
+                  <button class="btn secondary" id="upload-bg-music-btn">🎶 Upload Music</button>
+                </div>
+              </div>
+              <div id="bg-music-preview" class="audio-preview bg-music-preview" hidden>
+                <audio id="bg-music-player" controls></audio>
+                <div class="bg-music-controls">
+                  <div class="volume-control">
+                    <label for="bg-music-volume">Volume:</label>
+                    <input type="range" id="bg-music-volume" min="0" max="100" value="30">
+                    <span id="bg-music-volume-display">30%</span>
+                  </div>
+                  <div class="checkbox-control">
+                    <input type="checkbox" id="bg-music-loop" checked>
+                    <label for="bg-music-loop">Loop music</label>
+                  </div>
+                  <div class="checkbox-control">
+                    <input type="checkbox" id="bg-music-duck" checked>
+                    <label for="bg-music-duck">Duck during voiceover</label>
+                  </div>
+                </div>
+                <button class="btn secondary small" id="remove-bg-music-btn">Remove</button>
+              </div>
+            </div>
           </div>
 
           <!-- Step 3: Timeline -->
