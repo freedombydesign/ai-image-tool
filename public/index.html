@@ -119,6 +119,25 @@
             </div>
           </div>
 
+          <!-- Style Inspiration -->
+          <div class="form-group inspiration-section">
+            <label>Style Inspiration (Optional)</label>
+            <div class="inspiration-inputs">
+              <div class="youtube-input-row">
+                <input type="text" id="scene-youtube-url" placeholder="Paste YouTube URL to see their thumbnail style...">
+                <button class="btn secondary small" id="fetch-scene-inspiration">Fetch</button>
+              </div>
+            </div>
+            <div id="scene-inspiration-preview" class="youtube-preview" hidden>
+              <img id="scene-inspiration-image" alt="YouTube Thumbnail">
+              <div class="preview-info">
+                <span id="scene-inspiration-title">Reference Style</span>
+                <button class="btn text" id="clear-scene-inspiration">Clear</button>
+              </div>
+            </div>
+            <small class="help-text">Use any YouTube video's thumbnail as visual style reference</small>
+          </div>
+
           <div class="options-row">
             <div class="form-group">
               <label for="batch-size">Size</label>

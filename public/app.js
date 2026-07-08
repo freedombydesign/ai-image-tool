@@ -123,6 +123,9 @@ let generatedScenes = [];
 let lastGenerateParams = null;
 let isPreviewMode = false;
 
+// YouTube inspiration reference for scene generation
+let sceneInspirationUrl = null;
+
 // Video Settings Elements
 const videoLengthSlider = document.getElementById('video-length');
 const videoLengthDisplay = document.getElementById('video-length-display');
@@ -356,13 +359,21 @@ setupUploadArea('edit-upload', 'edit-file', 'edit-preview');
 setupUploadArea('variations-upload', 'variations-file', 'variations-preview');
 
 // Build prompt with style
-function buildStyledPrompt(sceneDescription, style) {
+function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
   const styleInfo = STYLE_PRESETS[style];
-  if (!styleInfo) {
-    return sceneDescription;
+  let basePrompt = sceneDescription;
+
+  if (styleInfo) {
+    basePrompt = `${sceneDescription}. Style: ${styleInfo.prompt}`;
   }
 
-  return `${sceneDescription}. Style: ${styleInfo.prompt}. No text, no faces visible, faceless characters suitable for faceless YouTube videos.`;
+  // Add inspiration reference note if available
+  // Note: DALL-E can't see images, but we add context about wanting similar aesthetic
+  if (includeInspiration && typeof sceneInspirationUrl !== 'undefined' && sceneInspirationUrl) {
+    basePrompt += '. Create with a polished, professional YouTube video aesthetic, eye-catching visuals optimized for video content';
+  }
+
+  return `${basePrompt}. No text, no faces visible, faceless characters suitable for faceless YouTube videos.`;
 }
 
 // API Functions
@@ -1255,6 +1266,77 @@ if (thumbnailYoutubeUrl) {
     if (e.key === 'Enter') {
       e.preventDefault();
       fetchYoutubeThumbBtn?.click();
+    }
+  });
+}
+
+// ============================================
+// YOUTUBE INSPIRATION FOR SCENE GENERATOR
+// ============================================
+
+const fetchSceneInspirationBtn = document.getElementById('fetch-scene-inspiration');
+const sceneYoutubeUrl = document.getElementById('scene-youtube-url');
+const sceneInspirationPreview = document.getElementById('scene-inspiration-preview');
+const sceneInspirationImage = document.getElementById('scene-inspiration-image');
+const sceneInspirationTitle = document.getElementById('scene-inspiration-title');
+const clearSceneInspirationBtn = document.getElementById('clear-scene-inspiration');
+
+if (fetchSceneInspirationBtn && sceneYoutubeUrl) {
+  fetchSceneInspirationBtn.addEventListener('click', () => {
+    const url = sceneYoutubeUrl.value.trim();
+
+    if (!url) {
+      showToast('Please enter a YouTube URL');
+      return;
+    }
+
+    const videoId = extractYouTubeVideoId(url);
+
+    if (!videoId) {
+      showToast('Invalid YouTube URL. Please paste a valid YouTube video link.');
+      return;
+    }
+
+    // Get high-quality thumbnail
+    const thumbUrl = getYouTubeThumbnailUrl(videoId, 'maxresdefault');
+
+    // Test if maxresdefault exists, fall back to hqdefault if not
+    const img = new Image();
+    img.onload = function() {
+      if (sceneInspirationImage) sceneInspirationImage.src = thumbUrl;
+      if (sceneInspirationTitle) sceneInspirationTitle.textContent = `Style Reference: ${videoId}`;
+      if (sceneInspirationPreview) sceneInspirationPreview.hidden = false;
+      sceneInspirationUrl = thumbUrl;
+      showToast('Style reference loaded! Your scenes will draw inspiration from this style.', false);
+    };
+    img.onerror = function() {
+      // Fall back to hqdefault
+      const fallbackUrl = getYouTubeThumbnailUrl(videoId, 'hqdefault');
+      if (sceneInspirationImage) sceneInspirationImage.src = fallbackUrl;
+      if (sceneInspirationTitle) sceneInspirationTitle.textContent = `Style Reference: ${videoId}`;
+      if (sceneInspirationPreview) sceneInspirationPreview.hidden = false;
+      sceneInspirationUrl = fallbackUrl;
+      showToast('Style reference loaded! Your scenes will draw inspiration from this style.', false);
+    };
+    img.src = thumbUrl;
+  });
+}
+
+if (clearSceneInspirationBtn) {
+  clearSceneInspirationBtn.addEventListener('click', () => {
+    if (sceneYoutubeUrl) sceneYoutubeUrl.value = '';
+    if (sceneInspirationImage) sceneInspirationImage.src = '';
+    if (sceneInspirationPreview) sceneInspirationPreview.hidden = true;
+    sceneInspirationUrl = null;
+  });
+}
+
+// Allow pressing Enter in scene YouTube URL field to fetch
+if (sceneYoutubeUrl) {
+  sceneYoutubeUrl.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      fetchSceneInspirationBtn?.click();
     }
   });
 }
