@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Image Studio</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🎨 AI Image Studio</h1>
+      <p>Generate, edit, and transform images with AI</p>
+    </header>
+
+    <main>
+      <!-- Tab Navigation -->
+      <nav class="tabs">
+        <button class="tab active" data-tab="generate">Generate</button>
+        <button class="tab" data-tab="edit">Edit</button>
+        <button class="tab" data-tab="variations">Variations</button>
+        <button class="tab" data-tab="character-swap">Character Swap</button>
+      </nav>
+
+      <!-- Generate Tab -->
+      <section id="generate" class="tab-content active">
+        <div class="card">
+          <h2>Generate New Image</h2>
+          <p>Create images from text descriptions using DALL-E 3</p>
+
+          <div class="form-group">
+            <label for="generate-prompt">Describe your image</label>
+            <textarea id="generate-prompt" placeholder="A serene mountain landscape at sunset with a crystal clear lake reflecting the orange sky..."></textarea>
+          </div>
+
+          <div class="options-row">
+            <div class="form-group">
+              <label for="generate-size">Size</label>
+              <select id="generate-size">
+                <option value="1024x1024">Square (1024x1024)</option>
+                <option value="1792x1024">Landscape (1792x1024)</option>
+                <option value="1024x1792">Portrait (1024x1792)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="generate-style">Style</label>
+              <select id="generate-style">
+                <option value="vivid">Vivid</option>
+                <option value="natural">Natural</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="generate-quality">Quality</label>
+              <select id="generate-quality">
+                <option value="standard">Standard</option>
+                <option value="hd">HD</option>
+              </select>
+            </div>
+          </div>
+
+          <button class="btn primary" id="generate-btn">Generate Image</button>
+        </div>
+      </section>
+
+      <!-- Edit Tab -->
+      <section id="edit" class="tab-content">
+        <div class="card">
+          <h2>Edit Image</h2>
+          <p>Upload an image and describe what you want to change</p>
+
+          <div class="upload-area" id="edit-upload">
+            <input type="file" id="edit-file" accept="image/*" hidden>
+            <div class="upload-placeholder">
+              <span class="upload-icon">📤</span>
+              <p>Click or drag image here</p>
+            </div>
+            <img id="edit-preview" class="preview-image" hidden>
+          </div>
+
+          <div class="form-group">
+            <label for="edit-prompt">Describe the changes</label>
+            <textarea id="edit-prompt" placeholder="Replace the background with a beach scene..."></textarea>
+          </div>
+
+          <div class="upload-area small" id="mask-upload">
+            <input type="file" id="mask-file" accept="image/*" hidden>
+            <div class="upload-placeholder">
+              <span class="upload-icon">🎭</span>
+              <p>Optional: Upload mask (white = edit area)</p>
+            </div>
+            <img id="mask-preview" class="preview-image" hidden>
+          </div>
+
+          <button class="btn primary" id="edit-btn">Apply Edit</button>
+        </div>
+      </section>
+
+      <!-- Variations Tab -->
+      <section id="variations" class="tab-content">
+        <div class="card">
+          <h2>Create Variations</h2>
+          <p>Generate similar versions of an existing image</p>
+
+          <div class="upload-area" id="variations-upload">
+            <input type="file" id="variations-file" accept="image/*" hidden>
+            <div class="upload-placeholder">
+              <span class="upload-icon">📤</span>
+              <p>Click or drag image here</p>
+            </div>
+            <img id="variations-preview" class="preview-image" hidden>
+          </div>
+
+          <button class="btn primary" id="variations-btn">Create Variation</button>
+        </div>
+      </section>
+
+      <!-- Character Swap Tab -->
+      <section id="character-swap" class="tab-content">
+        <div class="card">
+          <h2>Character Swap</h2>
+          <p>Replace a person in the image with a different character</p>
+
+          <div class="upload-area" id="swap-upload">
+            <input type="file" id="swap-file" accept="image/*" hidden>
+            <div class="upload-placeholder">
+              <span class="upload-icon">📤</span>
+              <p>Click or drag image here</p>
+            </div>
+            <img id="swap-preview" class="preview-image" hidden>
+          </div>
+
+          <div class="form-group">
+            <label for="swap-prompt">Describe the new character</label>
+            <textarea id="swap-prompt" placeholder="A young woman with curly red hair wearing a blue dress..."></textarea>
+          </div>
+
+          <button class="btn primary" id="swap-btn">Swap Character</button>
+        </div>
+      </section>
+
+      <!-- Result Display -->
+      <section id="result" class="result-section" hidden>
+        <div class="card">
+          <div class="result-header">
+            <h2>Result</h2>
+            <button class="btn secondary" id="download-btn">Download</button>
+          </div>
+          <img id="result-image" class="result-image">
+          <p id="revised-prompt" class="revised-prompt"></p>
+        </div>
+      </section>
+
+      <!-- Loading Overlay -->
+      <div id="loading" class="loading-overlay" hidden>
+        <div class="loading-content">
+          <div class="spinner"></div>
+          <p>Creating your image...</p>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <p>Powered by OpenAI DALL-E</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
