@@ -269,6 +269,7 @@ function showHistoryPreview(id) {
 
   modal.dataset.currentId = id;
   modal.hidden = false;
+  modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
 
@@ -277,6 +278,7 @@ function closeHistoryModal() {
   const modal = document.getElementById('history-modal');
   if (modal) {
     modal.hidden = true;
+    modal.style.display = 'none';
     document.body.style.overflow = '';
   }
 }
