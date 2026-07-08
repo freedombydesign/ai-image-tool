@@ -15,6 +15,143 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+// Model configurations with pricing info
+const MODEL_CONFIG = {
+  'dall-e-3': {
+    provider: 'openai',
+    costPerImage: { standard: 0.04, hd: 0.08 },
+    sizes: ['1024x1024', '1792x1024', '1024x1792'],
+    description: 'Best prompt adherence, highest quality'
+  },
+  'flux-schnell': {
+    provider: 'replicate',
+    model: 'black-forest-labs/flux-schnell',
+    costPerImage: 0.003,
+    sizes: ['1024x1024', '1024x768', '768x1024'],
+    description: 'Fast, affordable, great quality'
+  },
+  'flux-pro': {
+    provider: 'replicate',
+    model: 'black-forest-labs/flux-pro',
+    costPerImage: 0.05,
+    sizes: ['1024x1024', '1024x768', '768x1024'],
+    description: 'Highest quality Flux model'
+  },
+  'stable-diffusion-xl': {
+    provider: 'stability',
+    engine: 'stable-diffusion-xl-1024-v1-0',
+    costPerImage: 0.002,
+    sizes: ['1024x1024', '1152x896', '896x1152'],
+    description: 'Very affordable, good quality'
+  },
+  'stable-diffusion-3': {
+    provider: 'stability',
+    engine: 'sd3-large',
+    costPerImage: 0.065,
+    sizes: ['1024x1024'],
+    description: 'Latest Stable Diffusion, excellent quality'
+  }
+};
+
+// Helper: Generate with Replicate (Flux)
+async function generateWithReplicate(prompt, model, options = {}) {
+  const apiKey = process.env.REPLICATE_API_TOKEN;
+  if (!apiKey) {
+    throw new Error('REPLICATE_API_TOKEN not configured. Add it to your .env file.');
+  }
+
+  const modelConfig = MODEL_CONFIG[model];
+
+  // Start the prediction
+  const response = await fetch('https://api.replicate.com/v1/predictions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      version: model === 'flux-schnell'
+        ? '5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637'
+        : 'latest', // flux-pro uses latest
+      input: {
+        prompt: prompt,
+        num_outputs: 1,
+        aspect_ratio: options.aspectRatio || '16:9',
+        output_format: 'png',
+        ...(options.width && { width: options.width }),
+        ...(options.height && { height: options.height })
+      }
+    })
+  });
+
+  const prediction = await response.json();
+
+  if (prediction.error) {
+    throw new Error(prediction.error);
+  }
+
+  // Poll for completion
+  let result = prediction;
+  while (result.status !== 'succeeded' && result.status !== 'failed') {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const pollResponse = await fetch(result.urls.get, {
+      headers: { 'Authorization': `Token ${apiKey}` }
+    });
+    result = await pollResponse.json();
+  }
+
+  if (result.status === 'failed') {
+    throw new Error(result.error || 'Generation failed');
+  }
+
+  return {
+    url: result.output[0],
+    model: model
+  };
+}
+
+// Helper: Generate with Stability AI
+async function generateWithStability(prompt, model, options = {}) {
+  const apiKey = process.env.STABILITY_API_KEY;
+  if (!apiKey) {
+    throw new Error('STABILITY_API_KEY not configured. Add it to your .env file.');
+  }
+
+  const modelConfig = MODEL_CONFIG[model];
+  const engine = modelConfig.engine;
+
+  const response = await fetch(`https://api.stability.ai/v1/generation/${engine}/text-to-image`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({
+      text_prompts: [{ text: prompt, weight: 1 }],
+      cfg_scale: 7,
+      width: options.width || 1024,
+      height: options.height || 1024,
+      samples: 1,
+      steps: 30
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Stability AI generation failed');
+  }
+
+  const data = await response.json();
+
+  // Stability returns base64, we need to convert to data URL
+  const base64 = data.artifacts[0].base64;
+  return {
+    url: `data:image/png;base64,${base64}`,
+    model: model
+  };
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -105,30 +242,101 @@ async function createMask(imagePath, maskData) {
 
 // API Routes
 
-// Generate new image from text prompt
+// Get available models and their configurations
+app.get('/api/models', (req, res) => {
+  const models = Object.entries(MODEL_CONFIG).map(([id, config]) => ({
+    id,
+    ...config,
+    available: checkModelAvailability(id)
+  }));
+  res.json({ models });
+});
+
+// Check which models have API keys configured
+function checkModelAvailability(modelId) {
+  const config = MODEL_CONFIG[modelId];
+  if (!config) return false;
+
+  switch (config.provider) {
+    case 'openai':
+      return !!process.env.OPENAI_API_KEY;
+    case 'replicate':
+      return !!process.env.REPLICATE_API_TOKEN;
+    case 'stability':
+      return !!process.env.STABILITY_API_KEY;
+    default:
+      return false;
+  }
+}
+
+// Generate new image from text prompt (supports multiple models)
 app.post('/api/generate', async (req, res) => {
   try {
-    const { prompt, size = '1024x1024', style = 'vivid', quality = 'standard' } = req.body;
+    const { prompt, size = '1024x1024', style = 'vivid', quality = 'standard', model = 'dall-e-3' } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    console.log('Generating image with prompt:', prompt);
+    const modelConfig = MODEL_CONFIG[model];
+    if (!modelConfig) {
+      return res.status(400).json({ error: `Unknown model: ${model}` });
+    }
 
-    const response = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size,
-      style,
-      quality
-    });
+    console.log(`Generating image with ${model}:`, prompt);
+
+    // Parse size
+    const [width, height] = size.split('x').map(Number);
+
+    let result;
+
+    switch (modelConfig.provider) {
+      case 'openai':
+        const response = await openai.images.generate({
+          model: 'dall-e-3',
+          prompt,
+          n: 1,
+          size,
+          style,
+          quality
+        });
+        result = {
+          image: response.data[0].url,
+          revised_prompt: response.data[0].revised_prompt,
+          model: model
+        };
+        break;
+
+      case 'replicate':
+        const replicateResult = await generateWithReplicate(prompt, model, {
+          width,
+          height,
+          aspectRatio: width > height ? '16:9' : height > width ? '9:16' : '1:1'
+        });
+        result = {
+          image: replicateResult.url,
+          model: model
+        };
+        break;
+
+      case 'stability':
+        const stabilityResult = await generateWithStability(prompt, model, {
+          width: Math.min(width, 1024),
+          height: Math.min(height, 1024)
+        });
+        result = {
+          image: stabilityResult.url,
+          model: model
+        };
+        break;
+
+      default:
+        throw new Error(`Provider ${modelConfig.provider} not supported`);
+    }
 
     res.json({
       success: true,
-      image: response.data[0].url,
-      revised_prompt: response.data[0].revised_prompt
+      ...result
     });
   } catch (error) {
     console.error('Generation error:', error);

@@ -556,6 +556,9 @@ async function generateBatchScenes() {
   let successCount = 0;
   let failCount = 0;
 
+  // Get selected model
+  const model = document.getElementById('batch-model')?.value || 'dall-e-3';
+
   // Generate scenes sequentially to avoid rate limits
   for (let i = 0; i < scenes.length; i++) {
     const sceneText = scenes[i];
@@ -567,7 +570,7 @@ async function generateBatchScenes() {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: styledPrompt, size, quality })
+        body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
       });
 
       const data = await response.json();
@@ -689,12 +692,13 @@ async function regenerateScene(index) {
 
   const size = document.getElementById('batch-size').value;
   const quality = document.getElementById('batch-quality').value;
+  const model = document.getElementById('batch-model')?.value || 'dall-e-3';
 
   try {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: scene.prompt, size, quality })
+      body: JSON.stringify({ prompt: scene.prompt, size, quality, model })
     });
 
     const data = await response.json();

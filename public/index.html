@@ -141,6 +141,16 @@
 
           <div class="options-row">
             <div class="form-group">
+              <label for="batch-model">AI Model</label>
+              <select id="batch-model">
+                <option value="dall-e-3" selected>DALL-E 3 (~$0.04-0.08)</option>
+                <option value="flux-schnell">Flux Schnell (~$0.003)</option>
+                <option value="flux-pro">Flux Pro (~$0.05)</option>
+                <option value="stable-diffusion-xl">SDXL (~$0.002)</option>
+                <option value="stable-diffusion-3">SD3 (~$0.065)</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label for="batch-size">Size</label>
               <select id="batch-size">
                 <option value="1024x1024">Square (1024x1024)</option>
@@ -151,8 +161,8 @@
             <div class="form-group">
               <label for="batch-quality">Quality</label>
               <select id="batch-quality">
-                <option value="standard" selected>Standard ($0.04-0.08)</option>
-                <option value="hd">HD ($0.08-0.12)</option>
+                <option value="standard" selected>Standard</option>
+                <option value="hd">HD</option>
               </select>
             </div>
           </div>
