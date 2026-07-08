@@ -31,6 +31,14 @@ const STYLE_PRESETS = {
   'minimalist': {
     name: 'Minimalist Flat',
     prompt: 'minimalist flat design style, simple geometric shapes, limited color palette, clean and modern aesthetic, no gradients, corporate illustration style',
+  },
+  'gta-style': {
+    name: 'GTA / Modern Game Style',
+    prompt: 'GTA VI art style, modern open-world video game aesthetic, stylized realism, bold saturated colors, neon accents, cinematic lighting, urban street art influence, Rockstar Games visual style, high contrast shadows',
+  },
+  'anime': {
+    name: 'Anime Style',
+    prompt: 'anime art style, Japanese animation aesthetic, expressive characters, vibrant colors, dynamic poses, Studio Ghibli and modern anime influence, clean line art with cel shading',
   }
 };
 
