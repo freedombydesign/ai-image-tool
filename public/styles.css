@@ -2962,10 +2962,14 @@ footer {
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
   z-index: 1000;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 1rem;
+}
+
+.text-overlay-modal:not([hidden]) {
+  display: flex;
 }
 
 .text-overlay-content {

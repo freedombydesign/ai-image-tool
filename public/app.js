@@ -421,6 +421,7 @@ function openTextOverlay(sceneIndex) {
 
     // Show modal
     modal.hidden = false;
+    modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
     // Initial text render
@@ -437,6 +438,7 @@ function openTextOverlay(sceneIndex) {
 function closeTextOverlay() {
   const modal = document.getElementById('text-overlay-modal');
   modal.hidden = true;
+  modal.style.display = 'none';
   document.body.style.overflow = '';
   textOverlayState = { sceneIndex: null, imageUrl: null, originalImage: null };
 
