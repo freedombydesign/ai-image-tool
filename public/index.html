@@ -22,6 +22,7 @@
       <nav class="tabs">
         <button class="tab active" data-tab="batch-scenes">Batch Scenes</button>
         <button class="tab" data-tab="video-editor">Video Editor</button>
+        <button class="tab" data-tab="thumbnail">Thumbnail</button>
         <button class="tab" data-tab="generate">Single Image</button>
         <button class="tab" data-tab="edit">Edit</button>
         <button class="tab" data-tab="variations">Variations</button>
@@ -335,6 +336,98 @@
               <span id="preview-time">0:00 / 0:00</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- Thumbnail Maker Tab -->
+      <section id="thumbnail" class="tab-content">
+        <div class="card">
+          <h2>Thumbnail Maker</h2>
+          <p>Create eye-catching YouTube thumbnails with AI</p>
+
+          <!-- Thumbnail Style Selector -->
+          <div class="form-group">
+            <label>Thumbnail Style</label>
+            <div class="thumbnail-style-grid">
+              <div class="thumbnail-style-option selected" data-thumb-style="dramatic">
+                <div class="style-preview" style="background: linear-gradient(135deg, #ff416c, #ff4b2b);">DR</div>
+                <span>Dramatic & Bold</span>
+              </div>
+              <div class="thumbnail-style-option" data-thumb-style="minimal-clean">
+                <div class="style-preview" style="background: linear-gradient(135deg, #667eea, #764ba2);">MC</div>
+                <span>Minimal Clean</span>
+              </div>
+              <div class="thumbnail-style-option" data-thumb-style="3d-render">
+                <div class="style-preview" style="background: linear-gradient(135deg, #11998e, #38ef7d);">3D</div>
+                <span>3D Rendered</span>
+              </div>
+              <div class="thumbnail-style-option" data-thumb-style="comic-pop">
+                <div class="style-preview" style="background: linear-gradient(135deg, #f7971e, #ffd200);">CP</div>
+                <span>Comic Pop Art</span>
+              </div>
+              <div class="thumbnail-style-option" data-thumb-style="cinematic">
+                <div class="style-preview" style="background: linear-gradient(135deg, #0f2027, #2c5364);">CN</div>
+                <span>Cinematic Dark</span>
+              </div>
+              <div class="thumbnail-style-option" data-thumb-style="neon-glow">
+                <div class="style-preview" style="background: linear-gradient(135deg, #fc00ff, #00dbde);">NG</div>
+                <span>Neon Glow</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Thumbnail Description -->
+          <div class="form-group">
+            <label for="thumbnail-prompt">Describe your thumbnail</label>
+            <textarea id="thumbnail-prompt" rows="4" placeholder="A bold thumbnail about the big mistake creators make, dramatic lighting, surprised expression, short readable hook text..."></textarea>
+            <small class="help-text">Tip: mention the subject, emotion, text hook, colors, and style</small>
+          </div>
+
+          <!-- Text Hook (optional) -->
+          <div class="form-group">
+            <label for="thumbnail-hook">Text Hook (Optional)</label>
+            <input type="text" id="thumbnail-hook" placeholder="e.g., DON'T DO THIS! or $10K SECRET" maxlength="30">
+            <small class="help-text">Short, punchy text for your thumbnail (max 30 chars). Will be included in prompt.</small>
+          </div>
+
+          <!-- Thumbnail Options -->
+          <div class="options-row">
+            <div class="form-group">
+              <label for="thumbnail-quality">Quality</label>
+              <select id="thumbnail-quality">
+                <option value="hd" selected>HD (Recommended)</option>
+                <option value="standard">Standard</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Size</label>
+              <div class="size-badge">1792 x 1024 (YouTube)</div>
+            </div>
+          </div>
+
+          <div class="cost-estimate">
+            <span>Estimated cost: </span>
+            <strong>$0.12</strong>
+          </div>
+
+          <button class="btn primary" id="generate-thumbnail-btn">Generate Thumbnail</button>
+        </div>
+
+        <!-- Thumbnail Result -->
+        <div id="thumbnail-result" class="result-section" hidden>
+          <div class="result-card">
+            <img id="thumbnail-image" alt="Generated Thumbnail">
+            <div class="result-actions">
+              <button class="btn secondary" id="download-thumbnail-btn">Download</button>
+              <button class="btn secondary" id="regenerate-thumbnail-btn">Regenerate</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Thumbnail Gallery (Recent) -->
+        <div id="thumbnail-gallery" class="thumbnail-gallery" hidden>
+          <h3>Recent Thumbnails</h3>
+          <div id="thumbnail-gallery-grid" class="thumbnail-gallery-grid"></div>
         </div>
       </section>
 

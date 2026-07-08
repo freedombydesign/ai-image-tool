@@ -42,6 +42,34 @@ const STYLE_PRESETS = {
   }
 };
 
+// Thumbnail Style Presets - Optimized for YouTube thumbnails
+const THUMBNAIL_STYLES = {
+  'dramatic': {
+    name: 'Dramatic & Bold',
+    prompt: 'dramatic YouTube thumbnail style, bold colors, high contrast, intense lighting, eye-catching composition, professional quality, attention-grabbing, viral thumbnail aesthetic',
+  },
+  'minimal-clean': {
+    name: 'Minimal Clean',
+    prompt: 'minimalist clean YouTube thumbnail, simple composition, plenty of negative space, modern aesthetic, subtle gradients, professional and sleek, premium quality',
+  },
+  '3d-render': {
+    name: '3D Rendered',
+    prompt: '3D rendered YouTube thumbnail, high quality CGI, realistic lighting, depth and dimension, professional 3D graphics, modern and polished look',
+  },
+  'comic-pop': {
+    name: 'Comic Pop Art',
+    prompt: 'comic book pop art style thumbnail, bold outlines, halftone dots, vibrant primary colors, action-packed, energetic composition, retro comic aesthetic',
+  },
+  'cinematic': {
+    name: 'Cinematic Dark',
+    prompt: 'cinematic dark moody YouTube thumbnail, dramatic shadows, film noir lighting, movie poster quality, professional cinematography style, mysterious atmosphere',
+  },
+  'neon-glow': {
+    name: 'Neon Glow',
+    prompt: 'neon glow YouTube thumbnail, cyberpunk aesthetic, glowing neon lights, vibrant pink purple blue colors, futuristic style, high contrast dark background with bright neon accents',
+  }
+};
+
 // Tab Navigation
 const tabs = document.querySelectorAll('.tab');
 const tabContents = document.querySelectorAll('.tab-content');
@@ -912,3 +940,231 @@ async function checkApiStatus() {
 }
 
 checkApiStatus();
+
+// ============================================
+// THUMBNAIL MAKER
+// ============================================
+
+// Thumbnail Elements
+const thumbnailStyleOptions = document.querySelectorAll('.thumbnail-style-option');
+const thumbnailPromptInput = document.getElementById('thumbnail-prompt');
+const thumbnailHookInput = document.getElementById('thumbnail-hook');
+const thumbnailQualitySelect = document.getElementById('thumbnail-quality');
+const generateThumbnailBtn = document.getElementById('generate-thumbnail-btn');
+const thumbnailResult = document.getElementById('thumbnail-result');
+const thumbnailImage = document.getElementById('thumbnail-image');
+const downloadThumbnailBtn = document.getElementById('download-thumbnail-btn');
+const regenerateThumbnailBtn = document.getElementById('regenerate-thumbnail-btn');
+
+let selectedThumbnailStyle = 'dramatic';
+let lastThumbnailParams = null;
+let thumbnailHistory = [];
+
+// Thumbnail Style Selection
+if (thumbnailStyleOptions) {
+  thumbnailStyleOptions.forEach(option => {
+    option.addEventListener('click', () => {
+      thumbnailStyleOptions.forEach(o => o.classList.remove('selected'));
+      option.classList.add('selected');
+      selectedThumbnailStyle = option.dataset.thumbStyle;
+    });
+  });
+}
+
+// Build Thumbnail Prompt
+function buildThumbnailPrompt(description, style, textHook = '') {
+  const styleInfo = THUMBNAIL_STYLES[style];
+  let prompt = description;
+
+  if (styleInfo) {
+    prompt += `. Style: ${styleInfo.prompt}`;
+  }
+
+  if (textHook) {
+    prompt += `. Include bold readable text saying "${textHook}" as part of the composition`;
+  }
+
+  prompt += '. YouTube thumbnail format, 16:9 aspect ratio, designed to get clicks, no small details that won\'t be visible at thumbnail size.';
+
+  return prompt;
+}
+
+// Generate Thumbnail
+async function generateThumbnail() {
+  const description = thumbnailPromptInput ? thumbnailPromptInput.value.trim() : '';
+  const textHook = thumbnailHookInput ? thumbnailHookInput.value.trim() : '';
+  const quality = thumbnailQualitySelect ? thumbnailQualitySelect.value : 'hd';
+
+  if (!description) {
+    showToast('Please describe your thumbnail');
+    return;
+  }
+
+  const prompt = buildThumbnailPrompt(description, selectedThumbnailStyle, textHook);
+
+  showLoading('Creating your thumbnail...');
+
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: prompt,
+        size: '1792x1024', // YouTube thumbnail aspect ratio
+        quality: quality
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Store params for regeneration
+    lastThumbnailParams = { prompt, size: '1792x1024', quality };
+
+    // Show result
+    if (thumbnailImage) {
+      thumbnailImage.src = data.image;
+    }
+    if (thumbnailResult) {
+      thumbnailResult.hidden = false;
+    }
+
+    // Add to history
+    thumbnailHistory.unshift({
+      imageUrl: data.image,
+      prompt: prompt,
+      timestamp: Date.now()
+    });
+
+    // Keep only last 10
+    if (thumbnailHistory.length > 10) {
+      thumbnailHistory = thumbnailHistory.slice(0, 10);
+    }
+
+    updateThumbnailGallery();
+
+    showToast('Thumbnail generated!', false);
+    thumbnailResult.scrollIntoView({ behavior: 'smooth' });
+
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Regenerate Thumbnail
+async function regenerateThumbnail() {
+  if (!lastThumbnailParams) {
+    showToast('No thumbnail to regenerate. Generate one first.');
+    return;
+  }
+
+  showLoading('Regenerating thumbnail...');
+
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lastThumbnailParams)
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    if (thumbnailImage) {
+      thumbnailImage.src = data.image;
+    }
+
+    // Add to history
+    thumbnailHistory.unshift({
+      imageUrl: data.image,
+      prompt: lastThumbnailParams.prompt,
+      timestamp: Date.now()
+    });
+
+    if (thumbnailHistory.length > 10) {
+      thumbnailHistory = thumbnailHistory.slice(0, 10);
+    }
+
+    updateThumbnailGallery();
+
+    showToast('Thumbnail regenerated!', false);
+
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Download Thumbnail
+async function downloadThumbnail() {
+  if (!thumbnailImage || !thumbnailImage.src) {
+    showToast('No thumbnail to download');
+    return;
+  }
+
+  try {
+    const response = await fetch(thumbnailImage.src);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `thumbnail-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Thumbnail downloaded!', false);
+  } catch (error) {
+    showToast('Failed to download thumbnail');
+  }
+}
+
+// Update Thumbnail Gallery
+function updateThumbnailGallery() {
+  const gallery = document.getElementById('thumbnail-gallery');
+  const grid = document.getElementById('thumbnail-gallery-grid');
+
+  if (!gallery || !grid || thumbnailHistory.length === 0) return;
+
+  gallery.hidden = false;
+  grid.innerHTML = '';
+
+  thumbnailHistory.forEach((item, index) => {
+    const img = document.createElement('img');
+    img.src = item.imageUrl;
+    img.alt = `Thumbnail ${index + 1}`;
+    img.title = 'Click to use this thumbnail';
+    img.addEventListener('click', () => {
+      if (thumbnailImage) {
+        thumbnailImage.src = item.imageUrl;
+      }
+      if (thumbnailResult) {
+        thumbnailResult.hidden = false;
+        thumbnailResult.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+    grid.appendChild(img);
+  });
+}
+
+// Thumbnail Event Listeners
+if (generateThumbnailBtn) {
+  generateThumbnailBtn.addEventListener('click', generateThumbnail);
+}
+
+if (downloadThumbnailBtn) {
+  downloadThumbnailBtn.addEventListener('click', downloadThumbnail);
+}
+
+if (regenerateThumbnailBtn) {
+  regenerateThumbnailBtn.addEventListener('click', regenerateThumbnail);
+}
