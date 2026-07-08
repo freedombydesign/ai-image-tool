@@ -23,6 +23,7 @@
         <button class="tab active" data-tab="batch-scenes">Batch Scenes</button>
         <button class="tab" data-tab="video-editor">Video Editor</button>
         <button class="tab" data-tab="thumbnail">Thumbnail</button>
+        <button class="tab" data-tab="yt-banner">YT Banner</button>
         <button class="tab" data-tab="generate">Single Image</button>
         <button class="tab" data-tab="edit">Edit</button>
         <button class="tab" data-tab="variations">Variations</button>
@@ -506,6 +507,231 @@
         </div>
       </section>
 
+      <!-- YouTube Banner Creator Tab -->
+      <section id="yt-banner" class="tab-content">
+        <div class="card">
+          <h2>YouTube Banner Creator</h2>
+          <p>Create channel art with safe zones for all devices (2560 × 1440)</p>
+
+          <!-- Banner Editor Canvas -->
+          <div class="banner-editor">
+            <div class="banner-canvas-wrapper">
+              <canvas id="banner-canvas" width="2560" height="1440"></canvas>
+              <!-- Safe Zone Overlays -->
+              <div class="safe-zone-guides">
+                <div class="safe-zone tv-safe" title="TV Safe Area"></div>
+                <div class="safe-zone desktop-safe" title="Desktop Safe Area"></div>
+                <div class="safe-zone mobile-safe" title="Mobile Safe Area (Always Visible)"></div>
+              </div>
+            </div>
+            <div class="device-preview-toggle">
+              <button class="device-btn active" data-device="full">Full</button>
+              <button class="device-btn" data-device="tv">TV</button>
+              <button class="device-btn" data-device="desktop">Desktop</button>
+              <button class="device-btn" data-device="tablet">Tablet</button>
+              <button class="device-btn" data-device="mobile">Mobile</button>
+            </div>
+          </div>
+
+          <!-- Background Options -->
+          <div class="editor-section">
+            <h3>Background</h3>
+            <div class="background-options">
+              <div class="bg-option-tabs">
+                <button class="bg-tab active" data-bg-type="ai">AI Generate</button>
+                <button class="bg-tab" data-bg-type="upload">Upload</button>
+                <button class="bg-tab" data-bg-type="color">Solid Color</button>
+                <button class="bg-tab" data-bg-type="gradient">Gradient</button>
+              </div>
+
+              <!-- AI Generate Background -->
+              <div class="bg-panel active" id="bg-ai-panel">
+                <div class="form-group">
+                  <label for="banner-bg-prompt">Describe your background</label>
+                  <textarea id="banner-bg-prompt" rows="3" placeholder="Abstract tech background with blue and purple gradient, geometric shapes, modern and clean..."></textarea>
+                </div>
+                <button class="btn secondary" id="generate-banner-bg-btn">Generate Background</button>
+              </div>
+
+              <!-- Upload Background -->
+              <div class="bg-panel" id="bg-upload-panel">
+                <div class="upload-area small" id="banner-bg-upload">
+                  <input type="file" id="banner-bg-file" accept="image/*" hidden>
+                  <div class="upload-placeholder">
+                    <span class="upload-icon">📤</span>
+                    <p>Upload background image</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Solid Color -->
+              <div class="bg-panel" id="bg-color-panel">
+                <div class="color-picker-row">
+                  <label for="banner-bg-color">Background Color</label>
+                  <input type="color" id="banner-bg-color" value="#1a1a2e">
+                  <span id="banner-bg-color-hex">#1a1a2e</span>
+                </div>
+              </div>
+
+              <!-- Gradient -->
+              <div class="bg-panel" id="bg-gradient-panel">
+                <div class="gradient-controls">
+                  <div class="color-picker-row">
+                    <label for="banner-gradient-start">Start Color</label>
+                    <input type="color" id="banner-gradient-start" value="#667eea">
+                    <span id="banner-gradient-start-hex">#667eea</span>
+                  </div>
+                  <div class="color-picker-row">
+                    <label for="banner-gradient-end">End Color</label>
+                    <input type="color" id="banner-gradient-end" value="#764ba2">
+                    <span id="banner-gradient-end-hex">#764ba2</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="banner-gradient-direction">Direction</label>
+                    <select id="banner-gradient-direction">
+                      <option value="to-right">Left to Right</option>
+                      <option value="to-left">Right to Left</option>
+                      <option value="to-bottom">Top to Bottom</option>
+                      <option value="to-top">Bottom to Top</option>
+                      <option value="diagonal-1">Diagonal ↘</option>
+                      <option value="diagonal-2">Diagonal ↗</option>
+                      <option value="radial">Radial (Center)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Text Layers -->
+          <div class="editor-section">
+            <h3>Text</h3>
+            <div class="text-layers">
+              <!-- Channel Name -->
+              <div class="text-layer-group">
+                <h4>Channel Name</h4>
+                <div class="text-layer-controls">
+                  <input type="text" id="banner-channel-name" placeholder="Your Channel Name" maxlength="50">
+                  <div class="text-style-row">
+                    <input type="color" id="banner-name-color" value="#ffffff">
+                    <select id="banner-name-font">
+                      <option value="Inter">Inter</option>
+                      <option value="Arial Black">Arial Black</option>
+                      <option value="Georgia">Georgia</option>
+                      <option value="Impact">Impact</option>
+                      <option value="Courier New">Courier New</option>
+                    </select>
+                    <select id="banner-name-size">
+                      <option value="60">Small</option>
+                      <option value="80" selected>Medium</option>
+                      <option value="100">Large</option>
+                      <option value="120">Extra Large</option>
+                    </select>
+                  </div>
+                  <div class="text-position-row">
+                    <label>Position:</label>
+                    <select id="banner-name-position">
+                      <option value="center" selected>Center</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                    <label>Y Offset:</label>
+                    <input type="range" id="banner-name-y" min="-200" max="200" value="-50">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tagline -->
+              <div class="text-layer-group">
+                <h4>Tagline (Optional)</h4>
+                <div class="text-layer-controls">
+                  <input type="text" id="banner-tagline" placeholder="Your channel tagline or upload schedule" maxlength="80">
+                  <div class="text-style-row">
+                    <input type="color" id="banner-tagline-color" value="#cccccc">
+                    <select id="banner-tagline-font">
+                      <option value="Inter" selected>Inter</option>
+                      <option value="Arial">Arial</option>
+                      <option value="Georgia">Georgia</option>
+                      <option value="Courier New">Courier New</option>
+                    </select>
+                    <select id="banner-tagline-size">
+                      <option value="24">Small</option>
+                      <option value="32" selected>Medium</option>
+                      <option value="48">Large</option>
+                    </select>
+                  </div>
+                  <div class="text-position-row">
+                    <label>Position:</label>
+                    <select id="banner-tagline-position">
+                      <option value="center" selected>Center</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                    <label>Y Offset:</label>
+                    <input type="range" id="banner-tagline-y" min="-200" max="200" value="50">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Logo Upload -->
+          <div class="editor-section">
+            <h3>Logo (Optional)</h3>
+            <div class="logo-controls">
+              <div class="upload-area small" id="banner-logo-upload">
+                <input type="file" id="banner-logo-file" accept="image/*" hidden>
+                <div class="upload-placeholder">
+                  <span class="upload-icon">🖼️</span>
+                  <p>Upload logo (PNG with transparency recommended)</p>
+                </div>
+              </div>
+              <div id="logo-settings" class="logo-settings" hidden>
+                <div class="logo-preview-small">
+                  <img id="banner-logo-preview" alt="Logo preview">
+                  <button class="btn text small" id="remove-banner-logo">Remove</button>
+                </div>
+                <div class="logo-position-controls">
+                  <div class="form-group">
+                    <label for="banner-logo-position">Position</label>
+                    <select id="banner-logo-position">
+                      <option value="left">Left Side</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right Side</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="banner-logo-size">Size</label>
+                    <input type="range" id="banner-logo-size" min="50" max="300" value="150">
+                    <span id="banner-logo-size-display">150px</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Export -->
+          <div class="editor-section">
+            <h3>Export</h3>
+            <div class="export-info">
+              <p>Banner will be exported at <strong>2560 × 1440 pixels</strong> (YouTube recommended size)</p>
+            </div>
+            <div class="banner-export-buttons">
+              <button class="btn primary" id="export-banner-btn">Download Banner (PNG)</button>
+              <button class="btn secondary" id="copy-banner-btn">Copy to Clipboard</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Banner Templates (Optional Enhancement) -->
+        <div class="banner-templates-section" hidden>
+          <h3>Quick Templates</h3>
+          <div class="templates-grid">
+            <!-- Templates would go here -->
+          </div>
+        </div>
+      </section>
+
       <!-- Single Image Generate Tab -->
       <section id="generate" class="tab-content">
         <div class="card">
@@ -632,5 +858,6 @@
 
   <script src="app.js"></script>
   <script src="video-editor.js"></script>
+  <script src="banner-creator.js"></script>
 </body>
 </html>
