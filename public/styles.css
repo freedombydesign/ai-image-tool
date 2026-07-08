@@ -159,6 +159,163 @@ select {
   gap: 1rem;
 }
 
+/* Video Settings Card */
+.settings-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.settings-card h4 {
+  margin-bottom: 1rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+/* Slider Styles */
+.slider-group {
+  margin-bottom: 1.5rem;
+}
+
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.slider-container input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.slider-container input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.slider-container input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background: var(--primary-hover);
+}
+
+.slider-container input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: var(--primary);
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+}
+
+.slider-min, .slider-max {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  min-width: 20px;
+}
+
+.slider-value {
+  font-weight: 600;
+  color: var(--primary);
+  min-width: 50px;
+  text-align: right;
+}
+
+/* Scene Count Control */
+.scene-count-control {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.scene-count-control select {
+  flex: 1;
+}
+
+.manual-count-input {
+  width: 100px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.manual-count-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.manual-count-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.help-text {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Generate Buttons Row */
+.generate-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.generate-buttons .btn {
+  flex: 1;
+}
+
+.generate-buttons .btn.secondary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.btn-icon {
+  font-size: 1.1rem;
+}
+
+/* Preview Cost */
+.preview-cost {
+  margin-left: 1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: normal;
+}
+
+/* Preview Indicator */
+.preview-badge {
+  display: inline-block;
+  background: var(--primary);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 0.5rem;
+}
+
 /* Buttons */
 .btn {
   padding: 1rem 2rem;
@@ -488,6 +645,31 @@ footer {
 .scenes-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* Preview Header */
+.preview-header {
+  margin-bottom: 1.5rem;
+}
+
+.preview-notice {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius);
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.preview-notice .preview-badge {
+  flex-shrink: 0;
+}
+
+.preview-notice p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
 }
 
 /* Scenes Grid */

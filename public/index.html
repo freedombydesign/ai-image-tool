@@ -89,6 +89,35 @@
             </div>
           </div>
 
+          <!-- Video Settings -->
+          <div class="settings-card">
+            <h4>Video Settings</h4>
+
+            <!-- Video Length Slider -->
+            <div class="form-group slider-group">
+              <label for="video-length">Target Video Length</label>
+              <div class="slider-container">
+                <span class="slider-min">1</span>
+                <input type="range" id="video-length" min="1" max="20" value="8" step="1">
+                <span class="slider-max">20</span>
+                <span id="video-length-display" class="slider-value">8 min</span>
+              </div>
+            </div>
+
+            <!-- Scene Count Control -->
+            <div class="form-group">
+              <label for="scene-mode">Scene Count</label>
+              <div class="scene-count-control">
+                <select id="scene-mode">
+                  <option value="auto" selected>Auto-detect from script</option>
+                  <option value="manual">Manual count</option>
+                </select>
+                <input type="number" id="manual-scene-count" min="1" max="100" value="10" placeholder="# scenes" class="manual-count-input" disabled>
+              </div>
+              <small class="help-text" id="scene-help">Scenes will be split by line breaks in your script</small>
+            </div>
+          </div>
+
           <div class="options-row">
             <div class="form-group">
               <label for="batch-size">Size</label>
@@ -110,9 +139,15 @@
           <div class="cost-estimate">
             <span>Estimated cost: </span>
             <strong id="cost-estimate">$0.00</strong>
+            <span class="preview-cost" id="preview-cost">(Preview: ~$0.12)</span>
           </div>
 
-          <button class="btn primary" id="generate-batch-btn">Generate All Scenes</button>
+          <div class="generate-buttons">
+            <button class="btn secondary" id="preview-btn" title="Generate 3 test scenes to check style">
+              <span class="btn-icon">👁️</span> Preview (3 Scenes)
+            </button>
+            <button class="btn primary" id="generate-batch-btn">Generate All Scenes</button>
+          </div>
         </div>
 
         <!-- Generated Scenes Grid -->

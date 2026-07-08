@@ -93,6 +93,45 @@ styleOptions.forEach(option => {
 // Generated scenes storage
 let generatedScenes = [];
 let lastGenerateParams = null;
+let isPreviewMode = false;
+
+// Video Settings Elements
+const videoLengthSlider = document.getElementById('video-length');
+const videoLengthDisplay = document.getElementById('video-length-display');
+const sceneModeSelect = document.getElementById('scene-mode');
+const manualSceneCountInput = document.getElementById('manual-scene-count');
+const sceneHelpText = document.getElementById('scene-help');
+const previewBtn = document.getElementById('preview-btn');
+const previewCostDisplay = document.getElementById('preview-cost');
+
+// Video Length Slider Handler
+if (videoLengthSlider) {
+  videoLengthSlider.addEventListener('input', () => {
+    const minutes = videoLengthSlider.value;
+    videoLengthDisplay.textContent = `${minutes} min`;
+    updateScriptStats();
+  });
+}
+
+// Scene Mode Toggle Handler
+if (sceneModeSelect) {
+  sceneModeSelect.addEventListener('change', () => {
+    const isManual = sceneModeSelect.value === 'manual';
+    manualSceneCountInput.disabled = !isManual;
+
+    if (isManual) {
+      sceneHelpText.textContent = 'Script will be evenly divided into your specified number of scenes';
+    } else {
+      sceneHelpText.textContent = 'Scenes will be split by line breaks in your script';
+    }
+    updateScriptStats();
+  });
+}
+
+// Manual Scene Count Handler
+if (manualSceneCountInput) {
+  manualSceneCountInput.addEventListener('input', updateScriptStats);
+}
 
 // Utility Functions
 function showLoading(text = 'Creating your image...', progress = '') {
@@ -137,8 +176,26 @@ function showToast(message, isError = true) {
 }
 
 // Script Parsing - Split into scenes
-function parseScriptToScenes(script) {
-  // Split by double newlines, numbered lists, or "Scene X" markers
+function parseScriptToScenes(script, forceCount = null) {
+  // If manual count is specified, split script evenly
+  if (forceCount && forceCount > 0) {
+    const words = script.trim().split(/\s+/);
+    const wordsPerScene = Math.ceil(words.length / forceCount);
+    const scenes = [];
+
+    for (let i = 0; i < forceCount; i++) {
+      const start = i * wordsPerScene;
+      const end = Math.min(start + wordsPerScene, words.length);
+      const sceneWords = words.slice(start, end);
+      if (sceneWords.length > 0) {
+        scenes.push(sceneWords.join(' '));
+      }
+    }
+
+    return scenes;
+  }
+
+  // Auto-detect: Split by double newlines, numbered lists, or "Scene X" markers
   const scenes = script
     .split(/\n\s*\n|\n(?=\d+[\.\)]\s)|(?=Scene\s*\d+)/gi)
     .map(s => s.trim())
@@ -147,15 +204,45 @@ function parseScriptToScenes(script) {
   return scenes;
 }
 
+// Get current scene count based on mode
+function getCurrentSceneCount() {
+  const script = scriptInput.value;
+  const sceneMode = sceneModeSelect ? sceneModeSelect.value : 'auto';
+
+  if (sceneMode === 'manual' && manualSceneCountInput) {
+    return parseInt(manualSceneCountInput.value) || 10;
+  }
+
+  return parseScriptToScenes(script).length;
+}
+
+// Get scenes based on current mode
+function getScenesForGeneration() {
+  const script = scriptInput.value.trim();
+  const sceneMode = sceneModeSelect ? sceneModeSelect.value : 'auto';
+
+  if (sceneMode === 'manual' && manualSceneCountInput) {
+    const manualCount = parseInt(manualSceneCountInput.value) || 10;
+    return parseScriptToScenes(script, manualCount);
+  }
+
+  return parseScriptToScenes(script);
+}
+
 // Update scene count and cost estimate
 function updateScriptStats() {
   const script = scriptInput.value;
   const chars = script.length;
-  const scenes = parseScriptToScenes(script);
-  const numScenes = scenes.length;
+  const numScenes = getCurrentSceneCount();
 
   charCount.textContent = `${chars.toLocaleString()}/20,000`;
-  sceneCount.textContent = `${numScenes} scene${numScenes !== 1 ? 's' : ''} detected`;
+
+  const sceneMode = sceneModeSelect ? sceneModeSelect.value : 'auto';
+  if (sceneMode === 'manual') {
+    sceneCount.textContent = `${numScenes} scene${numScenes !== 1 ? 's' : ''} (manual)`;
+  } else {
+    sceneCount.textContent = `${numScenes} scene${numScenes !== 1 ? 's' : ''} detected`;
+  }
 
   // Calculate cost estimate
   const quality = document.getElementById('batch-quality').value;
@@ -170,6 +257,13 @@ function updateScriptStats() {
 
   const totalCost = numScenes * costPerImage;
   costEstimate.textContent = `$${totalCost.toFixed(2)}`;
+
+  // Update preview cost (3 scenes)
+  const previewSceneCount = Math.min(3, numScenes);
+  const previewCost = previewSceneCount * costPerImage;
+  if (previewCostDisplay) {
+    previewCostDisplay.textContent = `(Preview: ~$${previewCost.toFixed(2)})`;
+  }
 }
 
 scriptInput.addEventListener('input', updateScriptStats);
@@ -282,15 +376,128 @@ async function generateImage() {
   }
 }
 
+// Preview Mode - Generate only 3 test scenes
+async function generatePreviewScenes() {
+  const script = scriptInput.value.trim();
+  let allScenes = getScenesForGeneration();
+
+  if (allScenes.length === 0) {
+    showToast('Please enter a script with at least one scene');
+    return;
+  }
+
+  // Pick 3 representative scenes: first, middle, and last (or less if fewer scenes)
+  let previewIndices = [];
+  if (allScenes.length === 1) {
+    previewIndices = [0];
+  } else if (allScenes.length === 2) {
+    previewIndices = [0, 1];
+  } else {
+    const middle = Math.floor(allScenes.length / 2);
+    previewIndices = [0, middle, allScenes.length - 1];
+  }
+
+  const previewScenes = previewIndices.map(i => ({
+    index: i,
+    text: allScenes[i]
+  }));
+
+  isPreviewMode = true;
+  const size = document.getElementById('batch-size').value;
+  const quality = document.getElementById('batch-quality').value;
+
+  generatedScenes = [];
+  scenesGrid.innerHTML = '';
+  scenesContainer.hidden = false;
+
+  // Add a preview header
+  const previewHeader = document.createElement('div');
+  previewHeader.className = 'preview-header';
+  previewHeader.innerHTML = `
+    <div class="preview-notice">
+      <span class="preview-badge">Preview Mode</span>
+      <p>Testing ${previewScenes.length} sample scenes (beginning, middle, end). Adjust style if needed, then generate all.</p>
+    </div>
+  `;
+  scenesGrid.before(previewHeader);
+
+  // Create placeholder cards for preview scenes
+  previewScenes.forEach(({index, text}) => {
+    const card = createSceneCard(index, text, null, true);
+    scenesGrid.appendChild(card);
+  });
+
+  showLoading('Generating preview...', `0 of ${previewScenes.length} scenes`);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  // Generate preview scenes sequentially
+  for (let i = 0; i < previewScenes.length; i++) {
+    const { index, text } = previewScenes[i];
+    const styledPrompt = buildStyledPrompt(text, selectedStyle);
+
+    updateLoadingProgress(i + 1, previewScenes.length);
+
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: styledPrompt, size, quality })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      generatedScenes[index] = {
+        index: index,
+        text: text,
+        imageUrl: data.image,
+        prompt: styledPrompt,
+        revisedPrompt: data.revised_prompt,
+        isPreview: true
+      };
+
+      updateSceneCard(index, data.image);
+      successCount++;
+
+    } catch (error) {
+      console.error(`Failed to generate preview scene ${index + 1}:`, error);
+      markSceneError(index);
+      failCount++;
+    }
+
+    if (i < previewScenes.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  hideLoading();
+
+  if (successCount > 0) {
+    showToast(`Preview: ${successCount} scene${successCount !== 1 ? 's' : ''} generated. Review and adjust style before generating all.`, false);
+  }
+
+  scenesContainer.scrollIntoView({ behavior: 'smooth' });
+}
+
 // Batch Scene Generation
 async function generateBatchScenes() {
   const script = scriptInput.value.trim();
-  const scenes = parseScriptToScenes(script);
+  const scenes = getScenesForGeneration();
 
   if (scenes.length === 0) {
     showToast('Please enter a script with at least one scene');
     return;
   }
+
+  // Remove any preview header
+  const previewHeader = document.querySelector('.preview-header');
+  if (previewHeader) previewHeader.remove();
+  isPreviewMode = false;
 
   const size = document.getElementById('batch-size').value;
   const quality = document.getElementById('batch-quality').value;
@@ -680,6 +887,11 @@ document.getElementById('variations-btn').addEventListener('click', createVariat
 generateBatchBtn.addEventListener('click', generateBatchScenes);
 downloadAllBtn.addEventListener('click', downloadAllScenes);
 regenerateBtn.addEventListener('click', regenerateLastImage);
+
+// Preview Button Handler
+if (previewBtn) {
+  previewBtn.addEventListener('click', generatePreviewScenes);
+}
 
 // Make functions globally available for onclick handlers
 window.regenerateScene = regenerateScene;
