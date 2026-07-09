@@ -1824,6 +1824,184 @@ app.get('/api/db/avatar-video-cache/:userId', async (req, res) => {
   }
 });
 
+// ============================================
+// IMAGE-TO-VIDEO GENERATION
+// ============================================
+
+// Generate video from static image using AI
+app.post('/api/image-to-video', async (req, res) => {
+  try {
+    const { imageUrl, prompt, duration = 5 } = req.body;
+
+    if (!imageUrl) {
+      return res.status(400).json({ error: 'imageUrl is required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    console.log('Generating video from image, prompt:', prompt || 'subtle motion');
+
+    // Using minimax/video-01 for good quality image-to-video
+    // Alternative: stability-ai/stable-video-diffusion
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: 'c8bcc4751328608bb75043b3af7bed539aa2c165d8dcf45987f7cc002482f8e4', // minimax/video-01
+        input: {
+          prompt: prompt || 'cinematic motion, subtle movement, camera pan, professional video',
+          first_frame_image: imageUrl,
+          prompt_optimizer: true
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Video API error:', response.status, errorText);
+      throw new Error(`Replicate API error (${response.status}): ${errorText}`);
+    }
+
+    let prediction = await response.json();
+    console.log('Video generation started:', prediction.id);
+
+    // Poll for completion
+    const maxAttempts = 120; // 10 minutes max (video takes longer)
+    let attempts = 0;
+
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Check every 5 seconds
+      attempts++;
+
+      const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+
+      if (!pollResponse.ok) {
+        throw new Error(`Poll request failed: ${pollResponse.status}`);
+      }
+
+      prediction = await pollResponse.json();
+      console.log(`Video generation status: ${prediction.status} (attempt ${attempts})`);
+    }
+
+    if (prediction.status === 'failed') {
+      throw new Error(prediction.error || 'Video generation failed');
+    }
+
+    if (prediction.status !== 'succeeded') {
+      throw new Error('Video generation timed out');
+    }
+
+    console.log('Video generated successfully:', prediction.output);
+
+    res.json({
+      success: true,
+      videoUrl: prediction.output,
+      predictionId: prediction.id
+    });
+
+  } catch (error) {
+    console.error('Image-to-video error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Batch generate videos from multiple images
+app.post('/api/image-to-video/batch', async (req, res) => {
+  try {
+    const { scenes, motionPrompt } = req.body;
+
+    if (!scenes || !Array.isArray(scenes) || scenes.length === 0) {
+      return res.status(400).json({ error: 'scenes array is required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    console.log(`Starting batch video generation for ${scenes.length} scenes`);
+
+    // Start all predictions in parallel
+    const predictions = await Promise.all(scenes.map(async (scene, index) => {
+      const response = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          version: 'c8bcc4751328608bb75043b3af7bed539aa2c165d8dcf45987f7cc002482f8e4',
+          input: {
+            prompt: motionPrompt || 'cinematic motion, subtle camera movement, professional video',
+            first_frame_image: scene.imageUrl,
+            prompt_optimizer: true
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Scene ${index + 1} failed: ${errorText}`);
+      }
+
+      const prediction = await response.json();
+      return { index, predictionId: prediction.id, sceneId: scene.id };
+    }));
+
+    console.log(`Started ${predictions.length} video predictions`);
+
+    res.json({
+      success: true,
+      message: `Started ${predictions.length} video generations`,
+      predictions: predictions
+    });
+
+  } catch (error) {
+    console.error('Batch video generation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check video generation status
+app.get('/api/image-to-video/status/:predictionId', async (req, res) => {
+  try {
+    const { predictionId } = req.params;
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Status check failed: ${response.status}`);
+    }
+
+    const prediction = await response.json();
+
+    res.json({
+      status: prediction.status,
+      videoUrl: prediction.output,
+      error: prediction.error
+    });
+
+  } catch (error) {
+    console.error('Video status check error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Check Supabase connection
 app.get('/api/db/status', (req, res) => {
   res.json({

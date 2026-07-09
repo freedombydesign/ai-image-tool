@@ -2169,6 +2169,9 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
         </svg>
         Add Text
       </button>
+      <button class="btn accent animate-scene-btn" onclick="animateScene(${index})" title="Convert to video with motion">
+        🎬 Animate
+      </button>
     </div>
   `;
 
@@ -2363,6 +2366,88 @@ async function downloadScene(index) {
   } catch (error) {
     showToast('Failed to download scene');
   }
+}
+
+// ============================================
+// IMAGE-TO-VIDEO (ANIMATE SCENES)
+// ============================================
+
+// Animate a single scene (convert image to video)
+async function animateScene(index) {
+  const scene = generatedScenes[index];
+  if (!scene || !scene.imageUrl) {
+    showToast('Generate the scene image first', 'error');
+    return;
+  }
+
+  const card = document.getElementById(`scene-card-${index}`);
+  const animateBtn = card.querySelector('.animate-scene-btn');
+
+  // Show loading state
+  animateBtn.disabled = true;
+  animateBtn.innerHTML = '⏳ Animating...';
+
+  showToast(`Animating scene ${index + 1}... This takes 1-2 minutes`, 'info');
+
+  try {
+    const response = await fetch('/api/image-to-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageUrl: scene.imageUrl,
+        prompt: 'cinematic motion, subtle camera movement, gentle animation, professional video'
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Store video URL in scene data
+    generatedScenes[index].videoUrl = data.videoUrl;
+
+    // Update button to show it's animated
+    animateBtn.innerHTML = '✅ Animated';
+    animateBtn.classList.add('animated');
+
+    showToast(`Scene ${index + 1} animated!`, 'success');
+
+  } catch (error) {
+    console.error('Animation error:', error);
+    animateBtn.innerHTML = '🎬 Animate';
+    animateBtn.disabled = false;
+    showToast(`Animation failed: ${error.message}`, 'error');
+  }
+}
+
+// Animate all scenes (batch)
+async function animateAllScenes() {
+  const scenesWithImages = generatedScenes.filter(s => s && s.imageUrl && !s.videoUrl);
+
+  if (scenesWithImages.length === 0) {
+    showToast('No scenes to animate (already animated or no images)', 'error');
+    return;
+  }
+
+  const cost = (scenesWithImages.length * 0.10).toFixed(2);
+  if (!confirm(`Animate ${scenesWithImages.length} scenes?\n\nEstimated cost: ~$${cost}\nTime: ~${scenesWithImages.length * 2} minutes`)) {
+    return;
+  }
+
+  showToast(`Starting animation for ${scenesWithImages.length} scenes...`, 'info');
+
+  // Animate scenes sequentially to avoid rate limits
+  for (let i = 0; i < generatedScenes.length; i++) {
+    if (generatedScenes[i] && generatedScenes[i].imageUrl && !generatedScenes[i].videoUrl) {
+      await animateScene(i);
+      // Small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+
+  showToast('All scenes animated!', 'success');
 }
 
 // Download all scenes as ZIP
