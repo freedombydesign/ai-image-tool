@@ -6,6 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,19 @@ const PORT = process.env.PORT || 3000;
 const openai = new OpenAI({
   apiKey: (process.env.OPENAI_API_KEY || '').trim()
 });
+
+// Initialize Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
+
+if (supabase) {
+  console.log('Supabase connected');
+} else {
+  console.log('Supabase not configured - using localStorage fallback');
+}
 
 // Model configurations with pricing info
 const MODEL_CONFIG = {
@@ -1108,9 +1122,251 @@ Only output the JSON array, no other text.`;
   }
 });
 
+// ============================================================================
+// SUPABASE API ENDPOINTS
+// ============================================================================
+
+// Save/Update Avatar
+app.post('/api/db/avatar', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, imageData, description, enabled } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Upsert avatar data
+    const { data, error } = await supabase
+      .from('ai_tool_avatars')
+      .upsert({
+        user_id: userId,
+        image_url: imageData, // Store base64 or URL
+        description: description || '',
+        enabled: enabled !== false,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, avatar: data });
+  } catch (error) {
+    console.error('Save avatar error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get Avatar
+app.get('/api/db/avatar/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('ai_tool_avatars')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+
+    res.json({ success: true, avatar: data || null });
+  } catch (error) {
+    console.error('Get avatar error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete Avatar
+app.delete('/api/db/avatar/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { error } = await supabase
+      .from('ai_tool_avatars')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete avatar error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save Thumbnail to History
+app.post('/api/db/thumbnails', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, imageUrl, prompt, style, model, referenceUsed, avatarUsed } = req.body;
+
+    if (!userId || !imageUrl) {
+      return res.status(400).json({ error: 'userId and imageUrl are required' });
+    }
+
+    const { data, error } = await supabase
+      .from('ai_tool_thumbnails')
+      .insert({
+        user_id: userId,
+        image_url: imageUrl,
+        prompt: prompt || '',
+        style: style || '',
+        model: model || 'dall-e-3',
+        reference_used: referenceUsed || false,
+        avatar_used: avatarUsed || false
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, thumbnail: data });
+  } catch (error) {
+    console.error('Save thumbnail error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get Thumbnail History
+app.get('/api/db/thumbnails/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
+
+    const { data, error } = await supabase
+      .from('ai_tool_thumbnails')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+
+    res.json({ success: true, thumbnails: data || [] });
+  } catch (error) {
+    console.error('Get thumbnails error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete Thumbnail
+app.delete('/api/db/thumbnails/:id', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('ai_tool_thumbnails')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete thumbnail error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save User Settings
+app.post('/api/db/settings', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, defaultModel, defaultStyle, theme, settingsJson } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const { data, error } = await supabase
+      .from('ai_tool_settings')
+      .upsert({
+        user_id: userId,
+        default_model: defaultModel || 'dall-e-3',
+        default_style: defaultStyle || '',
+        theme: theme || 'dark',
+        settings_json: settingsJson || {},
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, settings: data });
+  } catch (error) {
+    console.error('Save settings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get User Settings
+app.get('/api/db/settings/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('ai_tool_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    res.json({ success: true, settings: data || null });
+  } catch (error) {
+    console.error('Get settings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check Supabase connection
+app.get('/api/db/status', (req, res) => {
+  res.json({
+    connected: !!supabase,
+    url: supabaseUrl ? supabaseUrl.replace(/https?:\/\//, '').split('.')[0] + '...' : null
+  });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', hasApiKey: !!process.env.OPENAI_API_KEY });
+  res.json({ status: 'ok', hasApiKey: !!process.env.OPENAI_API_KEY, hasSupabase: !!supabase });
 });
 
 // Start server
