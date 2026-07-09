@@ -722,21 +722,17 @@ app.post('/api/analyze-avatar', upload.single('image'), async (req, res) => {
     const base64Image = imageBuffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/png';
 
-    const systemPrompt = `Analyze this person's face and physical appearance in detail. Create a comprehensive description that could be used to consistently recreate their likeness in AI-generated images.
+    const systemPrompt = `You are an artistic reference assistant. Describe this person's visual appearance in detail as if writing a character description for an illustrator or concept artist.
 
-Include these specific details:
-1. Face shape (oval, round, square, heart, etc.)
-2. Skin tone (specific shade)
-3. Eye shape, color, and any distinctive features
-4. Eyebrows (shape, thickness, arch)
-5. Nose shape and size
-6. Lip shape and fullness
-7. Hair color, texture, length, style
-8. Any distinctive features (dimples, freckles, moles, facial hair, etc.)
-9. Approximate age range
-10. Overall facial structure (cheekbones, jawline, chin)
+Focus on visual characteristics that help recreate a consistent character:
+- Hair: color, texture, length, style
+- General complexion and skin tone
+- Eye color and shape
+- Face shape and structure
+- Any distinctive visual features like glasses, facial hair, jewelry
+- Apparent style or aesthetic
 
-Format as a single detailed paragraph that can be directly used in image generation prompts. Be specific with colors and shapes. Start directly with the description, no preamble.`;
+Write a single flowing paragraph suitable for use as an artistic reference. Be descriptive and specific about colors, shapes, and visual details. Start directly with the description.`;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',

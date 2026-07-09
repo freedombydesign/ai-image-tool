@@ -518,13 +518,16 @@ function removeAvatar() {
 
   const placeholder = document.getElementById('avatar-placeholder');
   const preview = document.getElementById('avatar-preview');
+  const avatarImage = document.getElementById('avatar-image');
   const descSection = document.getElementById('avatar-description-section');
   const statusEl = document.getElementById('avatar-status');
   const descInput = document.getElementById('avatar-description');
   const checkbox = document.getElementById('avatar-enabled');
+  const fileInput = document.getElementById('avatar-file');
 
   if (placeholder) placeholder.hidden = false;
   if (preview) preview.hidden = true;
+  if (avatarImage) avatarImage.src = ''; // Clear the image source
   if (descSection) descSection.hidden = true;
   if (statusEl) {
     statusEl.textContent = 'No avatar';
@@ -532,6 +535,7 @@ function removeAvatar() {
   }
   if (descInput) descInput.value = '';
   if (checkbox) checkbox.checked = false;
+  if (fileInput) fileInput.value = ''; // Reset file input
 
   updateAvatarStatusIndicators(); // Update status across all tabs
   saveAvatarState(); // Auto-save to localStorage
