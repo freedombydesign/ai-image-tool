@@ -808,9 +808,12 @@ app.post('/api/face-swap', upload.fields([
 
     console.log('Face swap succeeded, output:', prediction.output);
 
+    // xiankgx/face-swap returns {image: "url", msg: "succeed", ...}
+    const outputImage = prediction.output?.image || prediction.output;
+
     res.json({
       success: true,
-      image: prediction.output,
+      image: outputImage,
       predictionId: prediction.id
     });
 
