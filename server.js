@@ -1973,6 +1973,61 @@ app.delete('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
   }
 });
 
+// Cleanup duplicates - keep only the most recent batch
+app.post('/api/db/batch-scenes/:userId/cleanup', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    // Get all batches for user
+    const { data: allScenes, error: fetchError } = await supabase
+      .from('ai_tool_batch_scenes')
+      .select('batch_id, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (fetchError) throw fetchError;
+
+    // Group by batch_id and find unique batches
+    const batches = {};
+    (allScenes || []).forEach(scene => {
+      if (!batches[scene.batch_id]) {
+        batches[scene.batch_id] = scene.created_at;
+      }
+    });
+
+    const batchIds = Object.keys(batches);
+
+    if (batchIds.length <= 1) {
+      return res.json({ success: true, message: 'No duplicates to clean', kept: batchIds[0] || null, deleted: 0 });
+    }
+
+    // Keep the most recent batch, delete the rest
+    const mostRecentBatch = batchIds[0]; // Already sorted by created_at desc
+    const batchesToDelete = batchIds.slice(1);
+
+    let deletedCount = 0;
+    for (const batchId of batchesToDelete) {
+      const { error: deleteError } = await supabase
+        .from('ai_tool_batch_scenes')
+        .delete()
+        .eq('user_id', userId)
+        .eq('batch_id', batchId);
+
+      if (!deleteError) deletedCount++;
+    }
+
+    console.log(`Cleaned up ${deletedCount} old batches for user ${userId}, kept ${mostRecentBatch}`);
+    res.json({ success: true, kept: mostRecentBatch, deleted: deletedCount });
+  } catch (error) {
+    console.error('Cleanup error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================
 // IMAGE-TO-VIDEO GENERATION
 // ============================================

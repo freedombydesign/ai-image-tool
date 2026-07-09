@@ -2778,6 +2778,32 @@ async function handleZipUpload(event) {
   event.target.value = '';
 }
 
+// Cleanup duplicate batches in Supabase
+async function cleanupDuplicateBatches() {
+  try {
+    showToast('Cleaning up duplicates...', 'info');
+
+    const response = await fetch(`/api/db/batch-scenes/${getUserId()}/cleanup`, {
+      method: 'POST'
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      if (data.deleted > 0) {
+        showToast(`Cleaned up ${data.deleted} old batch(es). Kept most recent.`, false);
+      } else {
+        showToast('No duplicates found', false);
+      }
+    } else {
+      showToast('Cleanup failed: ' + data.error, true);
+    }
+  } catch (e) {
+    console.error('Cleanup error:', e);
+    showToast('Cleanup failed: ' + e.message, true);
+  }
+}
+
 async function downloadAllScenes() {
   const validScenes = generatedScenes.filter(s => s && s.imageUrl);
 

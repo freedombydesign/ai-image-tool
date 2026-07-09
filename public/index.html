@@ -256,6 +256,7 @@
             <button class="btn danger" id="stop-generation-btn" onclick="stopGeneration()" hidden>⏹️ Stop</button>
             <input type="file" id="zip-upload-input" accept=".zip" hidden onchange="handleZipUpload(event)">
             <button class="btn secondary" onclick="document.getElementById('zip-upload-input').click()">📁 Upload ZIP</button>
+            <button class="btn secondary small" onclick="cleanupDuplicateBatches()" title="Remove old batches, keep only the latest">🧹 Cleanup</button>
           </div>
 
           <!-- Converted Visual Scenes Preview -->
