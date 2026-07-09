@@ -429,14 +429,14 @@ function toggleAvatarUsage() {
   showToast(avatarEnabled ? 'Avatar will be used in generation' : 'Avatar disabled');
 }
 
-function handleAvatarUpload(file) {
+async function handleAvatarUpload(file) {
   if (!file || !file.type.startsWith('image/')) {
     showToast('Please upload a valid image file');
     return;
   }
 
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     avatarImageData = e.target.result;
 
     // Show preview
@@ -445,6 +445,7 @@ function handleAvatarUpload(file) {
     const avatarImage = document.getElementById('avatar-image');
     const descSection = document.getElementById('avatar-description-section');
     const statusEl = document.getElementById('avatar-status');
+    const descInput = document.getElementById('avatar-description');
 
     if (placeholder) placeholder.hidden = true;
     if (preview) {
@@ -453,9 +454,9 @@ function handleAvatarUpload(file) {
     }
     if (descSection) descSection.hidden = false;
 
-    // Update status
+    // Update status to analyzing
     if (statusEl) {
-      statusEl.textContent = 'Uploaded';
+      statusEl.textContent = 'Analyzing...';
       statusEl.classList.add('active');
     }
 
@@ -466,9 +467,46 @@ function handleAvatarUpload(file) {
       avatarEnabled = true;
     }
 
-    updateAvatarStatusIndicators(); // Update status across all tabs
-    saveAvatarState(); // Auto-save to localStorage
-    showToast('Avatar uploaded! Describe your character for best results.');
+    updateAvatarStatusIndicators();
+    showToast('Analyzing your avatar with AI...');
+
+    // Auto-analyze the avatar with GPT-4 Vision
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('/api/analyze-avatar', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.description) {
+        // Fill in the description automatically
+        avatarDescription = data.description;
+        if (descInput) {
+          descInput.value = data.description;
+        }
+
+        if (statusEl) {
+          statusEl.textContent = 'Ready';
+        }
+
+        saveAvatarState();
+        updateAvatarStatusIndicators();
+        showToast('Avatar analyzed! Your appearance has been captured.', false);
+        console.log('Avatar description:', data.description);
+      } else {
+        throw new Error(data.error || 'Analysis failed');
+      }
+    } catch (error) {
+      console.error('Avatar analysis failed:', error);
+      if (statusEl) {
+        statusEl.textContent = 'Uploaded';
+      }
+      showToast('Avatar uploaded (auto-analysis failed - please describe manually)');
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -2470,6 +2508,165 @@ function updateThumbnailGallery() {
 // Thumbnail Event Listeners
 if (generateThumbnailBtn) {
   generateThumbnailBtn.addEventListener('click', generateThumbnail);
+}
+
+// Generate with Face (InstantID) button
+const generateThumbnailWithFaceBtn = document.getElementById('generate-thumbnail-with-face-btn');
+if (generateThumbnailWithFaceBtn) {
+  generateThumbnailWithFaceBtn.addEventListener('click', generateThumbnailWithFace);
+}
+
+// Generate thumbnail with user's face using InstantID
+async function generateThumbnailWithFace() {
+  // Check if avatar is uploaded
+  if (!avatarImageData) {
+    showToast('Please upload your avatar photo first');
+    switchToTabAndOpenAvatar('batch-scenes');
+    return;
+  }
+
+  const description = thumbnailPromptInput ? thumbnailPromptInput.value.trim() : '';
+  const textHook = thumbnailHookInput ? thumbnailHookInput.value.trim() : '';
+
+  if (!description) {
+    showToast('Please describe your thumbnail');
+    return;
+  }
+
+  showLoading('Generating thumbnail with your face (InstantID)...');
+
+  try {
+    // Build the prompt
+    let prompt = description;
+    if (selectedThumbnailStyle) {
+      const styleInfo = THUMBNAIL_STYLES[selectedThumbnailStyle];
+      if (styleInfo) {
+        prompt += `. Style: ${styleInfo.prompt}`;
+      }
+    }
+    if (textHook) {
+      prompt += `. Include bold readable text saying "${textHook}"`;
+    }
+    prompt += '. YouTube thumbnail, 16:9, eye-catching, professional';
+
+    // Convert avatar to blob
+    const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+    const formData = new FormData();
+    formData.append('faceImage', avatarBlob, 'avatar.png');
+    formData.append('prompt', prompt);
+    formData.append('width', '1792');
+    formData.append('height', '1024');
+
+    const response = await fetch('/api/generate-with-face', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.image) {
+      // Show result
+      if (thumbnailImage) {
+        thumbnailImage.src = data.image;
+      }
+      if (thumbnailResult) {
+        thumbnailResult.hidden = false;
+      }
+
+      // Add to history
+      thumbnailHistory.unshift({
+        imageUrl: data.image,
+        prompt: prompt,
+        timestamp: Date.now()
+      });
+
+      if (thumbnailHistory.length > 10) {
+        thumbnailHistory = thumbnailHistory.slice(0, 10);
+      }
+
+      updateThumbnailGallery();
+      saveThumbnailHistory();
+
+      showToast('Thumbnail generated with your face!', false);
+      thumbnailResult.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      throw new Error(data.error || 'Generation failed');
+    }
+  } catch (error) {
+    console.error('InstantID generation error:', error);
+    showToast(`Generation failed: ${error.message}`);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Banner with Face generation
+const generateBannerWithFaceBtn = document.getElementById('generate-banner-with-face-btn');
+if (generateBannerWithFaceBtn) {
+  generateBannerWithFaceBtn.addEventListener('click', generateBannerWithFace);
+}
+
+async function generateBannerWithFace() {
+  // Check if avatar is uploaded
+  if (!avatarImageData) {
+    showToast('Please upload your avatar photo first');
+    switchToTabAndOpenAvatar('batch-scenes');
+    return;
+  }
+
+  const promptInput = document.getElementById('banner-bg-prompt');
+  const description = promptInput ? promptInput.value.trim() : '';
+
+  if (!description) {
+    showToast('Please describe your banner background');
+    return;
+  }
+
+  showLoading('Generating banner with your face (InstantID)...');
+
+  try {
+    const prompt = `${description}. YouTube channel banner, wide format, professional, featuring a person prominently`;
+
+    // Convert avatar to blob
+    const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+    const formData = new FormData();
+    formData.append('faceImage', avatarBlob, 'avatar.png');
+    formData.append('prompt', prompt);
+    formData.append('width', '1536');
+    formData.append('height', '1024');
+
+    const response = await fetch('/api/generate-with-face', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.image) {
+      // Load the generated image onto the banner canvas
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.getElementById('banner-canvas');
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          // Scale to fit the banner canvas (2560x1440)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+        showToast('Banner generated with your face!', false);
+      };
+      img.src = data.image;
+    } else {
+      throw new Error(data.error || 'Generation failed');
+    }
+  } catch (error) {
+    console.error('Banner InstantID error:', error);
+    showToast(`Generation failed: ${error.message}`);
+  } finally {
+    hideLoading();
+  }
 }
 
 if (downloadThumbnailBtn) {

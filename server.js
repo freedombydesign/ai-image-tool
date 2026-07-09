@@ -78,7 +78,7 @@ async function generateWithReplicate(prompt, model, options = {}) {
   const response = await fetch('https://api.replicate.com/v1/predictions', {
     method: 'POST',
     headers: {
-      'Authorization': `Token ${apiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -105,7 +105,7 @@ async function generateWithReplicate(prompt, model, options = {}) {
   while (result.status !== 'succeeded' && result.status !== 'failed') {
     await new Promise(resolve => setTimeout(resolve, 1000));
     const pollResponse = await fetch(result.urls.get, {
-      headers: { 'Authorization': `Token ${apiKey}` }
+      headers: { 'Authorization': `Bearer ${apiKey}` }
     });
     result = await pollResponse.json();
   }
@@ -646,23 +646,19 @@ app.post('/api/face-swap', upload.fields([
     const sourceBase64 = `data:${sourceFile.mimetype};base64,${sourceBuffer.toString('base64')}`;
     const faceBase64 = `data:${faceFile.mimetype};base64,${faceBuffer.toString('base64')}`;
 
-    // Use Replicate face-swap model
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
+    // Use Replicate face-swap model (lucataco/facefusion)
+    const response = await fetch('https://api.replicate.com/v1/models/lucataco/facefusion/predictions', {
       method: 'POST',
       headers: {
-        'Authorization': `Token ${apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: 'c2d783366f8bbd89623b8a5aa9a7ffc6a2c6c4e848d1cd4c5f9e8e8b4c1b2a3f', // face-swap model
         input: {
-          target_image: sourceBase64,
-          source_image: faceBase64,
-          face_restore: true,
-          background_enhance: true,
-          face_upsample: true,
-          upscale: 1,
-          codeformer_fidelity: 0.5
+          target_path: sourceBase64,
+          source_path: faceBase64,
+          face_enhancer_blend: 80,
+          frame_enhancer_blend: 80
         }
       })
     });
@@ -678,7 +674,7 @@ app.post('/api/face-swap', upload.fields([
     while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
       await new Promise(resolve => setTimeout(resolve, 1000));
       const pollResponse = await fetch(prediction.urls.get, {
-        headers: { 'Authorization': `Token ${apiKey}` }
+        headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       prediction = await pollResponse.json();
     }
@@ -707,6 +703,160 @@ app.post('/api/face-swap', upload.fields([
       if (req.files['faceImage']?.[0] && fs.existsSync(req.files['faceImage'][0].path)) {
         fs.unlinkSync(req.files['faceImage'][0].path);
       }
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analyze avatar photo with GPT-4 Vision - generates detailed appearance description
+app.post('/api/analyze-avatar', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Avatar image is required' });
+    }
+
+    console.log('Analyzing avatar with GPT-4 Vision...');
+
+    // Convert image to base64
+    const imageBuffer = fs.readFileSync(req.file.path);
+    const base64Image = imageBuffer.toString('base64');
+    const mimeType = req.file.mimetype || 'image/png';
+
+    const systemPrompt = `Analyze this person's face and physical appearance in detail. Create a comprehensive description that could be used to consistently recreate their likeness in AI-generated images.
+
+Include these specific details:
+1. Face shape (oval, round, square, heart, etc.)
+2. Skin tone (specific shade)
+3. Eye shape, color, and any distinctive features
+4. Eyebrows (shape, thickness, arch)
+5. Nose shape and size
+6. Lip shape and fullness
+7. Hair color, texture, length, style
+8. Any distinctive features (dimples, freckles, moles, facial hair, etc.)
+9. Approximate age range
+10. Overall facial structure (cheekbones, jawline, chin)
+
+Format as a single detailed paragraph that can be directly used in image generation prompts. Be specific with colors and shapes. Start directly with the description, no preamble.`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: systemPrompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+                detail: 'high'
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 500
+    });
+
+    // Cleanup
+    fs.unlinkSync(req.file.path);
+
+    const description = response.choices[0].message.content;
+
+    res.json({
+      success: true,
+      description: description
+    });
+
+  } catch (error) {
+    console.error('Avatar analysis error:', error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate image with face using InstantID (Replicate)
+app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res) => {
+  try {
+    const { prompt, negativePrompt, width, height } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Face image is required' });
+    }
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    console.log('Generating with InstantID, prompt:', prompt);
+
+    // Convert face image to base64 data URI
+    const faceBuffer = fs.readFileSync(req.file.path);
+    const faceBase64 = `data:${req.file.mimetype};base64,${faceBuffer.toString('base64')}`;
+
+    // Use InstantID model on Replicate (zsxkib/instant-id)
+    const response = await fetch('https://api.replicate.com/v1/models/zsxkib/instant-id/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        input: {
+          image: faceBase64,
+          prompt: prompt,
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted face, bad anatomy, ugly, disfigured',
+          width: parseInt(width) || 1024,
+          height: parseInt(height) || 1024,
+          num_steps: 30,
+          guidance_scale: 5,
+          ip_adapter_scale: 0.8,
+          controlnet_conditioning_scale: 0.8,
+          enable_safety_checker: false
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Replicate API error: ${errorText}`);
+    }
+
+    let prediction = await response.json();
+
+    // Poll for completion
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const pollResponse = await fetch(prediction.urls.get, {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      prediction = await pollResponse.json();
+    }
+
+    // Cleanup
+    fs.unlinkSync(req.file.path);
+
+    if (prediction.status === 'failed') {
+      throw new Error(prediction.error || 'InstantID generation failed');
+    }
+
+    res.json({
+      success: true,
+      image: Array.isArray(prediction.output) ? prediction.output[0] : prediction.output,
+      predictionId: prediction.id
+    });
+
+  } catch (error) {
+    console.error('InstantID generation error:', error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
     }
     res.status(500).json({ error: error.message });
   }

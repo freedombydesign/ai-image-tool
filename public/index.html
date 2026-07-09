@@ -726,7 +726,16 @@
             <a href="#" onclick="switchToTabAndOpenAvatar('batch-scenes'); return false;" class="avatar-config-link">Configure in Batch Scenes →</a>
           </div>
 
-          <button class="btn primary" id="generate-thumbnail-btn">Generate Thumbnail</button>
+          <div class="button-row">
+            <button class="btn primary" id="generate-thumbnail-btn">Generate Thumbnail</button>
+            <button class="btn secondary" id="generate-thumbnail-with-face-btn" title="Generate with your face using InstantID">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              Generate with My Face
+            </button>
+          </div>
         </div>
 
         <!-- Thumbnail Result -->
@@ -805,7 +814,16 @@
                   <label for="banner-bg-prompt">Describe your background</label>
                   <textarea id="banner-bg-prompt" rows="3" placeholder="Abstract tech background with blue and purple gradient, geometric shapes, modern and clean..."></textarea>
                 </div>
-                <button class="btn secondary" id="generate-banner-bg-btn">Generate Background</button>
+                <div class="button-row">
+                  <button class="btn secondary" id="generate-banner-bg-btn">Generate Background</button>
+                  <button class="btn secondary" id="generate-banner-with-face-btn" title="Generate with your face using InstantID">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    Generate with My Face
+                  </button>
+                </div>
               </div>
 
               <!-- Upload Background -->
