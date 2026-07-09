@@ -2,7 +2,7 @@
 const STYLE_PRESETS = {
   'photorealistic': {
     name: 'Photorealistic Film',
-    prompt: 'photorealistic cinematic film still, professional photography, realistic lighting, shallow depth of field, 8K ultra HD quality, natural skin textures, movie scene aesthetic, ARRI camera look, film grain, lifelike proportions',
+    prompt: 'cinematic film scene, professional movie production, dramatic lighting, shallow depth of field, high quality cinematography, movie scene aesthetic, Hollywood film look, professional color grading, feature film quality',
   },
   'cinematic-2d': {
     name: 'Cinematic 2D Animation',
