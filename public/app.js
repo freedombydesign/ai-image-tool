@@ -2364,6 +2364,12 @@ generateBatchBtn.addEventListener('click', generateBatchScenes);
 downloadAllBtn.addEventListener('click', downloadAllScenes);
 regenerateBtn.addEventListener('click', regenerateLastImage);
 
+// Face Swap All Button Handler
+const faceSwapAllBtn = document.getElementById('face-swap-all-btn');
+if (faceSwapAllBtn) {
+  faceSwapAllBtn.addEventListener('click', faceSwapAllScenes);
+}
+
 // Preview Button Handler
 if (previewBtn) {
   previewBtn.addEventListener('click', generatePreviewScenes);
@@ -3258,6 +3264,80 @@ if (thumbnailFeedbackInput) {
       refineThumbnail();
     }
   });
+}
+
+// Face Swap All Scenes - swaps avatar face onto all generated scenes
+async function faceSwapAllScenes() {
+  // Check if avatar is uploaded
+  if (!avatarImageData) {
+    showToast('Please upload your avatar photo first');
+    return;
+  }
+
+  // Check if there are scenes to swap
+  const scenesWithImages = generatedScenes.filter(s => s && s.imageUrl);
+  if (scenesWithImages.length === 0) {
+    showToast('No generated scenes to face swap');
+    return;
+  }
+
+  showLoading(`Swapping your face onto all scenes...`, `0 of ${scenesWithImages.length}`);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  // Convert avatar to blob once
+  const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+  for (let i = 0; i < scenesWithImages.length; i++) {
+    const scene = scenesWithImages[i];
+    updateLoadingProgress(i + 1, scenesWithImages.length);
+
+    try {
+      // Fetch scene image as blob
+      const sceneBlob = await fetch(scene.imageUrl).then(r => r.blob());
+
+      const formData = new FormData();
+      formData.append('sourceImage', sceneBlob, 'scene.png');
+      formData.append('faceImage', avatarBlob, 'avatar.png');
+
+      const response = await fetch('/api/face-swap', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Update the scene with the face-swapped image
+      scene.imageUrl = data.image;
+      scene.faceSwapped = true;
+
+      // Update the scene card in the UI
+      updateSceneCard(scene.index, data.image);
+      successCount++;
+
+    } catch (error) {
+      console.error(`Failed to face swap scene ${scene.index + 1}:`, error);
+      failCount++;
+    }
+
+    // Small delay between requests
+    if (i < scenesWithImages.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  }
+
+  hideLoading();
+
+  if (failCount === 0) {
+    showToast(`Face swapped ${successCount} scenes successfully!`);
+  } else {
+    showToast(`Face swapped ${successCount} scenes, ${failCount} failed`);
+  }
 }
 
 // Face Swap Button
