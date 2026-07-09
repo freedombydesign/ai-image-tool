@@ -517,6 +517,7 @@ class BannerCreator {
       const enhancedPrompt = `${prompt}, wide panoramic composition suitable for a YouTube channel banner, 16:9 aspect ratio, no text or logos`;
 
       // Use Flux Schnell for faster generation (3-5 seconds vs 15-20 for DALL-E)
+      const selectedModel = document.getElementById('banner-model')?.value || 'gpt-image-1';
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -524,7 +525,7 @@ class BannerCreator {
           prompt: enhancedPrompt,
           size: '1792x1024',
           quality: 'standard',
-          model: 'gpt-image-1' // GPT Image - better content filter
+          model: selectedModel
         })
       });
 

@@ -1032,6 +1032,15 @@
                   <label for="banner-bg-prompt">Describe your background</label>
                   <textarea id="banner-bg-prompt" rows="3" placeholder="Abstract tech background with blue and purple gradient, geometric shapes, modern and clean..."></textarea>
                 </div>
+                <div class="form-group">
+                  <label for="banner-model">AI Model</label>
+                  <select id="banner-model" class="select">
+                    <option value="gpt-image-1">GPT Image (Recommended)</option>
+                    <option value="flux-schnell">Flux Schnell (Fast)</option>
+                    <option value="dall-e-3">DALL-E 3 (High Quality)</option>
+                    <option value="stable-diffusion">Stable Diffusion</option>
+                  </select>
+                </div>
                 <div class="button-row">
                   <button class="btn secondary" id="generate-banner-bg-btn">Generate Background</button>
                   <button class="btn secondary" id="generate-banner-with-face-btn" title="Generate with your face using InstantID">

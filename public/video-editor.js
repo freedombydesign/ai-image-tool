@@ -1664,9 +1664,23 @@ class VideoEditor {
     this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
 
     try {
+      // Determine file extension based on mime type
+      let extension = 'webm';
+      const mimeType = this.audioBlob.type || 'audio/webm';
+      if (mimeType.includes('mp3') || mimeType.includes('mpeg')) {
+        extension = 'mp3';
+      } else if (mimeType.includes('wav')) {
+        extension = 'wav';
+      } else if (mimeType.includes('m4a') || mimeType.includes('mp4')) {
+        extension = 'm4a';
+      } else if (mimeType.includes('ogg')) {
+        extension = 'ogg';
+      }
+
       // Create form data with just the audio (no scenes - we want full transcription)
       const formData = new FormData();
-      formData.append('audio', this.audioBlob, 'recording.webm');
+      const audioFile = new File([this.audioBlob], `audio.${extension}`, { type: mimeType });
+      formData.append('audio', audioFile);
 
       // Call transcription API
       const response = await fetch('/api/transcribe', {
