@@ -1289,9 +1289,25 @@ app.post('/api/transcribe-url', async (req, res) => {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Save to temp file
-    const tempPath = `/tmp/audio_${Date.now()}.mp3`;
+    // Detect file extension from URL or content-type
+    let ext = 'mp3';
+    const urlPath = new URL(audioUrl).pathname;
+    const urlExt = urlPath.split('.').pop()?.toLowerCase();
+    if (['m4a', 'mp3', 'wav', 'ogg', 'flac', 'webm', 'mp4', 'mpeg', 'mpga', 'oga'].includes(urlExt)) {
+      ext = urlExt;
+    } else {
+      // Try content-type header
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('m4a') || contentType.includes('mp4')) ext = 'm4a';
+      else if (contentType.includes('wav')) ext = 'wav';
+      else if (contentType.includes('ogg')) ext = 'ogg';
+      else if (contentType.includes('webm')) ext = 'webm';
+    }
+
+    // Save to temp file with correct extension
+    const tempPath = `/tmp/audio_${Date.now()}.${ext}`;
     fs.writeFileSync(tempPath, buffer);
+    console.log('Saved audio to temp file:', tempPath);
 
     // Transcribe with Whisper
     const transcription = await openai.audio.transcriptions.create({
