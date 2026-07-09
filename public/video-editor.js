@@ -1979,10 +1979,24 @@ class VideoEditor {
     this.previewPlayPauseBtn.textContent = '⏸️ Pause';
     this.lastFrameTime = performance.now();
 
-    // Play voiceover
-    if (this.audioBuffer || this.audioBlob) {
+    // Play voiceover - ensure blob URL is valid
+    if (this.audioBlob) {
+      // Recreate blob URL if needed (Firefox fix)
+      if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
+        const url = URL.createObjectURL(this.audioBlob);
+        this.audioPlayer.src = url;
+        this.currentAudioUrl = url;
+      }
       this.audioPlayer.currentTime = this.playbackTime;
-      this.audioPlayer.play().catch(e => console.log('Voiceover play error:', e));
+      this.audioPlayer.play().catch(e => {
+        console.log('Voiceover play error:', e);
+        // Try reloading the audio
+        if (this.audioBlob) {
+          const url = URL.createObjectURL(this.audioBlob);
+          this.audioPlayer.src = url;
+          this.audioPlayer.load();
+        }
+      });
     }
 
     // Play background music
