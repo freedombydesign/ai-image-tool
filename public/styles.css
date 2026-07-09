@@ -445,6 +445,10 @@ input[type="text"]::placeholder {
 .refine-input-row .btn {
   margin: 0;
   white-space: nowrap;
+  padding: 0.875rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  min-width: 120px;
 }
 
 .refine-feedback-section .help-text {
