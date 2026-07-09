@@ -1697,10 +1697,11 @@ class VideoEditor {
         extension = 'ogg';
       }
 
-      // Create form data with just the audio (no scenes - we want full transcription)
+      // Create form data - use blob directly (Safari compatible)
       const formData = new FormData();
-      const audioFile = new File([this.audioBlob], `audio.${extension}`, { type: mimeType });
-      formData.append('audio', audioFile);
+
+      // Safari fix: append blob with filename instead of using File constructor
+      formData.append('audio', this.audioBlob, `audio.${extension}`);
 
       // Call transcription API
       const response = await fetch('/api/transcribe', {
