@@ -222,14 +222,14 @@ function setStyleAnchor(sceneIndex) {
   // Update UI
   updateAnchorPanel();
   updateSceneCardAnchorStates();
-  showToast(`Scene ${String(sceneIndex + 1).padStart(2, '0')} set as style anchor`);
+  showToast(`Scene ${String(sceneIndex + 1).padStart(2, '0')} set as style anchor`, false);
 }
 
 function clearStyleAnchor() {
   styleAnchor = null;
   updateAnchorPanel();
   updateSceneCardAnchorStates();
-  showToast('Style anchor cleared');
+  showToast('Style anchor cleared', false);
 }
 
 function updateAnchorPanel() {
