@@ -670,6 +670,43 @@
             </div>
           </div>
 
+          <!-- Face Swap Section - Upload existing image -->
+          <div class="form-group face-swap-upload-section">
+            <label>Face Swap (Upload Existing Image)</label>
+            <small class="help-text" style="display: block; margin-bottom: 0.5rem;">Upload any thumbnail and swap your avatar face into it</small>
+            <div class="face-swap-upload-area" id="face-swap-upload">
+              <input type="file" id="face-swap-file" accept="image/*" hidden>
+              <div class="upload-placeholder" id="face-swap-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span>Upload image to swap face into</span>
+              </div>
+              <div id="face-swap-preview" class="face-swap-preview" hidden>
+                <img id="face-swap-image" alt="Image for face swap">
+                <div class="face-swap-controls">
+                  <button class="btn primary" id="do-face-swap-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    Swap My Face Into This
+                  </button>
+                  <button class="btn text small" id="clear-face-swap">Remove</button>
+                </div>
+              </div>
+            </div>
+            <div id="face-swap-result" class="face-swap-result" hidden>
+              <h4>Face Swap Result</h4>
+              <img id="face-swap-result-image" alt="Face swapped result">
+              <div class="result-actions">
+                <button class="btn secondary" id="download-face-swap-btn">Download</button>
+                <button class="btn text" id="clear-face-swap-result">Clear</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Thumbnail Description -->
           <div class="form-group">
             <label for="thumbnail-prompt">Describe your thumbnail</label>
@@ -983,6 +1020,65 @@
             </div>
           </div>
 
+          <!-- Avatar/Profile Photo -->
+          <div class="editor-section">
+            <h3>Your Avatar (Optional)</h3>
+            <small class="help-text">Add your profile photo to the banner</small>
+            <div class="avatar-banner-controls">
+              <div id="banner-avatar-use-existing" class="use-existing-avatar" hidden>
+                <div class="existing-avatar-preview">
+                  <img id="banner-existing-avatar" alt="Your avatar">
+                  <span>Use your uploaded avatar</span>
+                </div>
+                <button class="btn secondary small" id="use-avatar-for-banner">Use This Avatar</button>
+              </div>
+              <div class="upload-area small" id="banner-avatar-upload">
+                <input type="file" id="banner-avatar-file" accept="image/*" hidden>
+                <div class="upload-placeholder">
+                  <span class="upload-icon">👤</span>
+                  <p>Upload avatar photo</p>
+                </div>
+              </div>
+              <div id="avatar-banner-settings" class="avatar-banner-settings" hidden>
+                <div class="avatar-preview-small">
+                  <img id="banner-avatar-preview" alt="Avatar preview">
+                  <button class="btn text small" id="remove-banner-avatar">Remove</button>
+                </div>
+                <div class="avatar-position-controls">
+                  <div class="form-group">
+                    <label for="banner-avatar-position">Position</label>
+                    <select id="banner-avatar-position">
+                      <option value="left">Left Side</option>
+                      <option value="center">Center</option>
+                      <option value="right" selected>Right Side</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="banner-avatar-size">Size</label>
+                    <input type="range" id="banner-avatar-size" min="100" max="400" value="200">
+                    <span id="banner-avatar-size-display">200px</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="banner-avatar-y">Vertical Position</label>
+                    <input type="range" id="banner-avatar-y" min="-200" max="200" value="0">
+                  </div>
+                  <div class="form-group checkbox-group">
+                    <label>
+                      <input type="checkbox" id="banner-avatar-circle" checked>
+                      Circular crop (profile style)
+                    </label>
+                  </div>
+                  <div class="form-group checkbox-group">
+                    <label>
+                      <input type="checkbox" id="banner-avatar-border" checked>
+                      Add border
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Export -->
           <div class="editor-section">
             <h3>Export</h3>
@@ -1075,6 +1171,43 @@
           </div>
 
           <button class="btn primary" id="generate-btn">Generate Image</button>
+
+          <!-- Face Swap Section for Single Image -->
+          <div class="form-group face-swap-upload-section" style="margin-top: 1.5rem;">
+            <label>Face Swap (Upload Existing Image)</label>
+            <small class="help-text" style="display: block; margin-bottom: 0.5rem;">Upload any image and swap your avatar face into it</small>
+            <div class="face-swap-upload-area" id="single-face-swap-upload">
+              <input type="file" id="single-face-swap-file" accept="image/*" hidden>
+              <div class="upload-placeholder" id="single-face-swap-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span>Upload image to swap face into</span>
+              </div>
+              <div id="single-face-swap-preview" class="face-swap-preview" hidden>
+                <img id="single-face-swap-image" alt="Image for face swap">
+                <div class="face-swap-controls">
+                  <button class="btn primary" id="single-do-face-swap-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    Swap My Face Into This
+                  </button>
+                  <button class="btn text small" id="single-clear-face-swap">Remove</button>
+                </div>
+              </div>
+            </div>
+            <div id="single-face-swap-result" class="face-swap-result" hidden>
+              <h4>Face Swap Result</h4>
+              <img id="single-face-swap-result-image" alt="Face swapped result">
+              <div class="result-actions">
+                <button class="btn secondary" id="single-download-face-swap-btn">Download</button>
+                <button class="btn text" id="single-clear-face-swap-result">Clear</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

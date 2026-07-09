@@ -31,6 +31,14 @@ class BannerCreator {
     this.logoPosition = 'center';
     this.logoSize = 150;
 
+    // Avatar state
+    this.avatarImage = null;
+    this.avatarPosition = 'right';
+    this.avatarSize = 200;
+    this.avatarY = 0;
+    this.avatarCircle = true;
+    this.avatarBorder = true;
+
     this.channelName = '';
     this.channelNameColor = '#ffffff';
     this.channelNameFont = 'Inter';
@@ -116,6 +124,22 @@ class BannerCreator {
     this.logoPositionSelect = document.getElementById('banner-logo-position');
     this.logoSizeSlider = document.getElementById('banner-logo-size');
     this.logoSizeDisplay = document.getElementById('banner-logo-size-display');
+
+    // Avatar
+    this.avatarUploadArea = document.getElementById('banner-avatar-upload');
+    this.avatarFileInput = document.getElementById('banner-avatar-file');
+    this.avatarSettings = document.getElementById('avatar-banner-settings');
+    this.avatarPreview = document.getElementById('banner-avatar-preview');
+    this.removeAvatarBtn = document.getElementById('remove-banner-avatar');
+    this.avatarPositionSelect = document.getElementById('banner-avatar-position');
+    this.avatarSizeSlider = document.getElementById('banner-avatar-size');
+    this.avatarSizeDisplay = document.getElementById('banner-avatar-size-display');
+    this.avatarYSlider = document.getElementById('banner-avatar-y');
+    this.avatarCircleCheckbox = document.getElementById('banner-avatar-circle');
+    this.avatarBorderCheckbox = document.getElementById('banner-avatar-border');
+    this.useExistingAvatarSection = document.getElementById('banner-avatar-use-existing');
+    this.existingAvatarPreview = document.getElementById('banner-existing-avatar');
+    this.useAvatarForBannerBtn = document.getElementById('use-avatar-for-banner');
 
     // Export
     this.exportBtn = document.getElementById('export-banner-btn');
@@ -283,6 +307,54 @@ class BannerCreator {
       });
     }
 
+    // Avatar
+    if (this.avatarUploadArea) {
+      this.avatarUploadArea.addEventListener('click', () => this.avatarFileInput?.click());
+    }
+    if (this.avatarFileInput) {
+      this.avatarFileInput.addEventListener('change', (e) => this.handleAvatarUpload(e));
+    }
+    if (this.removeAvatarBtn) {
+      this.removeAvatarBtn.addEventListener('click', () => this.removeAvatar());
+    }
+    if (this.avatarPositionSelect) {
+      this.avatarPositionSelect.addEventListener('change', (e) => {
+        this.avatarPosition = e.target.value;
+        this.render();
+      });
+    }
+    if (this.avatarSizeSlider) {
+      this.avatarSizeSlider.addEventListener('input', (e) => {
+        this.avatarSize = parseInt(e.target.value);
+        this.avatarSizeDisplay.textContent = `${e.target.value}px`;
+        this.render();
+      });
+    }
+    if (this.avatarYSlider) {
+      this.avatarYSlider.addEventListener('input', (e) => {
+        this.avatarY = parseInt(e.target.value);
+        this.render();
+      });
+    }
+    if (this.avatarCircleCheckbox) {
+      this.avatarCircleCheckbox.addEventListener('change', (e) => {
+        this.avatarCircle = e.target.checked;
+        this.render();
+      });
+    }
+    if (this.avatarBorderCheckbox) {
+      this.avatarBorderCheckbox.addEventListener('change', (e) => {
+        this.avatarBorder = e.target.checked;
+        this.render();
+      });
+    }
+    if (this.useAvatarForBannerBtn) {
+      this.useAvatarForBannerBtn.addEventListener('click', () => this.useExistingAvatar());
+    }
+
+    // Check for existing avatar from app.js
+    this.checkForExistingAvatar();
+
     // Export
     if (this.exportBtn) {
       this.exportBtn.addEventListener('click', () => this.exportBanner());
@@ -441,6 +513,73 @@ class BannerCreator {
     showToast('Logo removed');
   }
 
+  // Check if there's an existing avatar from the main app
+  checkForExistingAvatar() {
+    // Check global avatarImageData from app.js
+    if (typeof avatarImageData !== 'undefined' && avatarImageData) {
+      if (this.useExistingAvatarSection) {
+        this.useExistingAvatarSection.hidden = false;
+      }
+      if (this.existingAvatarPreview) {
+        this.existingAvatarPreview.src = avatarImageData;
+      }
+    }
+  }
+
+  // Use the existing avatar from app.js
+  useExistingAvatar() {
+    if (typeof avatarImageData !== 'undefined' && avatarImageData) {
+      const img = new Image();
+      img.onload = () => {
+        this.avatarImage = img;
+        if (this.avatarPreview) {
+          this.avatarPreview.src = avatarImageData;
+        }
+        if (this.avatarSettings) {
+          this.avatarSettings.hidden = false;
+        }
+        this.render();
+        showToast('Avatar added to banner!');
+      };
+      img.src = avatarImageData;
+    }
+  }
+
+  handleAvatarUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        this.avatarImage = img;
+        if (this.avatarPreview) {
+          this.avatarPreview.src = event.target.result;
+        }
+        if (this.avatarSettings) {
+          this.avatarSettings.hidden = false;
+        }
+        this.render();
+        showToast('Avatar uploaded!');
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  removeAvatar() {
+    this.avatarImage = null;
+    if (this.avatarSettings) {
+      this.avatarSettings.hidden = true;
+    }
+    if (this.avatarFileInput) {
+      this.avatarFileInput.value = '';
+    }
+    this.render();
+    showToast('Avatar removed');
+  }
+
   render() {
     const ctx = this.ctx;
     const w = this.width;
@@ -455,6 +594,11 @@ class BannerCreator {
     // Draw logo
     if (this.logoImage) {
       this.drawLogo();
+    }
+
+    // Draw avatar
+    if (this.avatarImage) {
+      this.drawAvatar();
     }
 
     // Draw text
@@ -567,6 +711,117 @@ class BannerCreator {
     const y = centerY - drawHeight / 2;
 
     ctx.drawImage(img, x, y, drawWidth, drawHeight);
+  }
+
+  drawAvatar() {
+    const ctx = this.ctx;
+    const img = this.avatarImage;
+    const size = this.avatarSize;
+    const centerY = this.height / 2;
+
+    // Calculate position
+    let x;
+    switch (this.avatarPosition) {
+      case 'left':
+        x = 150;
+        break;
+      case 'right':
+        x = this.width - size - 150;
+        break;
+      case 'center':
+      default:
+        x = (this.width - size) / 2;
+    }
+
+    const y = centerY - size / 2 + this.avatarY;
+
+    ctx.save();
+
+    if (this.avatarCircle) {
+      // Draw circular avatar
+      const centerX = x + size / 2;
+      const centerAvatarY = y + size / 2;
+      const radius = size / 2;
+
+      // Draw border first if enabled
+      if (this.avatarBorder) {
+        ctx.beginPath();
+        ctx.arc(centerX, centerAvatarY, radius + 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        // Add shadow
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 5;
+      }
+
+      // Create circular clipping path
+      ctx.beginPath();
+      ctx.arc(centerX, centerAvatarY, radius, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+
+      // Draw image to fill circle (cover mode)
+      const imgRatio = img.width / img.height;
+      let drawWidth, drawHeight, offsetX, offsetY;
+
+      if (imgRatio > 1) {
+        // Image is wider
+        drawHeight = size;
+        drawWidth = size * imgRatio;
+        offsetX = x - (drawWidth - size) / 2;
+        offsetY = y;
+      } else {
+        // Image is taller
+        drawWidth = size;
+        drawHeight = size / imgRatio;
+        offsetX = x;
+        offsetY = y - (drawHeight - size) / 2;
+      }
+
+      ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+    } else {
+      // Draw rectangular avatar with optional border
+      if (this.avatarBorder) {
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 5;
+        ctx.fillRect(x - 6, y - 6, size + 12, size + 12);
+      }
+
+      // Reset shadow for image
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+
+      // Draw image to fill rectangle (cover mode)
+      const imgRatio = img.width / img.height;
+      let drawWidth, drawHeight, offsetX, offsetY;
+
+      if (imgRatio > 1) {
+        drawHeight = size;
+        drawWidth = size * imgRatio;
+        offsetX = x - (drawWidth - size) / 2;
+        offsetY = y;
+      } else {
+        drawWidth = size;
+        drawHeight = size / imgRatio;
+        offsetX = x;
+        offsetY = y - (drawHeight - size) / 2;
+      }
+
+      // Clip to rectangle
+      ctx.beginPath();
+      ctx.rect(x, y, size, size);
+      ctx.clip();
+
+      ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+    }
+
+    ctx.restore();
   }
 
   drawText() {

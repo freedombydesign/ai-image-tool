@@ -1993,6 +1993,94 @@ footer {
   width: 100%;
 }
 
+/* Avatar Banner Controls */
+.avatar-banner-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.use-existing-avatar {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.existing-avatar-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.existing-avatar-preview img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--primary);
+}
+
+.existing-avatar-preview span {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.avatar-banner-settings {
+  background: var(--bg);
+  padding: 1rem;
+  border-radius: 8px;
+}
+
+.avatar-preview-small {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.avatar-preview-small img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary);
+}
+
+.avatar-position-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.avatar-position-controls .form-group {
+  margin-bottom: 0;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 /* Export Info */
 .export-info {
   background: var(--bg);
@@ -2617,6 +2705,104 @@ footer {
 .reference-indicator.dont-do-this {
   background: rgba(239, 68, 68, 0.15);
   color: var(--error);
+}
+
+/* ===== Face Swap Upload Section ===== */
+.face-swap-upload-section {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: var(--radius);
+}
+
+.face-swap-upload-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.face-swap-upload-area:hover {
+  border-color: #a855f7;
+  background: rgba(168, 85, 247, 0.1);
+}
+
+.face-swap-upload-area.dragover {
+  border-color: #a855f7;
+  background: rgba(168, 85, 247, 0.15);
+}
+
+.face-swap-upload-area .upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+
+.face-swap-upload-area .upload-placeholder svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.6;
+  color: #a855f7;
+}
+
+.face-swap-upload-area .upload-placeholder span {
+  font-size: 0.9rem;
+}
+
+.face-swap-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.face-swap-preview img {
+  width: 100%;
+  max-height: 250px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.face-swap-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.face-swap-result {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--success);
+}
+
+.face-swap-result h4 {
+  margin-bottom: 1rem;
+  color: var(--success);
+  font-size: 0.9rem;
+}
+
+.face-swap-result img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.face-swap-result .result-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 /* ===== Style Anchor Panel ===== */

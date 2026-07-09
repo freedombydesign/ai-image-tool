@@ -2976,6 +2976,343 @@ async function faceSwapThumbnail() {
 }
 
 // ============================================
+// FACE SWAP UPLOAD (Upload existing image to swap face)
+// ============================================
+
+let faceSwapImageData = null;
+
+// Face Swap Upload Elements
+const faceSwapUploadArea = document.getElementById('face-swap-upload');
+const faceSwapFileInput = document.getElementById('face-swap-file');
+const faceSwapPlaceholder = document.getElementById('face-swap-placeholder');
+const faceSwapPreview = document.getElementById('face-swap-preview');
+const faceSwapImage = document.getElementById('face-swap-image');
+const doFaceSwapBtn = document.getElementById('do-face-swap-btn');
+const clearFaceSwapBtn = document.getElementById('clear-face-swap');
+const faceSwapResult = document.getElementById('face-swap-result');
+const faceSwapResultImage = document.getElementById('face-swap-result-image');
+const downloadFaceSwapBtn = document.getElementById('download-face-swap-btn');
+const clearFaceSwapResultBtn = document.getElementById('clear-face-swap-result');
+
+// Handle face swap upload area click
+if (faceSwapUploadArea) {
+  faceSwapUploadArea.addEventListener('click', (e) => {
+    if (!e.target.closest('.face-swap-controls')) {
+      faceSwapFileInput?.click();
+    }
+  });
+
+  // Drag and drop
+  faceSwapUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    faceSwapUploadArea.classList.add('dragover');
+  });
+
+  faceSwapUploadArea.addEventListener('dragleave', () => {
+    faceSwapUploadArea.classList.remove('dragover');
+  });
+
+  faceSwapUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    faceSwapUploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      handleFaceSwapUpload(file);
+    }
+  });
+}
+
+// Handle face swap file selection
+if (faceSwapFileInput) {
+  faceSwapFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      handleFaceSwapUpload(file);
+    }
+  });
+}
+
+// Process face swap image upload
+function handleFaceSwapUpload(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    faceSwapImageData = e.target.result;
+
+    // Show preview
+    if (faceSwapImage) faceSwapImage.src = faceSwapImageData;
+    if (faceSwapPlaceholder) faceSwapPlaceholder.hidden = true;
+    if (faceSwapPreview) faceSwapPreview.hidden = false;
+
+    // Hide any previous result
+    if (faceSwapResult) faceSwapResult.hidden = true;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Clear face swap upload
+if (clearFaceSwapBtn) {
+  clearFaceSwapBtn.addEventListener('click', () => {
+    faceSwapImageData = null;
+    if (faceSwapImage) faceSwapImage.src = '';
+    if (faceSwapPreview) faceSwapPreview.hidden = true;
+    if (faceSwapPlaceholder) faceSwapPlaceholder.hidden = false;
+    if (faceSwapFileInput) faceSwapFileInput.value = '';
+  });
+}
+
+// Clear face swap result
+if (clearFaceSwapResultBtn) {
+  clearFaceSwapResultBtn.addEventListener('click', () => {
+    if (faceSwapResult) faceSwapResult.hidden = true;
+    if (faceSwapResultImage) faceSwapResultImage.src = '';
+  });
+}
+
+// Perform face swap on uploaded image
+if (doFaceSwapBtn) {
+  doFaceSwapBtn.addEventListener('click', performFaceSwapOnUpload);
+}
+
+async function performFaceSwapOnUpload() {
+  // Check if avatar is uploaded
+  if (!avatarImageData) {
+    showToast('Please upload your avatar photo first in the Batch Scenes tab');
+    switchToTabAndOpenAvatar('batch-scenes');
+    return;
+  }
+
+  // Check if there's an image to swap
+  if (!faceSwapImageData) {
+    showToast('Please upload an image first');
+    return;
+  }
+
+  showLoading('Swapping your face into the image...');
+
+  try {
+    // Convert both images to blobs for upload
+    const sourceBlob = await fetch(faceSwapImageData).then(r => r.blob());
+    const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+    const formData = new FormData();
+    formData.append('sourceImage', sourceBlob, 'source.png');
+    formData.append('faceImage', avatarBlob, 'avatar.png');
+
+    const response = await fetch('/api/face-swap', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.image) {
+      // Show result
+      if (faceSwapResultImage) faceSwapResultImage.src = data.image;
+      if (faceSwapResult) faceSwapResult.hidden = false;
+
+      // Add to thumbnail history
+      const newThumbnail = {
+        imageUrl: data.image,
+        prompt: 'Face swapped (uploaded image)',
+        style: 'face-swap',
+        model: 'face-swap',
+        referenceUsed: false,
+        avatarUsed: true,
+        timestamp: Date.now()
+      };
+      thumbnailHistory.unshift(newThumbnail);
+
+      if (thumbnailHistory.length > 10) {
+        thumbnailHistory = thumbnailHistory.slice(0, 10);
+      }
+
+      updateThumbnailGallery();
+      saveThumbnailHistory(newThumbnail);
+
+      showToast('Face swap complete!', false);
+    } else {
+      throw new Error(data.error || 'Face swap failed');
+    }
+  } catch (error) {
+    console.error('Face swap error:', error);
+    showToast(`Face swap failed: ${error.message}`);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Download face swap result
+if (downloadFaceSwapBtn) {
+  downloadFaceSwapBtn.addEventListener('click', () => {
+    if (faceSwapResultImage && faceSwapResultImage.src) {
+      const a = document.createElement('a');
+      a.href = faceSwapResultImage.src;
+      a.download = `face-swap-${Date.now()}.png`;
+      a.click();
+    }
+  });
+}
+
+// ============================================
+// SINGLE IMAGE TAB - FACE SWAP UPLOAD
+// ============================================
+
+let singleFaceSwapImageData = null;
+
+// Single Image Face Swap Elements
+const singleFaceSwapUploadArea = document.getElementById('single-face-swap-upload');
+const singleFaceSwapFileInput = document.getElementById('single-face-swap-file');
+const singleFaceSwapPlaceholder = document.getElementById('single-face-swap-placeholder');
+const singleFaceSwapPreview = document.getElementById('single-face-swap-preview');
+const singleFaceSwapImage = document.getElementById('single-face-swap-image');
+const singleDoFaceSwapBtn = document.getElementById('single-do-face-swap-btn');
+const singleClearFaceSwapBtn = document.getElementById('single-clear-face-swap');
+const singleFaceSwapResult = document.getElementById('single-face-swap-result');
+const singleFaceSwapResultImage = document.getElementById('single-face-swap-result-image');
+const singleDownloadFaceSwapBtn = document.getElementById('single-download-face-swap-btn');
+const singleClearFaceSwapResultBtn = document.getElementById('single-clear-face-swap-result');
+
+// Handle single image face swap upload area click
+if (singleFaceSwapUploadArea) {
+  singleFaceSwapUploadArea.addEventListener('click', (e) => {
+    if (!e.target.closest('.face-swap-controls')) {
+      singleFaceSwapFileInput?.click();
+    }
+  });
+
+  // Drag and drop
+  singleFaceSwapUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    singleFaceSwapUploadArea.classList.add('dragover');
+  });
+
+  singleFaceSwapUploadArea.addEventListener('dragleave', () => {
+    singleFaceSwapUploadArea.classList.remove('dragover');
+  });
+
+  singleFaceSwapUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    singleFaceSwapUploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      handleSingleFaceSwapUpload(file);
+    }
+  });
+}
+
+// Handle single image face swap file selection
+if (singleFaceSwapFileInput) {
+  singleFaceSwapFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      handleSingleFaceSwapUpload(file);
+    }
+  });
+}
+
+// Process single image face swap upload
+function handleSingleFaceSwapUpload(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    singleFaceSwapImageData = e.target.result;
+
+    // Show preview
+    if (singleFaceSwapImage) singleFaceSwapImage.src = singleFaceSwapImageData;
+    if (singleFaceSwapPlaceholder) singleFaceSwapPlaceholder.hidden = true;
+    if (singleFaceSwapPreview) singleFaceSwapPreview.hidden = false;
+
+    // Hide any previous result
+    if (singleFaceSwapResult) singleFaceSwapResult.hidden = true;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Clear single image face swap upload
+if (singleClearFaceSwapBtn) {
+  singleClearFaceSwapBtn.addEventListener('click', () => {
+    singleFaceSwapImageData = null;
+    if (singleFaceSwapImage) singleFaceSwapImage.src = '';
+    if (singleFaceSwapPreview) singleFaceSwapPreview.hidden = true;
+    if (singleFaceSwapPlaceholder) singleFaceSwapPlaceholder.hidden = false;
+    if (singleFaceSwapFileInput) singleFaceSwapFileInput.value = '';
+  });
+}
+
+// Clear single image face swap result
+if (singleClearFaceSwapResultBtn) {
+  singleClearFaceSwapResultBtn.addEventListener('click', () => {
+    if (singleFaceSwapResult) singleFaceSwapResult.hidden = true;
+    if (singleFaceSwapResultImage) singleFaceSwapResultImage.src = '';
+  });
+}
+
+// Perform face swap on single uploaded image
+if (singleDoFaceSwapBtn) {
+  singleDoFaceSwapBtn.addEventListener('click', performSingleFaceSwap);
+}
+
+async function performSingleFaceSwap() {
+  // Check if avatar is uploaded
+  if (!avatarImageData) {
+    showToast('Please upload your avatar photo first in the Batch Scenes tab');
+    switchToTabAndOpenAvatar('batch-scenes');
+    return;
+  }
+
+  // Check if there's an image to swap
+  if (!singleFaceSwapImageData) {
+    showToast('Please upload an image first');
+    return;
+  }
+
+  showLoading('Swapping your face into the image...');
+
+  try {
+    // Convert both images to blobs for upload
+    const sourceBlob = await fetch(singleFaceSwapImageData).then(r => r.blob());
+    const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+    const formData = new FormData();
+    formData.append('sourceImage', sourceBlob, 'source.png');
+    formData.append('faceImage', avatarBlob, 'avatar.png');
+
+    const response = await fetch('/api/face-swap', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.image) {
+      // Show result
+      if (singleFaceSwapResultImage) singleFaceSwapResultImage.src = data.image;
+      if (singleFaceSwapResult) singleFaceSwapResult.hidden = false;
+
+      showToast('Face swap complete!', false);
+    } else {
+      throw new Error(data.error || 'Face swap failed');
+    }
+  } catch (error) {
+    console.error('Face swap error:', error);
+    showToast(`Face swap failed: ${error.message}`);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Download single image face swap result
+if (singleDownloadFaceSwapBtn) {
+  singleDownloadFaceSwapBtn.addEventListener('click', () => {
+    if (singleFaceSwapResultImage && singleFaceSwapResultImage.src) {
+      const a = document.createElement('a');
+      a.href = singleFaceSwapResultImage.src;
+      a.download = `face-swap-${Date.now()}.png`;
+      a.click();
+    }
+  });
+}
+
+// ============================================
 // REFERENCE THUMBNAIL UPLOAD
 // ============================================
 
