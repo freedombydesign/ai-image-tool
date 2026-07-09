@@ -40,10 +40,192 @@ class VideoEditor {
     this.playbackTime = 0;
     this.animationFrame = null;
 
+    // User ID for persistence
+    this.userId = this.getUserId();
+
     // Initialize
     this.initElements();
     this.initEventListeners();
     this.initFFmpeg();
+    this.loadAvatarSettings(); // Restore saved avatar state
+  }
+
+  // Get or create a unique user ID for persistence
+  getUserId() {
+    let id = localStorage.getItem('video_editor_user_id');
+    if (!id) {
+      id = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('video_editor_user_id', id);
+    }
+    return id;
+  }
+
+  // Save avatar settings to localStorage and Supabase
+  async saveAvatarSettings() {
+    const settings = {
+      avatarEnabled: this.avatarEnabled,
+      avatarPhotoUrl: this.avatarPhotoUrl,
+      avatarPosition: this.avatarPosition,
+      avatarSize: this.avatarSize,
+      avatarShape: this.avatarShape
+    };
+
+    // Save to localStorage (fast)
+    try {
+      localStorage.setItem('video_editor_avatar', JSON.stringify(settings));
+    } catch (e) {
+      console.error('Failed to save avatar to localStorage:', e);
+    }
+
+    // Sync to Supabase (persistent)
+    try {
+      await fetch('/api/db/video-editor-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: this.userId,
+          ...settings
+        })
+      });
+      console.log('Avatar settings synced to Supabase');
+    } catch (e) {
+      console.error('Failed to sync avatar to Supabase:', e);
+    }
+  }
+
+  // Load avatar settings from localStorage (fast) then Supabase
+  async loadAvatarSettings() {
+    // Load from localStorage first (immediate)
+    try {
+      const saved = localStorage.getItem('video_editor_avatar');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        this.applyAvatarSettings(settings);
+        console.log('Avatar loaded from localStorage');
+      }
+    } catch (e) {
+      console.error('Failed to load avatar from localStorage:', e);
+    }
+
+    // Then sync from Supabase (may override)
+    try {
+      const response = await fetch(`/api/db/video-editor-settings/${this.userId}`);
+      const result = await response.json();
+      if (result.success && result.settings) {
+        const settings = {
+          avatarEnabled: result.settings.avatar_enabled,
+          avatarPhotoUrl: result.settings.avatar_photo_url,
+          avatarPosition: result.settings.avatar_position,
+          avatarSize: result.settings.avatar_size,
+          avatarShape: result.settings.avatar_shape
+        };
+        this.applyAvatarSettings(settings);
+        console.log('Avatar loaded from Supabase');
+      }
+    } catch (e) {
+      console.error('Failed to load avatar from Supabase:', e);
+    }
+  }
+
+  // Apply loaded avatar settings to UI
+  applyAvatarSettings(settings) {
+    if (!settings) return;
+
+    this.avatarEnabled = settings.avatarEnabled || false;
+    this.avatarPhotoUrl = settings.avatarPhotoUrl || null;
+    this.avatarPosition = settings.avatarPosition || 'bottom-right';
+    this.avatarSize = settings.avatarSize || 'medium';
+    this.avatarShape = settings.avatarShape || 'circle';
+
+    // Update UI elements
+    if (this.enableAvatarToggle) {
+      this.enableAvatarToggle.checked = this.avatarEnabled;
+    }
+    if (this.avatarOverlayOptions) {
+      this.avatarOverlayOptions.hidden = !this.avatarEnabled;
+    }
+    if (this.avatarPositionSelect) {
+      this.avatarPositionSelect.value = this.avatarPosition;
+    }
+    if (this.avatarSizeSelect) {
+      this.avatarSizeSelect.value = this.avatarSize;
+    }
+    if (this.avatarShapeSelect) {
+      this.avatarShapeSelect.value = this.avatarShape;
+    }
+
+    // Load avatar photo if URL exists
+    if (this.avatarPhotoUrl) {
+      this.loadAvatarPhotoFromUrl(this.avatarPhotoUrl);
+    }
+  }
+
+  // Load avatar photo from URL (for restoring saved state)
+  async loadAvatarPhotoFromUrl(url) {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      this.avatarPhotoBlob = blob;
+      this.avatarPhotoUrl = url;
+
+      // Update UI
+      if (this.editorAvatarImg) {
+        this.editorAvatarImg.src = url;
+      }
+      if (this.editorAvatarPreview) {
+        this.editorAvatarPreview.hidden = false;
+      }
+      if (this.editorAvatarPlaceholder) {
+        this.editorAvatarPlaceholder.hidden = true;
+      }
+
+      this.updateAvatarCostEstimate();
+      console.log('Avatar photo restored from URL');
+    } catch (e) {
+      console.error('Failed to load avatar photo from URL:', e);
+    }
+  }
+
+  // Generate hash for audio segment (for caching)
+  async generateAudioHash(blob) {
+    const buffer = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+  }
+
+  // Check cache for existing avatar video
+  async getCachedAvatarVideo(audioHash) {
+    try {
+      const response = await fetch(`/api/db/avatar-video-cache/${this.userId}/${audioHash}`);
+      const result = await response.json();
+      if (result.success && result.cache && result.cache.video_url) {
+        console.log('Found cached avatar video for hash:', audioHash);
+        return result.cache.video_url;
+      }
+    } catch (e) {
+      console.error('Cache lookup failed:', e);
+    }
+    return null;
+  }
+
+  // Save avatar video to cache
+  async cacheAvatarVideo(audioHash, videoUrl, duration) {
+    try {
+      await fetch('/api/db/avatar-video-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: this.userId,
+          audioHash: audioHash,
+          videoUrl: videoUrl,
+          duration: duration
+        })
+      });
+      console.log('Avatar video cached for hash:', audioHash);
+    } catch (e) {
+      console.error('Failed to cache avatar video:', e);
+    }
   }
 
   initElements() {
@@ -208,16 +390,19 @@ class VideoEditor {
     if (this.avatarPositionSelect) {
       this.avatarPositionSelect.addEventListener('change', (e) => {
         this.avatarPosition = e.target.value;
+        this.saveAvatarSettings();
       });
     }
     if (this.avatarSizeSelect) {
       this.avatarSizeSelect.addEventListener('change', (e) => {
         this.avatarSize = e.target.value;
+        this.saveAvatarSettings();
       });
     }
     if (this.avatarShapeSelect) {
       this.avatarShapeSelect.addEventListener('change', (e) => {
         this.avatarShape = e.target.value;
+        this.saveAvatarSettings();
       });
     }
 
@@ -719,9 +904,10 @@ class VideoEditor {
       this.avatarOverlayOptions.hidden = !enabled;
     }
     this.updateAvatarCostEstimate();
+    this.saveAvatarSettings(); // Persist
   }
 
-  handleAvatarPhotoUpload(e) {
+  async handleAvatarPhotoUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -732,16 +918,13 @@ class VideoEditor {
 
     this.avatarPhotoBlob = file;
 
-    // Revoke previous URL
-    if (this.avatarPhotoUrl) {
-      URL.revokeObjectURL(this.avatarPhotoUrl);
-    }
-
-    this.avatarPhotoUrl = URL.createObjectURL(file);
+    // Convert to base64 for persistence
+    const base64 = await this.blobToBase64(file);
+    this.avatarPhotoUrl = base64;
 
     // Update preview image
     if (this.editorAvatarImg) {
-      this.editorAvatarImg.src = this.avatarPhotoUrl;
+      this.editorAvatarImg.src = base64;
     }
 
     // Show preview container, hide placeholder
@@ -754,14 +937,22 @@ class VideoEditor {
     }
 
     this.updateAvatarCostEstimate();
-    showToast('Avatar photo loaded!', false);
+    this.saveAvatarSettings(); // Persist
+    showToast('Avatar photo saved!', false);
+  }
+
+  // Convert blob to base64 data URI
+  blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   clearAvatarPhoto() {
-    if (this.avatarPhotoUrl) {
-      URL.revokeObjectURL(this.avatarPhotoUrl);
-      this.avatarPhotoUrl = null;
-    }
+    this.avatarPhotoUrl = null;
     this.avatarPhotoBlob = null;
 
     // Clear and hide preview
@@ -784,6 +975,7 @@ class VideoEditor {
     }
 
     this.updateAvatarCostEstimate();
+    this.saveAvatarSettings(); // Persist
     showToast('Avatar photo cleared.', false);
   }
 
@@ -939,7 +1131,7 @@ class VideoEditor {
     }
   }
 
-  // Generate talking avatar videos for all scenes
+  // Generate talking avatar videos for all scenes (with caching)
   async generateAvatarVideos() {
     if (!this.avatarEnabled || !this.avatarPhotoBlob || !this.audioBlob) {
       return [];
@@ -953,9 +1145,36 @@ class VideoEditor {
     console.log(`Split audio into ${audioSegments.length} segments`);
 
     this.avatarVideos = [];
+    let cachedCount = 0;
+    let generatedCount = 0;
 
     for (let i = 0; i < audioSegments.length; i++) {
       const segment = audioSegments[i];
+
+      // Generate hash for this audio segment
+      const audioHash = await this.generateAudioHash(segment.blob);
+
+      if (statusEl) {
+        statusEl.textContent = `Checking cache for segment ${i + 1}/${audioSegments.length}...`;
+      }
+
+      // Check cache first
+      const cachedVideoUrl = await this.getCachedAvatarVideo(audioHash);
+
+      if (cachedVideoUrl) {
+        // Use cached video
+        this.avatarVideos.push({
+          videoUrl: cachedVideoUrl,
+          startTime: segment.startTime,
+          endTime: segment.endTime,
+          index: segment.index
+        });
+        cachedCount++;
+        console.log(`Avatar video ${i + 1} loaded from cache`);
+        continue;
+      }
+
+      // Not cached - generate new video
       if (statusEl) {
         statusEl.textContent = `Generating avatar video ${i + 1}/${audioSegments.length}...`;
       }
@@ -978,6 +1197,10 @@ class VideoEditor {
           throw new Error(result.error || 'Avatar generation failed');
         }
 
+        // Cache the generated video
+        const duration = segment.endTime - segment.startTime;
+        await this.cacheAvatarVideo(audioHash, result.videoUrl, duration);
+
         this.avatarVideos.push({
           videoUrl: result.videoUrl,
           startTime: segment.startTime,
@@ -985,13 +1208,19 @@ class VideoEditor {
           index: segment.index
         });
 
-        console.log(`Avatar video ${i + 1} generated:`, result.videoUrl);
+        generatedCount++;
+        console.log(`Avatar video ${i + 1} generated and cached:`, result.videoUrl);
 
       } catch (error) {
         console.error(`Failed to generate avatar video ${i + 1}:`, error);
         showToast(`Avatar generation failed for segment ${i + 1}: ${error.message}`);
         // Continue with remaining segments
       }
+    }
+
+    console.log(`Avatar videos: ${cachedCount} from cache, ${generatedCount} newly generated`);
+    if (cachedCount > 0) {
+      showToast(`Reused ${cachedCount} cached avatar video(s)!`, false);
     }
 
     return this.avatarVideos;

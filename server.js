@@ -1577,6 +1577,158 @@ app.get('/api/db/settings/:userId', async (req, res) => {
   }
 });
 
+// ============================================================================
+// VIDEO EDITOR PERSISTENCE
+// ============================================================================
+
+// Save Video Editor Settings (including avatar config)
+app.post('/api/db/video-editor-settings', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, avatarPhotoUrl, avatarEnabled, avatarPosition, avatarSize, avatarShape } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const { data, error } = await supabase
+      .from('video_editor_settings')
+      .upsert({
+        user_id: userId,
+        avatar_photo_url: avatarPhotoUrl,
+        avatar_enabled: avatarEnabled || false,
+        avatar_position: avatarPosition || 'bottom-right',
+        avatar_size: avatarSize || 'medium',
+        avatar_shape: avatarShape || 'circle',
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, settings: data });
+  } catch (error) {
+    console.error('Save video editor settings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get Video Editor Settings
+app.get('/api/db/video-editor-settings/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('video_editor_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    res.json({ success: true, settings: data || null });
+  } catch (error) {
+    console.error('Get video editor settings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save Cached Avatar Video (for reuse)
+app.post('/api/db/avatar-video-cache', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, audioHash, videoUrl, avatarPhotoHash, duration } = req.body;
+
+    if (!userId || !audioHash || !videoUrl) {
+      return res.status(400).json({ error: 'userId, audioHash, and videoUrl are required' });
+    }
+
+    const { data, error } = await supabase
+      .from('avatar_video_cache')
+      .upsert({
+        user_id: userId,
+        audio_hash: audioHash,
+        avatar_photo_hash: avatarPhotoHash,
+        video_url: videoUrl,
+        duration: duration || 0,
+        created_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,audio_hash'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, cache: data });
+  } catch (error) {
+    console.error('Save avatar video cache error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get Cached Avatar Video by audio hash
+app.get('/api/db/avatar-video-cache/:userId/:audioHash', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, audioHash } = req.params;
+
+    const { data, error } = await supabase
+      .from('avatar_video_cache')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('audio_hash', audioHash)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    res.json({ success: true, cache: data || null });
+  } catch (error) {
+    console.error('Get avatar video cache error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all cached avatar videos for user
+app.get('/api/db/avatar-video-cache/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('avatar_video_cache')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ success: true, cache: data || [] });
+  } catch (error) {
+    console.error('Get avatar video cache error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Check Supabase connection
 app.get('/api/db/status', (req, res) => {
   res.json({
