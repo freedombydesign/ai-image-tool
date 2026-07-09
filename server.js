@@ -841,13 +841,17 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
     const faceBase64 = `data:${req.file.mimetype};base64,${faceBuffer.toString('base64')}`;
 
     // Use InstantID model on Replicate (zsxkib/instant-id)
-    const response = await fetch('https://api.replicate.com/v1/models/zsxkib/instant-id/predictions', {
+    // Using the versioned predictions endpoint which is more reliable
+    const INSTANT_ID_VERSION = 'c98b2e7a196828d00955767813b81fc05c5c9b294c670c6d147d545fed4ceecf';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        version: INSTANT_ID_VERSION,
         input: {
           image: faceBase64,
           prompt: prompt,
@@ -865,10 +869,12 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Replicate API error: ${errorText}`);
+      console.error('Replicate InstantID API error:', response.status, errorText);
+      throw new Error(`Replicate API error (${response.status}): ${errorText}`);
     }
 
     let prediction = await response.json();
+    console.log('InstantID prediction started:', prediction.id, 'status:', prediction.status);
 
     // Poll for completion
     while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {

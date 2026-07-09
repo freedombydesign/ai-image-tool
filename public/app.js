@@ -2336,20 +2336,33 @@ async function saveThumbnailHistory(newThumbnail = null) {
   // If a new thumbnail was added, sync it to Supabase
   if (supabaseConnected && newThumbnail) {
     try {
-      await fetch('/api/db/thumbnails', {
+      // Only store URL if it's not a huge base64 (over 500KB)
+      let imageUrlToStore = newThumbnail.imageUrl;
+      if (imageUrlToStore && imageUrlToStore.startsWith('data:') && imageUrlToStore.length > 500000) {
+        console.log('Image too large for Supabase storage, skipping sync');
+        return;
+      }
+
+      const response = await fetch('/api/db/thumbnails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: USER_ID,
-          imageUrl: newThumbnail.imageUrl,
+          imageUrl: imageUrlToStore,
           prompt: newThumbnail.prompt,
           style: newThumbnail.style,
-          model: newThumbnail.model || 'dall-e-3',
+          model: newThumbnail.model || 'gpt-image-2',
           referenceUsed: newThumbnail.referenceUsed || false,
           avatarUsed: newThumbnail.avatarUsed || false
         })
       });
-      console.log('Thumbnail synced to Supabase');
+
+      const data = await response.json();
+      if (data.success) {
+        console.log('Thumbnail synced to Supabase');
+      } else {
+        console.error('Supabase sync failed:', data.error);
+      }
     } catch (e) {
       console.error('Failed to sync thumbnail to Supabase:', e);
     }
