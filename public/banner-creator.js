@@ -69,7 +69,101 @@ class BannerCreator {
     // Initialize all elements
     this.initElements();
     this.bindEvents();
+
+    // Load saved state
+    this.loadState();
+
     this.render();
+  }
+
+  // Save banner state to localStorage
+  saveState() {
+    const state = {
+      backgroundType: this.backgroundType,
+      backgroundColor: this.backgroundColor,
+      gradientStart: this.gradientStart,
+      gradientEnd: this.gradientEnd,
+      gradientDirection: this.gradientDirection,
+      channelName: this.channelName,
+      channelNameColor: this.channelNameColor,
+      channelNameSize: this.channelNameSize,
+      channelNamePosition: this.channelNamePosition,
+      tagline: this.tagline,
+      taglineColor: this.taglineColor,
+      taglineSize: this.taglineSize,
+      logoPosition: this.logoPosition,
+      logoSize: this.logoSize,
+      avatarPosition: this.avatarPosition,
+      avatarSize: this.avatarSize,
+      avatarCircle: this.avatarCircle,
+      avatarBorder: this.avatarBorder,
+      savedAt: Date.now()
+    };
+
+    // Save images as data URLs
+    if (this.backgroundImage) {
+      state.backgroundImageData = this.canvas.toDataURL('image/png');
+    }
+
+    localStorage.setItem('bannerCreatorState', JSON.stringify(state));
+    console.log('Banner state saved');
+  }
+
+  // Load banner state from localStorage
+  loadState() {
+    try {
+      const saved = localStorage.getItem('bannerCreatorState');
+      if (!saved) return;
+
+      const state = JSON.parse(saved);
+
+      // Restore settings
+      this.backgroundType = state.backgroundType || 'color';
+      this.backgroundColor = state.backgroundColor || '#1a1a2e';
+      this.gradientStart = state.gradientStart || '#667eea';
+      this.gradientEnd = state.gradientEnd || '#764ba2';
+      this.gradientDirection = state.gradientDirection || 'to-right';
+      this.channelName = state.channelName || '';
+      this.channelNameColor = state.channelNameColor || '#ffffff';
+      this.channelNameSize = state.channelNameSize || 80;
+      this.channelNamePosition = state.channelNamePosition || 'center';
+      this.tagline = state.tagline || '';
+      this.taglineColor = state.taglineColor || '#cccccc';
+      this.taglineSize = state.taglineSize || 32;
+      this.logoPosition = state.logoPosition || 'center';
+      this.logoSize = state.logoSize || 150;
+      this.avatarPosition = state.avatarPosition || 'right';
+      this.avatarSize = state.avatarSize || 200;
+      this.avatarCircle = state.avatarCircle !== false;
+      this.avatarBorder = state.avatarBorder !== false;
+
+      // Restore background image if saved
+      if (state.backgroundImageData) {
+        const img = new Image();
+        img.onload = () => {
+          this.backgroundImage = img;
+          this.backgroundType = 'upload';
+          this.render();
+        };
+        img.src = state.backgroundImageData;
+      }
+
+      // Update UI elements
+      this.updateUIFromState();
+
+      console.log('Banner state loaded');
+    } catch (err) {
+      console.warn('Failed to load banner state:', err);
+    }
+  }
+
+  // Update UI inputs to match loaded state
+  updateUIFromState() {
+    if (this.channelNameInput) this.channelNameInput.value = this.channelName;
+    if (this.taglineInput) this.taglineInput.value = this.tagline;
+    if (this.channelNameColorInput) this.channelNameColorInput.value = this.channelNameColor;
+    if (this.taglineColorInput) this.taglineColorInput.value = this.taglineColor;
+    if (this.bgColorInput) this.bgColorInput.value = this.backgroundColor;
   }
 
   initElements() {
@@ -603,6 +697,9 @@ class BannerCreator {
 
     // Draw text
     this.drawText();
+
+    // Auto-save state after render
+    this.saveState();
   }
 
   drawBackground() {
