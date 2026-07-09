@@ -195,6 +195,18 @@ const downloadAllBtn = document.getElementById('download-all-btn');
 const sceneDurationSlider = document.getElementById('scene-duration');
 const sceneDurationDisplay = document.getElementById('scene-duration-display');
 
+// Generation control
+let isGenerating = false;
+let generationCancelled = false;
+
+// Stop generation
+function stopGeneration() {
+  if (isGenerating) {
+    generationCancelled = true;
+    showToast('Stopping... finishing current scene', 'info');
+  }
+}
+
 // Style Selection
 const styleOptions = document.querySelectorAll('.style-option');
 let selectedStyle = 'cinematic-2d';
@@ -2030,9 +2042,23 @@ async function generateBatchScenes() {
     showLoading('Generating scenes with your face (Character Reference)...', `0 of ${scenesToGenerate} scenes`);
   }
 
+  // Show stop button, hide generate button
+  const stopBtn = document.getElementById('stop-generation-btn');
+  const genBtn = document.getElementById('generate-batch-btn');
+  if (stopBtn) stopBtn.hidden = false;
+  if (genBtn) genBtn.disabled = true;
+  isGenerating = true;
+  generationCancelled = false;
+
   // Generate scenes sequentially to avoid rate limits
   let generatedCount = 0;
   for (let i = 0; i < scenes.length; i++) {
+    // Check if cancelled
+    if (generationCancelled) {
+      console.log('Generation cancelled by user');
+      break;
+    }
+
     // Skip already generated scenes (from preview)
     if (generatedScenes[i]?.imageUrl) {
       console.log(`Skipping scene ${i + 1} - already generated`);
@@ -2104,7 +2130,21 @@ async function generateBatchScenes() {
 
   hideLoading();
 
+  // Reset buttons
+  if (stopBtn) stopBtn.hidden = true;
+  if (genBtn) genBtn.disabled = false;
+  isGenerating = false;
+
   const skippedCount = scenes.length - scenesToGenerate;
+
+  // Handle cancellation
+  if (generationCancelled) {
+    const completedCount = generatedScenes.filter(s => s?.imageUrl).length;
+    showToast(`Stopped! ${completedCount} scenes completed. Use "Add More Scenes" to continue.`, 'info');
+    saveSceneHistory();
+    return;
+  }
+
   if (successCount > 0) {
     const skippedMsg = skippedCount > 0 ? ` (${skippedCount} already done)` : '';
     showToast(`Generated ${successCount} scene${successCount !== 1 ? 's' : ''} successfully!${skippedMsg}`, false);
