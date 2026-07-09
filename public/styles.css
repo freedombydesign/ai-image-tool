@@ -277,12 +277,19 @@ select {
 /* Generate Buttons Row */
 .generate-buttons {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   margin-top: 1rem;
 }
 
 .generate-buttons .btn {
-  flex: 1;
+  flex: 0 0 auto;
+}
+
+.generate-buttons .btn.primary,
+.generate-buttons .btn.accent {
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .generate-buttons .btn.secondary {
