@@ -1190,11 +1190,38 @@ function parseScriptToScenes(script, forceCount = null) {
     return scenes;
   }
 
-  // Auto-detect: Split by double newlines, numbered lists, or "Scene X" markers
-  const scenes = script
+  // Auto-detect: Split by newlines (single or double), numbered lists, or "Scene X" markers
+  // Also split by sentences if no line breaks found
+  let scenes = script
     .split(/\n\s*\n|\n(?=\d+[\.\)]\s)|(?=Scene\s*\d+)/gi)
     .map(s => s.trim())
-    .filter(s => s.length > 10); // Filter out too-short segments
+    .filter(s => s.length > 10);
+
+  // If no scenes detected from line breaks, try single newlines
+  if (scenes.length <= 1 && script.includes('\n')) {
+    scenes = script
+      .split(/\n+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 20); // Slightly longer threshold for single lines
+  }
+
+  // If still no scenes, treat every ~100 words as a scene
+  if (scenes.length === 0 && script.trim().length > 50) {
+    const words = script.trim().split(/\s+/);
+    const wordsPerScene = 100;
+    scenes = [];
+    for (let i = 0; i < words.length; i += wordsPerScene) {
+      const chunk = words.slice(i, i + wordsPerScene).join(' ');
+      if (chunk.length > 20) {
+        scenes.push(chunk);
+      }
+    }
+  }
+
+  // Fallback: if script has content but no scenes, count as 1
+  if (scenes.length === 0 && script.trim().length > 10) {
+    scenes = [script.trim()];
+  }
 
   return scenes;
 }
