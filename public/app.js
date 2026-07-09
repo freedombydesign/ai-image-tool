@@ -1837,17 +1837,30 @@ async function generateBatchScenes() {
   const size = document.getElementById('batch-size').value;
   const quality = document.getElementById('batch-quality').value;
 
-  generatedScenes = [];
+  // Keep already generated scenes from preview, only clear the grid
+  const existingScenes = [...generatedScenes];
   scenesGrid.innerHTML = '';
   scenesContainer.hidden = false;
 
-  // Create placeholder cards for all scenes
+  // Count how many scenes we need to generate (skip already generated ones)
+  const scenesToGenerate = scenes.filter((_, i) => !existingScenes[i]?.imageUrl).length;
+
+  // Create cards for all scenes - show existing images or placeholders
   scenes.forEach((scene, index) => {
-    const card = createSceneCard(index, scene, null, true);
+    const existingImage = existingScenes[index]?.imageUrl || null;
+    const card = createSceneCard(index, scene, existingImage, !existingImage);
     scenesGrid.appendChild(card);
   });
 
-  showLoading('Generating scenes...', `0 of ${scenes.length} scenes`);
+  // Restore existing scenes to the array
+  generatedScenes = existingScenes;
+
+  if (scenesToGenerate === 0) {
+    showToast('All scenes already generated!');
+    return;
+  }
+
+  showLoading('Generating scenes...', `0 of ${scenesToGenerate} scenes`);
 
   let successCount = 0;
   let failCount = 0;
@@ -1858,15 +1871,23 @@ async function generateBatchScenes() {
   // Check if using InstantID for face matching
   const shouldUseInstantID = useInstantID && avatarImageData;
   if (shouldUseInstantID) {
-    showLoading('Generating scenes with your face (InstantID)...', `0 of ${scenes.length} scenes`);
+    showLoading('Generating scenes with your face (InstantID)...', `0 of ${scenesToGenerate} scenes`);
   }
 
   // Generate scenes sequentially to avoid rate limits
+  let generatedCount = 0;
   for (let i = 0; i < scenes.length; i++) {
+    // Skip already generated scenes (from preview)
+    if (generatedScenes[i]?.imageUrl) {
+      console.log(`Skipping scene ${i + 1} - already generated`);
+      continue;
+    }
+
     const sceneText = scenes[i];
     const styledPrompt = buildStyledPrompt(sceneText, selectedStyle);
 
-    updateLoadingProgress(i + 1, scenes.length);
+    generatedCount++;
+    updateLoadingProgress(generatedCount, scenesToGenerate);
 
     try {
       let data;
@@ -1920,15 +1941,17 @@ async function generateBatchScenes() {
     }
 
     // Small delay between requests to avoid rate limits
-    if (i < scenes.length - 1) {
+    if (generatedCount < scenesToGenerate) {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 
   hideLoading();
 
+  const skippedCount = scenes.length - scenesToGenerate;
   if (successCount > 0) {
-    showToast(`Generated ${successCount} scene${successCount !== 1 ? 's' : ''} successfully!`, false);
+    const skippedMsg = skippedCount > 0 ? ` (${skippedCount} already done)` : '';
+    showToast(`Generated ${successCount} scene${successCount !== 1 ? 's' : ''} successfully!${skippedMsg}`, false);
     saveSceneHistory(); // Persist scenes to localStorage
   }
   if (failCount > 0) {
