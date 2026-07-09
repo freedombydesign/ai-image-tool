@@ -1993,8 +1993,33 @@ const clearRefThumbBtn = document.getElementById('clear-reference-thumb');
 
 let selectedThumbnailStyle = 'dramatic';
 let lastThumbnailParams = null;
-let thumbnailHistory = [];
+let thumbnailHistory = loadThumbnailHistory(); // Load from localStorage
 let referenceThumbData = null; // Stores { type: 'do-this' | 'dont-do-this', imageDescription: string }
+
+// Load thumbnail history from localStorage
+function loadThumbnailHistory() {
+  try {
+    const saved = localStorage.getItem('thumbnailHistory');
+    return saved ? JSON.parse(saved) : [];
+  } catch (e) {
+    console.error('Failed to load thumbnail history:', e);
+    return [];
+  }
+}
+
+// Save thumbnail history to localStorage
+function saveThumbnailHistory() {
+  try {
+    localStorage.setItem('thumbnailHistory', JSON.stringify(thumbnailHistory));
+  } catch (e) {
+    console.error('Failed to save thumbnail history:', e);
+  }
+}
+
+// Initialize thumbnail gallery on page load
+if (thumbnailHistory.length > 0) {
+  setTimeout(() => updateThumbnailGallery(), 100);
+}
 
 // Thumbnail Style Selection
 if (thumbnailStyleOptions) {
@@ -2095,6 +2120,7 @@ async function generateThumbnail() {
     }
 
     updateThumbnailGallery();
+    saveThumbnailHistory(); // Persist to localStorage
 
     // Save to persistent history
     if (typeof generationHistory !== 'undefined') {
@@ -2157,6 +2183,7 @@ async function regenerateThumbnail() {
     }
 
     updateThumbnailGallery();
+    saveThumbnailHistory(); // Persist to localStorage
 
     // Save to persistent history
     if (typeof generationHistory !== 'undefined') {
@@ -2234,6 +2261,7 @@ async function refineThumbnail() {
     }
 
     updateThumbnailGallery();
+    saveThumbnailHistory(); // Persist to localStorage
 
     // Save to persistent history
     if (typeof generationHistory !== 'undefined') {
