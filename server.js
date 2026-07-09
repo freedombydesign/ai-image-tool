@@ -773,8 +773,8 @@ app.post('/api/face-swap', upload.fields([
         input: {
           target_path: sourceBase64,  // The thumbnail/image to modify
           source_path: faceBase64,    // The face to swap IN (user's avatar)
-          face_enhancer_blend: 80,
-          frame_enhancer_blend: 80
+          face_enhancer_blend: 30,    // Lower = more natural, less distortion
+          frame_enhancer_blend: 50
         }
       })
     });
