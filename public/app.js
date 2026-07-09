@@ -398,6 +398,7 @@ function toggleAvatarUsage() {
     statusEl.classList.toggle('active', avatarEnabled);
   }
 
+  updateAvatarStatusIndicators(); // Update status across all tabs
   showToast(avatarEnabled ? 'Avatar will be used in generation' : 'Avatar disabled');
 }
 
@@ -438,6 +439,7 @@ function handleAvatarUpload(file) {
       avatarEnabled = true;
     }
 
+    updateAvatarStatusIndicators(); // Update status across all tabs
     showToast('Avatar uploaded! Describe your character for best results.');
   };
   reader.readAsDataURL(file);
@@ -465,6 +467,7 @@ function removeAvatar() {
   if (descInput) descInput.value = '';
   if (checkbox) checkbox.checked = false;
 
+  updateAvatarStatusIndicators(); // Update status across all tabs
   showToast('Avatar removed');
 }
 
@@ -537,6 +540,55 @@ function initAvatarUpload() {
     descInput.addEventListener('input', () => {
       avatarDescription = descInput.value.trim();
     });
+  }
+}
+
+// Switch to a tab and open the avatar panel
+function switchToTabAndOpenAvatar(tabId) {
+  // Switch to the tab
+  const tabs = document.querySelectorAll('.tab');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabs.forEach(t => t.classList.remove('active'));
+  tabContents.forEach(tc => tc.classList.remove('active'));
+
+  const targetTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  const targetContent = document.getElementById(tabId);
+
+  if (targetTab) targetTab.classList.add('active');
+  if (targetContent) targetContent.classList.add('active');
+
+  // Open the avatar panel
+  setTimeout(() => {
+    const panel = document.getElementById('avatar-upload-panel');
+    const content = document.getElementById('avatar-panel-content');
+    if (panel && content) {
+      panel.classList.add('expanded');
+      content.hidden = false;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
+}
+
+// Update avatar status indicators across all tabs
+function updateAvatarStatusIndicators() {
+  const isConfigured = avatarImageData !== null;
+  const isActive = avatarEnabled && isConfigured;
+
+  // Update thumbnail tab indicator
+  const thumbStatus = document.getElementById('thumbnail-avatar-status');
+  const thumbText = document.getElementById('thumbnail-avatar-text');
+  if (thumbStatus && thumbText) {
+    thumbStatus.classList.toggle('active', isActive);
+    thumbText.textContent = isActive ? 'Avatar active' : (isConfigured ? 'Avatar disabled' : 'No avatar configured');
+  }
+
+  // Update single image tab indicator
+  const singleStatus = document.getElementById('single-avatar-status');
+  const singleText = document.getElementById('single-avatar-text');
+  if (singleStatus && singleText) {
+    singleStatus.classList.toggle('active', isActive);
+    singleText.textContent = isActive ? 'Avatar active' : (isConfigured ? 'Avatar disabled' : 'No avatar configured');
   }
 }
 
@@ -1918,6 +1970,7 @@ window.toggleBrandPanel = toggleBrandPanel;
 window.toggleBrandBlock = toggleBrandBlock;
 window.toggleAvatarPanel = toggleAvatarPanel;
 window.toggleAvatarUsage = toggleAvatarUsage;
+window.switchToTabAndOpenAvatar = switchToTabAndOpenAvatar;
 window.openTextOverlay = openTextOverlay;
 window.closeTextOverlay = closeTextOverlay;
 window.updateTextOverlay = updateTextOverlay;

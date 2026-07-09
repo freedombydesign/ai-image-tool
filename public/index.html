@@ -714,6 +714,18 @@
             <strong>$0.12</strong>
           </div>
 
+          <!-- Avatar Status for Thumbnail -->
+          <div class="avatar-quick-status" id="thumbnail-avatar-status">
+            <div class="avatar-quick-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              <span id="thumbnail-avatar-text">No avatar configured</span>
+            </div>
+            <a href="#" onclick="switchToTabAndOpenAvatar('batch-scenes'); return false;" class="avatar-config-link">Configure in Batch Scenes →</a>
+          </div>
+
           <button class="btn primary" id="generate-thumbnail-btn">Generate Thumbnail</button>
         </div>
 
@@ -1023,6 +1035,18 @@
                 <option value="hd">HD</option>
               </select>
             </div>
+          </div>
+
+          <!-- Avatar Status for Single Image -->
+          <div class="avatar-quick-status" id="single-avatar-status">
+            <div class="avatar-quick-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              <span id="single-avatar-text">No avatar configured</span>
+            </div>
+            <a href="#" onclick="switchToTabAndOpenAvatar('batch-scenes'); return false;" class="avatar-config-link">Configure in Batch Scenes →</a>
           </div>
 
           <button class="btn primary" id="generate-btn">Generate Image</button>
