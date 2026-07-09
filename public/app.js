@@ -3809,3 +3809,871 @@ if (sceneYoutubeUrl) {
     }
   });
 }
+
+// ============================================
+// AVATAR VIDEO - LIP SYNC ANIMATION
+// ============================================
+
+// Avatar Video state
+let avatarVideoFile = null;
+let avatarAudioFile = null;
+let audioRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let recentAvatarVideos = JSON.parse(localStorage.getItem('avatar_videos') || '[]');
+
+// DOM elements for Avatar Video
+const avatarVideoUploadArea = document.getElementById('avatar-video-upload');
+const avatarVideoInput = document.getElementById('avatar-video-file');
+const avatarVideoPreview = document.getElementById('avatar-video-preview');
+const avatarVideoImage = document.getElementById('avatar-video-image');
+const avatarVideoPlaceholder = document.getElementById('avatar-video-placeholder');
+const clearAvatarVideoBtn = document.getElementById('clear-avatar-video');
+
+const audioUploadArea = document.getElementById('audio-upload-area');
+const audioFileInput = document.getElementById('animation-audio-file');
+const audioPreview = document.getElementById('audio-upload-preview');
+const audioPlayer = document.getElementById('animation-audio-player');
+const audioFileName = document.getElementById('audio-filename');
+const audioPlaceholder = document.getElementById('audio-upload-placeholder');
+const clearAudioBtn = document.getElementById('clear-animation-audio');
+const recordAudioBtn = document.getElementById('record-animation-audio-btn');
+
+const generateAvatarVideoBtn = document.getElementById('generate-avatar-video-btn');
+const avatarVideoProgress = document.getElementById('avatar-video-progress');
+const avatarVideoProgressBar = document.getElementById('avatar-video-progress-bar');
+const avatarVideoStatus = document.getElementById('avatar-video-status');
+
+const avatarVideoResult = document.getElementById('avatar-video-result');
+const avatarVideoPlayer = document.getElementById('avatar-video-output');
+const downloadAvatarVideoBtn = document.getElementById('download-avatar-video-btn');
+const newAvatarVideoBtn = document.getElementById('regenerate-avatar-video-btn');
+
+const avatarVideoGallery = document.getElementById('avatar-video-gallery-grid');
+
+// Initialize Avatar Video functionality
+function initAvatarVideo() {
+  if (!avatarVideoUploadArea) return;
+
+  // Avatar image upload handlers
+  avatarVideoUploadArea.addEventListener('click', () => avatarVideoInput?.click());
+
+  avatarVideoUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    avatarVideoUploadArea.classList.add('dragover');
+  });
+
+  avatarVideoUploadArea.addEventListener('dragleave', () => {
+    avatarVideoUploadArea.classList.remove('dragover');
+  });
+
+  avatarVideoUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    avatarVideoUploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      handleAvatarVideoFile(file);
+    }
+  });
+
+  avatarVideoInput?.addEventListener('change', (e) => {
+    if (e.target.files[0]) {
+      handleAvatarVideoFile(e.target.files[0]);
+    }
+  });
+
+  clearAvatarVideoBtn?.addEventListener('click', clearAvatarVideo);
+
+  // Audio upload handlers
+  audioUploadArea?.addEventListener('click', (e) => {
+    if (e.target !== recordAudioBtn && !recordAudioBtn?.contains(e.target)) {
+      audioFileInput?.click();
+    }
+  });
+
+  audioUploadArea?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    audioUploadArea.classList.add('dragover');
+  });
+
+  audioUploadArea?.addEventListener('dragleave', () => {
+    audioUploadArea.classList.remove('dragover');
+  });
+
+  audioUploadArea?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    audioUploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('audio/')) {
+      handleAudioFile(file);
+    }
+  });
+
+  audioFileInput?.addEventListener('change', (e) => {
+    if (e.target.files[0]) {
+      handleAudioFile(e.target.files[0]);
+    }
+  });
+
+  clearAudioBtn?.addEventListener('click', clearAudio);
+  recordAudioBtn?.addEventListener('click', toggleRecording);
+
+  // Generate button
+  generateAvatarVideoBtn?.addEventListener('click', generateAvatarVideo);
+
+  // Result actions
+  downloadAvatarVideoBtn?.addEventListener('click', downloadAvatarVideo);
+  newAvatarVideoBtn?.addEventListener('click', resetAvatarVideo);
+
+  // Render gallery
+  renderAvatarVideoGallery();
+}
+
+// Handle avatar image file selection
+function handleAvatarVideoFile(file) {
+  avatarVideoFile = file;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if (avatarVideoImage) avatarVideoImage.src = e.target.result;
+    if (avatarVideoPlaceholder) avatarVideoPlaceholder.hidden = true;
+    if (avatarVideoPreview) avatarVideoPreview.hidden = false;
+    avatarVideoUploadArea?.classList.add('has-file');
+    updateGenerateButton();
+  };
+  reader.readAsDataURL(file);
+}
+
+// Clear avatar image
+function clearAvatarVideo() {
+  avatarVideoFile = null;
+  if (avatarVideoImage) avatarVideoImage.src = '';
+  if (avatarVideoPlaceholder) avatarVideoPlaceholder.hidden = false;
+  if (avatarVideoPreview) avatarVideoPreview.hidden = true;
+  if (avatarVideoInput) avatarVideoInput.value = '';
+  avatarVideoUploadArea?.classList.remove('has-file');
+  updateGenerateButton();
+}
+
+// Audio splitting settings
+const SEGMENT_DURATION = 90; // 90 seconds per segment (1.5 min)
+let audioDuration = 0;
+let audioSegments = [];
+
+// Handle audio file selection
+function handleAudioFile(file) {
+  avatarAudioFile = file;
+
+  const url = URL.createObjectURL(file);
+  if (audioPlayer) {
+    audioPlayer.src = url;
+    // Detect duration when metadata loads
+    audioPlayer.onloadedmetadata = () => {
+      audioDuration = audioPlayer.duration;
+      updateAudioDurationDisplay();
+      updateGenerateButton();
+    };
+  }
+  if (audioFileName) {
+    audioFileName.textContent = file.name;
+  }
+  if (audioPlaceholder) audioPlaceholder.hidden = true;
+  if (audioPreview) audioPreview.hidden = false;
+  audioUploadArea?.classList.add('has-file');
+  updateGenerateButton();
+}
+
+// Update audio duration display and segment info
+function updateAudioDurationDisplay() {
+  const durationEl = document.getElementById('audio-duration');
+  const segmentInfo = document.getElementById('segment-info');
+
+  if (durationEl) {
+    const mins = Math.floor(audioDuration / 60);
+    const secs = Math.floor(audioDuration % 60);
+    durationEl.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Show segment info if audio is longer than SEGMENT_DURATION
+  const numSegments = Math.ceil(audioDuration / SEGMENT_DURATION);
+  if (segmentInfo) {
+    if (audioDuration > SEGMENT_DURATION) {
+      segmentInfo.hidden = false;
+      segmentInfo.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="16" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+        Will be split into <strong>${numSegments} segments</strong> (~${SEGMENT_DURATION}s each)
+      `;
+    } else {
+      segmentInfo.hidden = true;
+    }
+  }
+
+  // Update cost estimate
+  updateCostEstimate();
+}
+
+// Update cost estimate based on duration
+function updateCostEstimate() {
+  const costEl = document.querySelector('.cost-estimate strong');
+  if (!costEl) return;
+
+  const numSegments = Math.ceil(audioDuration / SEGMENT_DURATION) || 1;
+  const minCost = (numSegments * 0.03).toFixed(2);
+  const maxCost = (numSegments * 0.08).toFixed(2);
+
+  costEl.textContent = `~$${minCost}-${maxCost}`;
+}
+
+// Clear audio
+function clearAudio() {
+  avatarAudioFile = null;
+  audioDuration = 0;
+  audioSegments = [];
+  if (audioPlayer) audioPlayer.src = '';
+  if (audioFileName) audioFileName.textContent = '';
+  if (audioPlaceholder) audioPlaceholder.hidden = false;
+  if (audioPreview) audioPreview.hidden = true;
+  if (audioFileInput) audioFileInput.value = '';
+  audioUploadArea?.classList.remove('has-file');
+
+  // Reset segment info
+  const segmentInfo = document.getElementById('segment-info');
+  if (segmentInfo) segmentInfo.hidden = true;
+
+  // Reset duration display
+  const durationEl = document.getElementById('audio-duration');
+  if (durationEl) durationEl.textContent = '';
+
+  updateGenerateButton();
+}
+
+// Split audio file into segments using Web Audio API
+async function splitAudioIntoSegments(file, segmentDuration) {
+  const arrayBuffer = await file.arrayBuffer();
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  const sampleRate = audioBuffer.sampleRate;
+  const numberOfChannels = audioBuffer.numberOfChannels;
+  const totalDuration = audioBuffer.duration;
+
+  const segments = [];
+  let startTime = 0;
+
+  while (startTime < totalDuration) {
+    const endTime = Math.min(startTime + segmentDuration, totalDuration);
+    const segmentLength = endTime - startTime;
+
+    // Create a new buffer for this segment
+    const segmentSamples = Math.floor(segmentLength * sampleRate);
+    const segmentBuffer = audioContext.createBuffer(
+      numberOfChannels,
+      segmentSamples,
+      sampleRate
+    );
+
+    // Copy the audio data for this segment
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const sourceData = audioBuffer.getChannelData(channel);
+      const segmentData = segmentBuffer.getChannelData(channel);
+      const startSample = Math.floor(startTime * sampleRate);
+
+      for (let i = 0; i < segmentSamples; i++) {
+        segmentData[i] = sourceData[startSample + i] || 0;
+      }
+    }
+
+    // Convert to WAV blob
+    const wavBlob = audioBufferToWav(segmentBuffer);
+    const segmentFile = new File(
+      [wavBlob],
+      `segment-${segments.length + 1}.wav`,
+      { type: 'audio/wav' }
+    );
+
+    segments.push({
+      index: segments.length,
+      file: segmentFile,
+      startTime: startTime,
+      endTime: endTime,
+      duration: segmentLength
+    });
+
+    startTime = endTime;
+  }
+
+  await audioContext.close();
+  return segments;
+}
+
+// Convert AudioBuffer to WAV format
+function audioBufferToWav(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+
+  const dataLength = buffer.length * blockAlign;
+  const bufferLength = 44 + dataLength;
+
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const view = new DataView(arrayBuffer);
+
+  // WAV header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  // Write audio data
+  const offset = 44;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset + (i * blockAlign) + (channel * bytesPerSample), intSample, true);
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+function writeString(view, offset, string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+// Toggle audio recording
+async function toggleRecording(e) {
+  e.stopPropagation();
+
+  if (isRecording) {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+// Start recording audio
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+
+    audioRecorder.ondataavailable = (e) => {
+      audioChunks.push(e.data);
+    };
+
+    audioRecorder.onstop = () => {
+      const blob = new Blob(audioChunks, { type: 'audio/wav' });
+      const file = new File([blob], `recording-${Date.now()}.wav`, { type: 'audio/wav' });
+      handleAudioFile(file);
+
+      // Stop all tracks
+      stream.getTracks().forEach(track => track.stop());
+    };
+
+    audioRecorder.start();
+    isRecording = true;
+
+    if (recordAudioBtn) {
+      recordAudioBtn.classList.add('recording');
+      recordAudioBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+        Stop
+      `;
+    }
+
+    showToast('Recording... Click Stop when done.', false);
+
+  } catch (error) {
+    console.error('Failed to start recording:', error);
+    showToast('Could not access microphone. Please allow microphone access.');
+  }
+}
+
+// Stop recording audio
+function stopRecording() {
+  if (audioRecorder && audioRecorder.state === 'recording') {
+    audioRecorder.stop();
+  }
+
+  isRecording = false;
+
+  if (recordAudioBtn) {
+    recordAudioBtn.classList.remove('recording');
+    recordAudioBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+      Record
+    `;
+  }
+
+  showToast('Recording saved!', false);
+}
+
+// Update generate button state
+function updateGenerateButton() {
+  if (generateAvatarVideoBtn) {
+    generateAvatarVideoBtn.disabled = !avatarVideoFile || !avatarAudioFile;
+  }
+}
+
+// Generated video segments storage
+let generatedVideoSegments = [];
+
+// Generate avatar video with lip-sync
+async function generateAvatarVideo() {
+  if (!avatarVideoFile || !avatarAudioFile) {
+    showToast('Please upload both an avatar image and audio file');
+    return;
+  }
+
+  // Show progress
+  if (avatarVideoProgress) avatarVideoProgress.hidden = false;
+  if (avatarVideoResult) avatarVideoResult.hidden = true;
+  if (generateAvatarVideoBtn) generateAvatarVideoBtn.disabled = true;
+  generatedVideoSegments = [];
+
+  // Check if we need to split the audio
+  const needsSplitting = audioDuration > SEGMENT_DURATION;
+
+  try {
+    if (needsSplitting) {
+      await generateWithSegments();
+    } else {
+      await generateSingleVideo();
+    }
+  } catch (error) {
+    console.error('Avatar video generation failed:', error);
+    if (avatarVideoProgress) avatarVideoProgress.hidden = true;
+    if (generateAvatarVideoBtn) generateAvatarVideoBtn.disabled = false;
+    showToast(error.message || 'Failed to generate avatar video');
+  }
+}
+
+// Generate a single video (audio under 90 seconds)
+async function generateSingleVideo() {
+  updateAvatarVideoProgress(0, 'Uploading files...');
+
+  const formData = new FormData();
+  formData.append('avatarImage', avatarVideoFile);
+  formData.append('audioFile', avatarAudioFile);
+
+  updateAvatarVideoProgress(10, 'Processing with AI...');
+
+  const response = await fetch('/api/animate-avatar', {
+    method: 'POST',
+    body: formData
+  });
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to generate video');
+  }
+
+  updateAvatarVideoProgress(100, 'Complete!');
+
+  // Show result
+  setTimeout(() => {
+    if (avatarVideoProgress) avatarVideoProgress.hidden = true;
+    if (avatarVideoResult) avatarVideoResult.hidden = false;
+    if (avatarVideoPlayer) avatarVideoPlayer.src = data.video;
+
+    // Save to gallery
+    saveAvatarVideo(data.video);
+
+    showToast('Avatar video generated!', false);
+  }, 500);
+}
+
+// Generate video with multiple segments
+async function generateWithSegments() {
+  updateAvatarVideoProgress(0, 'Splitting audio into segments...');
+
+  // Split the audio
+  const segments = await splitAudioIntoSegments(avatarAudioFile, SEGMENT_DURATION);
+  const totalSegments = segments.length;
+
+  updateAvatarVideoProgress(5, `Processing ${totalSegments} segments...`);
+
+  // Show segments result area
+  showSegmentsResultArea(totalSegments);
+
+  // Process each segment
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    const segmentNum = i + 1;
+    const baseProgress = 5 + (90 * i / totalSegments);
+
+    updateAvatarVideoProgress(baseProgress, `Generating segment ${segmentNum} of ${totalSegments}...`);
+    updateSegmentStatus(i, 'processing');
+
+    try {
+      const formData = new FormData();
+      formData.append('avatarImage', avatarVideoFile);
+      formData.append('audioFile', segment.file);
+
+      const response = await fetch('/api/animate-avatar', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || `Failed to generate segment ${segmentNum}`);
+      }
+
+      // Store the generated segment
+      generatedVideoSegments.push({
+        index: i,
+        url: data.video,
+        startTime: segment.startTime,
+        endTime: segment.endTime,
+        duration: segment.duration
+      });
+
+      updateSegmentStatus(i, 'complete', data.video);
+
+    } catch (error) {
+      console.error(`Segment ${segmentNum} failed:`, error);
+      updateSegmentStatus(i, 'error', null, error.message);
+      // Continue with other segments
+    }
+  }
+
+  updateAvatarVideoProgress(100, 'All segments complete!');
+
+  // Show completion
+  setTimeout(() => {
+    if (avatarVideoProgress) avatarVideoProgress.hidden = true;
+    finishSegmentsGeneration();
+  }, 500);
+}
+
+// Show segments result area
+function showSegmentsResultArea(totalSegments) {
+  const resultArea = document.getElementById('avatar-video-result');
+  if (!resultArea) return;
+
+  resultArea.hidden = false;
+  resultArea.innerHTML = `
+    <div class="card">
+      <h3>Generating ${totalSegments} Video Segments</h3>
+      <p class="segments-info">Each segment will be ready for download. Combine them in your video editor.</p>
+      <div id="segments-grid" class="segments-grid">
+        ${Array.from({length: totalSegments}, (_, i) => `
+          <div class="segment-item" id="segment-item-${i}" data-index="${i}">
+            <div class="segment-preview">
+              <div class="segment-placeholder">
+                <span class="segment-number">${i + 1}</span>
+              </div>
+              <video class="segment-video" hidden muted playsinline></video>
+            </div>
+            <div class="segment-info">
+              <span class="segment-label">Segment ${i + 1}</span>
+              <span class="segment-status pending">Waiting...</span>
+            </div>
+            <div class="segment-actions" hidden>
+              <button class="btn small primary download-segment-btn">Download</button>
+              <button class="btn small secondary play-segment-btn">Play</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="segments-complete-actions" id="segments-complete-actions" hidden>
+        <button class="btn primary" id="download-all-segments-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download All as ZIP
+        </button>
+        <button class="btn secondary" id="new-segments-btn">Create New Video</button>
+      </div>
+    </div>
+  `;
+
+  // Add event listener for download all
+  document.getElementById('download-all-segments-btn')?.addEventListener('click', downloadAllSegments);
+  document.getElementById('new-segments-btn')?.addEventListener('click', resetAvatarVideo);
+}
+
+// Update segment status
+function updateSegmentStatus(index, status, videoUrl = null, errorMsg = null) {
+  const segmentItem = document.getElementById(`segment-item-${index}`);
+  if (!segmentItem) return;
+
+  const statusEl = segmentItem.querySelector('.segment-status');
+  const placeholder = segmentItem.querySelector('.segment-placeholder');
+  const video = segmentItem.querySelector('.segment-video');
+  const actions = segmentItem.querySelector('.segment-actions');
+
+  if (status === 'processing') {
+    statusEl.className = 'segment-status processing';
+    statusEl.innerHTML = '<span class="spinner-small"></span> Processing...';
+  } else if (status === 'complete') {
+    statusEl.className = 'segment-status complete';
+    statusEl.textContent = 'Complete!';
+
+    if (videoUrl && video) {
+      video.src = videoUrl;
+      video.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+    }
+
+    if (actions) {
+      actions.hidden = false;
+      const downloadBtn = actions.querySelector('.download-segment-btn');
+      const playBtn = actions.querySelector('.play-segment-btn');
+
+      downloadBtn?.addEventListener('click', () => downloadSegment(index, videoUrl));
+      playBtn?.addEventListener('click', () => playSegment(index, videoUrl));
+    }
+  } else if (status === 'error') {
+    statusEl.className = 'segment-status error';
+    statusEl.textContent = errorMsg || 'Failed';
+  }
+}
+
+// Finish segments generation
+function finishSegmentsGeneration() {
+  const completeActions = document.getElementById('segments-complete-actions');
+  if (completeActions) completeActions.hidden = false;
+
+  const successCount = generatedVideoSegments.length;
+  const totalCount = document.querySelectorAll('.segment-item').length;
+
+  if (successCount === totalCount) {
+    showToast(`All ${successCount} segments generated!`, false);
+  } else {
+    showToast(`Generated ${successCount} of ${totalCount} segments`, false);
+  }
+
+  // Re-enable generate button
+  if (generateAvatarVideoBtn) generateAvatarVideoBtn.disabled = false;
+}
+
+// Download a single segment
+async function downloadSegment(index, videoUrl) {
+  try {
+    const response = await fetch(videoUrl);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `avatar-segment-${index + 1}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Segment ${index + 1} downloaded!`, false);
+  } catch (error) {
+    showToast('Failed to download segment');
+  }
+}
+
+// Play a segment
+function playSegment(index, videoUrl) {
+  const video = document.querySelector(`#segment-item-${index} .segment-video`);
+  if (video) {
+    video.muted = false;
+    video.play();
+  }
+}
+
+// Download all segments as ZIP
+async function downloadAllSegments() {
+  if (generatedVideoSegments.length === 0) {
+    showToast('No segments to download');
+    return;
+  }
+
+  showToast('Creating ZIP file...', false);
+
+  try {
+    const zip = new JSZip();
+    const folder = zip.folder('avatar-video-segments');
+
+    for (let i = 0; i < generatedVideoSegments.length; i++) {
+      const segment = generatedVideoSegments[i];
+      const response = await fetch(segment.url);
+      const blob = await response.blob();
+      folder.file(`segment-${String(i + 1).padStart(2, '0')}.mp4`, blob);
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `avatar-video-segments-${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Downloaded ${generatedVideoSegments.length} segments as ZIP!`, false);
+  } catch (error) {
+    showToast('Failed to create ZIP file');
+  }
+}
+
+// Update progress bar
+function updateAvatarVideoProgress(percent, status) {
+  if (avatarVideoProgressBar) {
+    avatarVideoProgressBar.style.width = `${percent}%`;
+  }
+  if (avatarVideoStatus) {
+    avatarVideoStatus.textContent = status;
+  }
+}
+
+// Download avatar video
+async function downloadAvatarVideo() {
+  const videoUrl = avatarVideoPlayer?.src;
+  if (!videoUrl) {
+    showToast('No video to download');
+    return;
+  }
+
+  try {
+    const response = await fetch(videoUrl);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `avatar-video-${Date.now()}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Video downloaded!', false);
+  } catch (error) {
+    showToast('Failed to download video');
+  }
+}
+
+// Reset for new video
+function resetAvatarVideo() {
+  clearAvatarVideo();
+  clearAudio();
+  if (avatarVideoResult) avatarVideoResult.hidden = true;
+  if (avatarVideoPlayer) avatarVideoPlayer.src = '';
+}
+
+// Save video to gallery
+function saveAvatarVideo(videoUrl) {
+  const item = {
+    id: Date.now().toString(),
+    url: videoUrl,
+    timestamp: new Date().toISOString()
+  };
+
+  recentAvatarVideos.unshift(item);
+
+  // Keep only last 10
+  if (recentAvatarVideos.length > 10) {
+    recentAvatarVideos = recentAvatarVideos.slice(0, 10);
+  }
+
+  localStorage.setItem('avatar_videos', JSON.stringify(recentAvatarVideos));
+  renderAvatarVideoGallery();
+}
+
+// Render avatar video gallery
+function renderAvatarVideoGallery() {
+  const galleryContainer = document.getElementById('avatar-video-gallery');
+  if (!avatarVideoGallery) return;
+
+  if (recentAvatarVideos.length === 0) {
+    if (galleryContainer) galleryContainer.hidden = true;
+    return;
+  }
+
+  if (galleryContainer) galleryContainer.hidden = false;
+
+  avatarVideoGallery.innerHTML = recentAvatarVideos.map(item => `
+    <div class="avatar-video-gallery-item" data-id="${item.id}">
+      <video src="${item.url}" muted playsinline></video>
+      <div class="overlay">
+        <button class="play-btn" onclick="playGalleryVideo('${item.id}')">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+        </button>
+        <button class="delete-btn" onclick="deleteGalleryVideo('${item.id}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>
+      </div>
+      <span class="video-date">${formatDate(item.timestamp)}</span>
+    </div>
+  `).join('');
+}
+
+// Play video from gallery
+function playGalleryVideo(id) {
+  const item = recentAvatarVideos.find(v => v.id === id);
+  if (!item) return;
+
+  if (avatarVideoPlayer) avatarVideoPlayer.src = item.url;
+  if (avatarVideoResult) avatarVideoResult.hidden = false;
+
+  // Scroll to result
+  avatarVideoResult?.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Delete video from gallery
+function deleteGalleryVideo(id) {
+  if (!confirm('Delete this video?')) return;
+
+  recentAvatarVideos = recentAvatarVideos.filter(v => v.id !== id);
+  localStorage.setItem('avatar_videos', JSON.stringify(recentAvatarVideos));
+  renderAvatarVideoGallery();
+  showToast('Video deleted', false);
+}
+
+// Make functions globally available
+window.playGalleryVideo = playGalleryVideo;
+window.deleteGalleryVideo = deleteGalleryVideo;
+
+// Initialize on DOM ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAvatarVideo);
+} else {
+  initAvatarVideo();
+}

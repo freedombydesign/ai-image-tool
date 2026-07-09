@@ -826,6 +826,123 @@ app.post('/api/face-swap', upload.fields([
   }
 });
 
+// Animate avatar with lip-sync using LivePortrait
+app.post('/api/animate-avatar', upload.fields([
+  { name: 'avatarImage', maxCount: 1 },  // The avatar/face image
+  { name: 'audioFile', maxCount: 1 }     // The audio file (mp3, wav, etc.)
+]), async (req, res) => {
+  try {
+    const avatarFile = req.files['avatarImage']?.[0];
+    const audioFile = req.files['audioFile']?.[0];
+
+    if (!avatarFile) {
+      return res.status(400).json({ error: 'Avatar image is required' });
+    }
+    if (!audioFile) {
+      return res.status(400).json({ error: 'Audio file is required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured. Add it to your .env file.' });
+    }
+
+    console.log('Starting avatar animation with LivePortrait...');
+    console.log('Avatar file:', avatarFile.originalname, 'size:', avatarFile.size);
+    console.log('Audio file:', audioFile.originalname, 'size:', audioFile.size);
+
+    // Convert files to base64 data URIs
+    const avatarBase64 = fileToBase64DataUri(avatarFile);
+
+    // For audio, we need to handle different mime types
+    const audioBuffer = getFileBuffer(audioFile);
+    const audioMimeType = audioFile.mimetype || 'audio/wav';
+    const audioBase64 = `data:${audioMimeType};base64,${audioBuffer.toString('base64')}`;
+
+    console.log('Avatar base64 length:', avatarBase64.length);
+    console.log('Audio base64 length:', audioBase64.length);
+
+    // Use LivePortrait model on Replicate
+    // Model: lucataco/live-portrait - high quality lip-sync animation
+    const LIVEPORTRAIT_VERSION = 'eaef9e673ab5c7e0e36f94be1c3e91321b0cf5820664c72c7c7dc48bbbb81add';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: LIVEPORTRAIT_VERSION,
+        input: {
+          face: avatarBase64,
+          driving_audio: audioBase64,
+          live_portrait_dsize: 512,
+          live_portrait_scale: 2.3,
+          video_frame_load_cap: 128,
+          aniportrait_ref_image: avatarBase64,
+          output_format: 'mp4',
+          output_quality: 80
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Replicate API error:', response.status, errorText);
+      throw new Error(`Replicate API error: ${errorText}`);
+    }
+
+    let prediction = await response.json();
+    console.log('Animation prediction started:', prediction.id, 'status:', prediction.status);
+
+    // Poll for completion (animations take longer than image generation)
+    let pollCount = 0;
+    const maxPolls = 300; // 5 minutes max
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && pollCount < maxPolls) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const pollResponse = await fetch(prediction.urls.get, {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      prediction = await pollResponse.json();
+      pollCount++;
+      if (pollCount % 10 === 0) {
+        console.log('Animation status:', prediction.status, `(poll ${pollCount})`);
+      }
+    }
+
+    // Cleanup temp files
+    cleanupFile(avatarFile);
+    cleanupFile(audioFile);
+
+    if (prediction.status === 'failed') {
+      console.error('Animation failed:', prediction.error);
+      throw new Error(prediction.error || 'Animation failed');
+    }
+
+    if (pollCount >= maxPolls) {
+      throw new Error('Animation timed out after 5 minutes');
+    }
+
+    console.log('Animation succeeded, output:', prediction.output);
+
+    res.json({
+      success: true,
+      video: prediction.output,
+      predictionId: prediction.id
+    });
+
+  } catch (error) {
+    console.error('Animation error:', error);
+    // Cleanup on error
+    if (req.files) {
+      cleanupFile(req.files['avatarImage']?.[0]);
+      cleanupFile(req.files['audioFile']?.[0]);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Analyze avatar photo with GPT-4 Vision - generates detailed appearance description
 app.post('/api/analyze-avatar', upload.single('image'), async (req, res) => {
   try {

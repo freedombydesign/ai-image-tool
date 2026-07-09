@@ -24,6 +24,7 @@
         <button class="tab" data-tab="video-editor">Video Editor</button>
         <button class="tab" data-tab="thumbnail">Thumbnail</button>
         <button class="tab" data-tab="yt-banner">YT Banner</button>
+        <button class="tab" data-tab="avatar-video">Avatar Video</button>
         <button class="tab" data-tab="generate">Single Image</button>
         <button class="tab" data-tab="edit">Edit</button>
         <button class="tab" data-tab="variations">Variations</button>
@@ -1098,6 +1099,141 @@
           <div class="templates-grid">
             <!-- Templates would go here -->
           </div>
+        </div>
+      </section>
+
+      <!-- Avatar Video Tab - Lip Sync Animation -->
+      <section id="avatar-video" class="tab-content">
+        <div class="card">
+          <h2>Avatar Video</h2>
+          <p>Make your avatar speak with AI lip-sync animation powered by LivePortrait</p>
+
+          <!-- Avatar Selection -->
+          <div class="form-group">
+            <label>Your Avatar</label>
+            <div class="avatar-video-upload-area" id="avatar-video-upload">
+              <input type="file" id="avatar-video-file" accept="image/*" hidden>
+              <div class="upload-placeholder" id="avatar-video-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span>Upload your avatar image</span>
+                <small>Clear front-facing photo works best</small>
+              </div>
+              <div id="avatar-video-preview" class="avatar-video-preview" hidden>
+                <img id="avatar-video-image" alt="Avatar for animation">
+                <button class="btn text small" id="clear-avatar-video">Change</button>
+              </div>
+            </div>
+            <!-- Use existing avatar option -->
+            <div id="use-existing-avatar-section" class="use-existing-avatar-section" hidden>
+              <div class="existing-avatar-option">
+                <img id="existing-avatar-thumb" alt="Your existing avatar">
+                <span>Use your uploaded avatar</span>
+                <button class="btn secondary small" id="use-existing-avatar-btn">Use This</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Audio Upload -->
+          <div class="form-group">
+            <label>Your Voice Recording</label>
+            <div class="audio-upload-area" id="audio-upload-area">
+              <input type="file" id="animation-audio-file" accept="audio/*" hidden>
+              <div class="upload-placeholder" id="audio-upload-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+                <span>Upload audio file</span>
+                <small>MP3, WAV, M4A supported (max 2 minutes recommended)</small>
+              </div>
+              <div id="audio-upload-preview" class="audio-upload-preview" hidden>
+                <audio id="animation-audio-player" controls></audio>
+                <div class="audio-info">
+                  <span id="audio-filename">audio.mp3</span>
+                  <span id="audio-duration"></span>
+                </div>
+                <button class="btn text small" id="clear-animation-audio">Remove</button>
+              </div>
+              <div id="segment-info" class="segment-info" hidden></div>
+            </div>
+            <!-- Record audio option -->
+            <div class="record-audio-section">
+              <span class="or-divider">or</span>
+              <button class="btn secondary" id="record-animation-audio-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+                  <circle cx="12" cy="12" r="10"/>
+                  <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                </svg>
+                Record Audio
+              </button>
+              <div id="animation-recording-controls" class="recording-controls" hidden>
+                <div class="recording-indicator">
+                  <span class="recording-dot"></span>
+                  <span id="animation-recording-time">00:00</span>
+                </div>
+                <button class="btn secondary small" id="stop-animation-recording-btn">Stop Recording</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Generation Info -->
+          <div class="cost-estimate">
+            <span>Estimated cost: </span>
+            <strong>~$0.03-0.05</strong>
+            <span class="generation-time">(Takes 30-60 seconds)</span>
+          </div>
+
+          <!-- Generate Button -->
+          <div class="button-row">
+            <button class="btn primary" id="generate-avatar-video-btn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="margin-right: 6px;">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Generate Talking Avatar
+            </button>
+          </div>
+
+          <!-- Progress indicator -->
+          <div id="avatar-video-progress" class="avatar-video-progress" hidden>
+            <div class="progress-bar">
+              <div id="avatar-video-progress-bar" class="progress-fill"></div>
+            </div>
+            <span id="avatar-video-status">Initializing...</span>
+          </div>
+        </div>
+
+        <!-- Video Result -->
+        <div id="avatar-video-result" class="result-section" hidden>
+          <div class="card">
+            <h3>Your Talking Avatar</h3>
+            <div class="video-result-container">
+              <video id="avatar-video-output" controls autoplay loop>
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            <div class="result-actions">
+              <button class="btn primary" id="download-avatar-video-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 4px;">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Video
+              </button>
+              <button class="btn secondary" id="regenerate-avatar-video-btn">Regenerate</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Avatar Videos Gallery -->
+        <div id="avatar-video-gallery" class="avatar-video-gallery" hidden>
+          <h3>Recent Avatar Videos</h3>
+          <div id="avatar-video-gallery-grid" class="avatar-video-gallery-grid"></div>
         </div>
       </section>
 

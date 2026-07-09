@@ -3661,3 +3661,454 @@ footer {
     order: -1;
   }
 }
+
+/* ============================================
+   Avatar Video Tab - Lip Sync Animation
+   ============================================ */
+
+.avatar-video-upload-area,
+.audio-upload-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg);
+}
+
+.avatar-video-upload-area:hover,
+.audio-upload-area:hover {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.avatar-video-upload-area svg,
+.audio-upload-area svg {
+  width: 48px;
+  height: 48px;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.avatar-video-upload-area span,
+.audio-upload-area span {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.avatar-video-upload-area small,
+.audio-upload-area small {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.avatar-video-preview {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.avatar-video-preview img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 2px solid var(--border);
+}
+
+.audio-upload-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.audio-upload-preview audio {
+  width: 100%;
+  height: 40px;
+}
+
+.audio-info {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.record-audio-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.recording-dot {
+  width: 12px;
+  height: 12px;
+  background: var(--error);
+  border-radius: 50%;
+  animation: pulse-recording 1s infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.use-existing-avatar-section {
+  margin-top: 1rem;
+}
+
+.existing-avatar-option {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.existing-avatar-option img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+}
+
+.existing-avatar-option span {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.generation-time {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+}
+
+.avatar-video-progress {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.avatar-video-progress .progress-bar {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.avatar-video-progress .progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+#avatar-video-status {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.video-result-container {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  margin-bottom: 1rem;
+}
+
+.video-result-container video {
+  width: 100%;
+  max-height: 500px;
+  display: block;
+}
+
+.avatar-video-gallery {
+  margin-top: 2rem;
+}
+
+.avatar-video-gallery h3 {
+  margin-bottom: 1rem;
+}
+
+.avatar-video-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.avatar-video-gallery-item {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.avatar-video-gallery-item:hover {
+  transform: scale(1.02);
+}
+
+.avatar-video-gallery-item video {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.avatar-video-gallery-item .overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 50%);
+  display: flex;
+  align-items: flex-end;
+  padding: 0.75rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.avatar-video-gallery-item:hover .overlay {
+  opacity: 1;
+}
+
+.avatar-video-gallery-item .overlay button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.5rem;
+  transition: background 0.2s;
+}
+
+.avatar-video-gallery-item .overlay button:hover {
+  background: var(--primary-dark);
+}
+
+.avatar-video-gallery-item .overlay button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.avatar-video-gallery-item .overlay .delete-btn {
+  background: var(--error);
+}
+
+.avatar-video-gallery-item .overlay .delete-btn:hover {
+  background: #c0392b;
+}
+
+.avatar-video-gallery-item .video-date {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* Segment Info Display */
+.segment-info {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.segment-info strong {
+  color: var(--primary);
+}
+
+.segment-info .cost-estimate {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+/* Segments Result Grid */
+.segments-result {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.segments-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.segments-header h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+.segments-progress {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.segments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.segment-item {
+  background: var(--background);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.segment-item:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.segment-item video {
+  width: 100%;
+  aspect-ratio: 9/16;
+  object-fit: cover;
+  background: #000;
+}
+
+.segment-item .segment-placeholder {
+  width: 100%;
+  aspect-ratio: 9/16;
+  background: var(--surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.segment-info-bar {
+  padding: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+
+.segment-label {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.segment-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.segment-status.pending {
+  color: var(--text-secondary);
+}
+
+.segment-status.processing {
+  color: var(--primary);
+}
+
+.segment-status.complete {
+  color: #10b981;
+}
+
+.segment-status.error {
+  color: #ef4444;
+}
+
+/* Small spinner for segment processing */
+.spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(79, 70, 229, 0.2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Download All Button */
+.download-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.download-all-btn:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.download-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.download-all-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Segment Download Button */
+.segment-download-btn {
+  padding: 0.375rem 0.625rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.segment-download-btn:hover {
+  background: var(--primary-hover);
+}
