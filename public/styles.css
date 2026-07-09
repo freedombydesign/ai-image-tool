@@ -1073,6 +1073,25 @@ footer {
   font-size: 0.85rem;
 }
 
+/* Preview Single Scene Button */
+.scene-actions .preview-single-btn {
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.scene-actions .preview-single-btn:hover {
+  background: var(--primary-dark);
+}
+
+.scene-actions .preview-single-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
 /* Result Actions */
 .result-actions {
   display: flex;

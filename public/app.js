@@ -1800,6 +1800,12 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
       <div class="scene-text">${truncatedText}</div>
     </div>
     <div class="scene-actions">
+      <button class="btn preview-single-btn" onclick="previewSingleScene(${index})" title="Generate only this scene">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Preview
+      </button>
       <button class="scene-anchor-btn ${isAnchor ? 'is-anchor' : ''}" onclick="setStyleAnchor(${index})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="5" r="3"/>
@@ -1851,6 +1857,77 @@ function markSceneError(index) {
   const loadingDiv = card.querySelector('.scene-loading');
   if (loadingDiv) {
     loadingDiv.innerHTML = '<span style="color: var(--error);">Failed to generate</span>';
+  }
+}
+
+// Preview a single scene (generate only this one scene)
+async function previewSingleScene(index) {
+  const scenes = getScenesForGeneration();
+  if (index >= scenes.length) {
+    showToast('Scene not found');
+    return;
+  }
+
+  const sceneText = scenes[index];
+  const card = document.getElementById(`scene-card-${index}`);
+
+  if (!card) {
+    showToast('Scene card not found');
+    return;
+  }
+
+  // Show loading state
+  card.classList.add('loading');
+  card.classList.remove('error');
+
+  const img = card.querySelector('img');
+  if (img) img.hidden = true;
+
+  // Remove any existing loading div and add new one
+  let loadingDiv = card.querySelector('.scene-loading');
+  if (!loadingDiv) {
+    loadingDiv = document.createElement('div');
+    loadingDiv.className = 'scene-loading';
+    card.insertBefore(loadingDiv, card.firstChild);
+  }
+  loadingDiv.innerHTML = '<div class="spinner"></div>';
+
+  const size = document.getElementById('batch-size').value;
+  const quality = document.getElementById('batch-quality').value;
+  const model = document.getElementById('batch-model')?.value || 'dall-e-3';
+  const styledPrompt = buildStyledPrompt(sceneText, selectedStyle);
+
+  try {
+    showToast(`Generating scene ${index + 1}...`, false);
+
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Store the generated scene
+    generatedScenes[index] = {
+      index: index,
+      text: sceneText,
+      imageUrl: data.image,
+      prompt: styledPrompt,
+      revisedPrompt: data.revised_prompt
+    };
+
+    updateSceneCard(index, data.image);
+    showToast(`Scene ${index + 1} generated!`, false);
+
+  } catch (error) {
+    console.error(`Failed to preview scene ${index + 1}:`, error);
+    markSceneError(index);
+    showToast(`Failed: ${error.message}`);
   }
 }
 
