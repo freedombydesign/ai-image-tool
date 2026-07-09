@@ -1694,34 +1694,52 @@ class VideoEditor {
 
     try {
       // Determine file extension based on mime type
-      let extension = 'webm';
-      const mimeType = this.audioBlob.type || 'audio/webm';
-      if (mimeType.includes('mp3') || mimeType.includes('mpeg')) {
-        extension = 'mp3';
-      } else if (mimeType.includes('wav')) {
+      let extension = 'mp3';
+      const mimeType = this.audioBlob.type || 'audio/mpeg';
+      if (mimeType.includes('wav')) {
         extension = 'wav';
       } else if (mimeType.includes('m4a') || mimeType.includes('mp4')) {
         extension = 'm4a';
       } else if (mimeType.includes('ogg')) {
         extension = 'ogg';
+      } else if (mimeType.includes('webm')) {
+        extension = 'webm';
       }
 
-      // Create form data - use blob directly (Safari compatible)
+      // Use XMLHttpRequest for better Safari compatibility
       const formData = new FormData();
-
-      // Safari fix: append blob with filename instead of using File constructor
       formData.append('audio', this.audioBlob, `audio.${extension}`);
 
-      // Call transcription API
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/transcribe', true);
+
+        xhr.onload = function() {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch (e) {
+              reject(new Error('Invalid JSON response'));
+            }
+          } else {
+            try {
+              const err = JSON.parse(xhr.responseText);
+              reject(new Error(err.error || 'Transcription failed'));
+            } catch (e) {
+              reject(new Error('Transcription failed: ' + xhr.status));
+            }
+          }
+        };
+
+        xhr.onerror = function() {
+          reject(new Error('Network error during transcription'));
+        };
+
+        xhr.send(formData);
       });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Transcription failed');
+      if (result.error) {
+        throw new Error(result.error);
       }
 
       console.log('Transcription for captions:', result);
