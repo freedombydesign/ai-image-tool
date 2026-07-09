@@ -1381,7 +1381,12 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
     basePrompt += '. Create with a polished, professional YouTube video aesthetic, eye-catching visuals optimized for video content';
   }
 
-  return `${basePrompt}. No text, no faces visible, faceless characters suitable for faceless YouTube videos.`;
+  // Only add faceless instructions if avatar is NOT enabled
+  if (avatarEnabled && avatarImageData) {
+    return `${basePrompt}. No text or watermarks.`;
+  } else {
+    return `${basePrompt}. No text, no faces visible, faceless characters suitable for faceless YouTube videos.`;
+  }
 }
 
 // API Functions
@@ -2158,12 +2163,22 @@ function buildThumbnailPrompt(description, style, textHook = '', referenceData =
     prompt += avatarInstructions;
   }
 
-  // Add reference guidance if provided
+  // Add reference guidance if provided (now with AI analysis)
   if (referenceData && referenceData.type) {
-    if (referenceData.type === 'do-this') {
-      prompt += `. IMPORTANT: Create something similar in style and approach to this successful thumbnail concept. Follow the visual patterns, color schemes, and composition techniques that make it effective`;
-    } else if (referenceData.type === 'dont-do-this') {
-      prompt += `. IMPORTANT: Avoid the approach shown in the reference. Do NOT use similar colors, composition, or style. Create the OPPOSITE - make it more eye-catching, professional, and engaging. Avoid these common thumbnail mistakes`;
+    if (referenceData.analysis) {
+      // Use the AI-analyzed style description
+      if (referenceData.type === 'do-this') {
+        prompt += `. CRITICAL STYLE REFERENCE - MATCH THIS STYLE: ${referenceData.analysis}. Replicate these visual elements, colors, composition, and mood as closely as possible`;
+      } else if (referenceData.type === 'dont-do-this') {
+        prompt += `. AVOID THIS STYLE: The following describes what NOT to do - ${referenceData.analysis}. Create the OPPOSITE - use contrasting colors, different composition, and a more professional/engaging approach`;
+      }
+    } else {
+      // Fallback if no analysis available
+      if (referenceData.type === 'do-this') {
+        prompt += `. IMPORTANT: Create something similar in style and approach to this successful thumbnail concept. Follow the visual patterns, color schemes, and composition techniques that make it effective`;
+      } else if (referenceData.type === 'dont-do-this') {
+        prompt += `. IMPORTANT: Avoid the approach shown in the reference. Do NOT use similar colors, composition, or style. Create the OPPOSITE - make it more eye-catching, professional, and engaging. Avoid these common thumbnail mistakes`;
+      }
     }
   }
 
@@ -2481,6 +2496,76 @@ if (thumbnailFeedbackInput) {
   });
 }
 
+// Face Swap Button
+const faceSwapThumbnailBtn = document.getElementById('face-swap-thumbnail-btn');
+if (faceSwapThumbnailBtn) {
+  faceSwapThumbnailBtn.addEventListener('click', faceSwapThumbnail);
+}
+
+// Face Swap Function - swaps user's avatar face into the thumbnail
+async function faceSwapThumbnail() {
+  // Check if avatar is uploaded
+  if (!avatarImageData) {
+    showToast('Please upload your avatar photo first in the Batch Scenes tab');
+    switchToTabAndOpenAvatar('batch-scenes');
+    return;
+  }
+
+  // Check if there's a thumbnail to swap
+  const thumbnailImg = document.getElementById('thumbnail-image');
+  if (!thumbnailImg || !thumbnailImg.src) {
+    showToast('Please generate a thumbnail first');
+    return;
+  }
+
+  showLoading('Swapping your face into the thumbnail...');
+
+  try {
+    // Convert both images to blobs for upload
+    const thumbnailBlob = await fetch(thumbnailImg.src).then(r => r.blob());
+    const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+    const formData = new FormData();
+    formData.append('sourceImage', thumbnailBlob, 'thumbnail.png');
+    formData.append('faceImage', avatarBlob, 'avatar.png');
+
+    const response = await fetch('/api/face-swap', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.image) {
+      // Update the thumbnail with the face-swapped version
+      thumbnailImg.src = data.image;
+
+      // Add to history
+      thumbnailHistory.unshift({
+        imageUrl: data.image,
+        prompt: 'Face swapped thumbnail',
+        timestamp: Date.now()
+      });
+
+      if (thumbnailHistory.length > 10) {
+        thumbnailHistory = thumbnailHistory.slice(0, 10);
+      }
+
+      updateThumbnailGallery();
+      saveThumbnailHistory();
+
+      showToast('Face swap complete!', false);
+    } else {
+      throw new Error(data.error || 'Face swap failed');
+    }
+  } catch (error) {
+    console.error('Face swap error:', error);
+    showToast(`Face swap failed: ${error.message}`);
+  } finally {
+    hideLoading();
+  }
+}
+
 // ============================================
 // REFERENCE THUMBNAIL UPLOAD
 // ============================================
@@ -2545,9 +2630,9 @@ if (clearRefThumbBtn) {
 }
 
 // Handle reference thumbnail upload
-function handleReferenceThumbUpload(file) {
+async function handleReferenceThumbUpload(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     const imageData = e.target.result;
 
     // Set the preview image
@@ -2563,13 +2648,42 @@ function handleReferenceThumbUpload(file) {
     const activeTypeBtn = document.querySelector('.ref-type-btn.active');
     const selectedType = activeTypeBtn ? activeTypeBtn.dataset.refType : 'do-this';
 
-    // Store the reference data
+    // Store the reference data initially
     referenceThumbData = {
       type: selectedType,
-      hasImage: true
+      hasImage: true,
+      analysis: null,
+      analyzing: true
     };
 
-    showToast(`Reference uploaded! Using as "${selectedType === 'do-this' ? 'Do This' : "Don't Do This"}" example.`, false);
+    showToast('Analyzing reference thumbnail with AI...', false);
+
+    // Analyze the image with GPT-4o Vision
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('analysisType', 'thumbnail');
+
+      const response = await fetch('/api/analyze-image', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.analysis) {
+        referenceThumbData.analysis = data.analysis;
+        referenceThumbData.analyzing = false;
+        showToast(`Reference analyzed! Style will be ${selectedType === 'do-this' ? 'matched' : 'avoided'}.`, false);
+        console.log('Reference analysis:', data.analysis);
+      } else {
+        throw new Error(data.error || 'Analysis failed');
+      }
+    } catch (error) {
+      console.error('Failed to analyze reference:', error);
+      referenceThumbData.analyzing = false;
+      showToast(`Reference uploaded (analysis failed: ${error.message})`, true);
+    }
   };
   reader.readAsDataURL(file);
 }

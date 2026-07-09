@@ -532,6 +532,186 @@ app.post('/api/character-swap', upload.single('image'), async (req, res) => {
   }
 });
 
+// Analyze image using GPT-4o Vision
+app.post('/api/analyze-image', upload.single('image'), async (req, res) => {
+  try {
+    const { analysisType } = req.body; // 'style', 'thumbnail', 'general'
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Image file is required' });
+    }
+
+    console.log('Analyzing image with GPT-4o Vision, type:', analysisType);
+
+    // Convert image to base64
+    const imageBuffer = fs.readFileSync(req.file.path);
+    const base64Image = imageBuffer.toString('base64');
+    const mimeType = req.file.mimetype || 'image/png';
+
+    // Build analysis prompt based on type
+    let systemPrompt;
+    if (analysisType === 'thumbnail') {
+      systemPrompt = `Analyze this YouTube thumbnail and provide a detailed description that could be used to recreate a similar style. Include:
+1. Color palette (specific colors used, dominant colors)
+2. Composition (where elements are placed, layout)
+3. Text style (if any - font style, size, colors, effects)
+4. Lighting and mood
+5. Subject matter and pose (if people are present)
+6. Visual effects or filters used
+7. Overall style category (minimalist, bold, dramatic, etc.)
+
+Provide the description in a concise format that could be used as style guidance for AI image generation.`;
+    } else if (analysisType === 'style') {
+      systemPrompt = `Analyze the visual style of this image. Describe:
+1. Art style (realistic, cartoon, illustration, etc.)
+2. Color grading and palette
+3. Lighting setup
+4. Mood and atmosphere
+5. Any distinctive visual techniques
+
+Keep it concise and usable for recreating similar styles.`;
+    } else {
+      systemPrompt = `Describe this image in detail, including:
+1. What's depicted (subjects, objects, setting)
+2. Visual style and colors
+3. Mood and atmosphere
+4. Composition and framing
+
+Be specific and detailed.`;
+    }
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: systemPrompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+                detail: 'high'
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 1000
+    });
+
+    // Cleanup
+    fs.unlinkSync(req.file.path);
+
+    const analysis = response.choices[0].message.content;
+
+    res.json({
+      success: true,
+      analysis: analysis,
+      analysisType: analysisType || 'general'
+    });
+
+  } catch (error) {
+    console.error('Image analysis error:', error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Face swap using Replicate
+app.post('/api/face-swap', upload.fields([
+  { name: 'sourceImage', maxCount: 1 },  // The image to modify (e.g., thumbnail)
+  { name: 'faceImage', maxCount: 1 }     // The face to swap in (user's avatar)
+]), async (req, res) => {
+  try {
+    const sourceFile = req.files['sourceImage']?.[0];
+    const faceFile = req.files['faceImage']?.[0];
+
+    if (!sourceFile || !faceFile) {
+      return res.status(400).json({ error: 'Both source image and face image are required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured. Add it to your .env file.' });
+    }
+
+    console.log('Starting face swap...');
+
+    // Convert images to base64 data URIs
+    const sourceBuffer = fs.readFileSync(sourceFile.path);
+    const faceBuffer = fs.readFileSync(faceFile.path);
+    const sourceBase64 = `data:${sourceFile.mimetype};base64,${sourceBuffer.toString('base64')}`;
+    const faceBase64 = `data:${faceFile.mimetype};base64,${faceBuffer.toString('base64')}`;
+
+    // Use Replicate face-swap model
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: 'c2d783366f8bbd89623b8a5aa9a7ffc6a2c6c4e848d1cd4c5f9e8e8b4c1b2a3f', // face-swap model
+        input: {
+          target_image: sourceBase64,
+          source_image: faceBase64,
+          face_restore: true,
+          background_enhance: true,
+          face_upsample: true,
+          upscale: 1,
+          codeformer_fidelity: 0.5
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Replicate API error: ${errorText}`);
+    }
+
+    let prediction = await response.json();
+
+    // Poll for completion
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const pollResponse = await fetch(prediction.urls.get, {
+        headers: { 'Authorization': `Token ${apiKey}` }
+      });
+      prediction = await pollResponse.json();
+    }
+
+    // Cleanup temp files
+    fs.unlinkSync(sourceFile.path);
+    fs.unlinkSync(faceFile.path);
+
+    if (prediction.status === 'failed') {
+      throw new Error(prediction.error || 'Face swap failed');
+    }
+
+    res.json({
+      success: true,
+      image: prediction.output,
+      predictionId: prediction.id
+    });
+
+  } catch (error) {
+    console.error('Face swap error:', error);
+    // Cleanup on error
+    if (req.files) {
+      if (req.files['sourceImage']?.[0] && fs.existsSync(req.files['sourceImage'][0].path)) {
+        fs.unlinkSync(req.files['sourceImage'][0].path);
+      }
+      if (req.files['faceImage']?.[0] && fs.existsSync(req.files['faceImage'][0].path)) {
+        fs.unlinkSync(req.files['faceImage'][0].path);
+      }
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Transcribe audio using Whisper API with timestamps
 app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
   try {
