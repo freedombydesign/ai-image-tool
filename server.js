@@ -190,6 +190,13 @@ async function generateWithStability(prompt, model, options = {}) {
   };
 }
 
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Created uploads directory');
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -765,11 +772,21 @@ Write a single flowing paragraph suitable for use as an artistic reference. Be d
     });
 
   } catch (error) {
-    console.error('Avatar analysis error:', error);
+    console.error('Avatar analysis error:', error.message);
+    console.error('Full error:', JSON.stringify(error, null, 2));
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: error.message });
+    // Return more specific error messages
+    let errorMessage = error.message || 'Unknown error';
+    if (error.code === 'insufficient_quota') {
+      errorMessage = 'OpenAI API quota exceeded';
+    } else if (error.code === 'invalid_api_key') {
+      errorMessage = 'Invalid OpenAI API key';
+    } else if (error.status === 400) {
+      errorMessage = 'Image could not be processed';
+    }
+    res.status(500).json({ error: errorMessage });
   }
 });
 

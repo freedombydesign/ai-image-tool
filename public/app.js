@@ -475,12 +475,16 @@ async function handleAvatarUpload(file) {
       const formData = new FormData();
       formData.append('image', file);
 
+      console.log('Sending avatar for analysis, file size:', file.size, 'type:', file.type);
+
       const response = await fetch('/api/analyze-avatar', {
         method: 'POST',
         body: formData
       });
 
+      console.log('Analysis response status:', response.status);
       const data = await response.json();
+      console.log('Analysis response data:', data);
 
       if (data.success && data.description) {
         // Fill in the description automatically
@@ -498,14 +502,17 @@ async function handleAvatarUpload(file) {
         showToast('Avatar analyzed! Your appearance has been captured.', false);
         console.log('Avatar description:', data.description);
       } else {
-        throw new Error(data.error || 'Analysis failed');
+        const errorMsg = data.error || 'Analysis failed';
+        console.error('Analysis returned error:', errorMsg);
+        throw new Error(errorMsg);
       }
     } catch (error) {
-      console.error('Avatar analysis failed:', error);
+      console.error('Avatar analysis failed:', error.message || error);
       if (statusEl) {
-        statusEl.textContent = 'Uploaded';
+        statusEl.textContent = 'Describe manually';
       }
-      showToast('Avatar uploaded (auto-analysis failed - please describe manually)');
+      // Show actual error to help debug
+      showToast(`Analysis failed: ${error.message || 'Unknown error'}. Please describe manually.`);
     }
   };
   reader.readAsDataURL(file);
