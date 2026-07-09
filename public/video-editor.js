@@ -2882,3 +2882,72 @@ function generateCaptionsFromScript() {
   videoEditor.renderCaptions();
   showToast(`Generated captions for ${numScenes} scenes from script!`, false);
 }
+
+// Generate avatar video separately and download it
+async function generateAvatarOnly() {
+  const statusEl = document.getElementById('avatar-status');
+  const btn = document.getElementById('generate-avatar-btn');
+
+  if (!videoEditor) {
+    showToast('Video editor not initialized');
+    return;
+  }
+
+  if (!videoEditor.avatarPhotoBlob) {
+    showToast('Please upload an avatar photo first');
+    return;
+  }
+
+  if (!videoEditor.audioBlob) {
+    showToast('Please upload audio first');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating...';
+  statusEl.textContent = 'Preparing audio...';
+
+  try {
+    // Convert audio to proper format
+    const formData = new FormData();
+    formData.append('avatarImage', videoEditor.avatarPhotoBlob, 'avatar.png');
+    formData.append('audioFile', videoEditor.audioBlob, 'audio.mp3');
+
+    statusEl.textContent = 'Generating talking avatar (this may take a few minutes)...';
+
+    const response = await fetch('/api/animate-avatar', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Avatar generation failed');
+    }
+
+    statusEl.textContent = 'Avatar video ready! Downloading...';
+
+    // Download the video
+    const videoResponse = await fetch(result.videoUrl);
+    const videoBlob = await videoResponse.blob();
+
+    const url = URL.createObjectURL(videoBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'talking_avatar_' + Date.now() + '.mp4';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    statusEl.textContent = 'Avatar video downloaded! Import this into CapCut and overlay on your video.';
+    showToast('Avatar video downloaded! Overlay it in CapCut.', false);
+
+  } catch (error) {
+    console.error('Avatar generation error:', error);
+    statusEl.textContent = 'Error: ' + error.message;
+    showToast('Avatar generation failed: ' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎬 Generate Avatar Video';
+  }
+}
