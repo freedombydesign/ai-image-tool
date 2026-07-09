@@ -248,6 +248,58 @@
           </div>
         </div>
 
+        <!-- Avatar Upload Panel -->
+        <div id="avatar-upload-panel" class="avatar-upload-panel">
+          <div class="panel-header" onclick="toggleAvatarPanel()">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span>Avatar Upload</span>
+              <span class="avatar-status" id="avatar-status">No avatar</span>
+            </div>
+            <svg class="panel-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div class="panel-content" id="avatar-panel-content" hidden>
+            <p class="panel-description">Upload your avatar or character photo. AI will use this as a reference for consistent character appearance across all generated scenes.</p>
+
+            <div class="avatar-upload-area" id="avatar-upload-area">
+              <input type="file" id="avatar-file" accept="image/*" hidden>
+              <div class="avatar-placeholder" id="avatar-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span>Click or drag to upload avatar</span>
+                <small>Your face or character image</small>
+              </div>
+              <div id="avatar-preview" class="avatar-preview" hidden>
+                <img id="avatar-image" alt="Uploaded Avatar">
+                <button class="btn text small remove-avatar-btn" id="remove-avatar-btn">Remove</button>
+              </div>
+            </div>
+
+            <div class="avatar-description-section" id="avatar-description-section" hidden>
+              <div class="form-group">
+                <label for="avatar-description">Avatar Description</label>
+                <textarea id="avatar-description" class="textarea" rows="3" placeholder="Describe your avatar's key features (e.g., young woman with curly red hair, freckles, wearing glasses, friendly smile)"></textarea>
+                <small class="help-text">AI will use this description to maintain consistency across scenes</small>
+              </div>
+              <div class="avatar-toggle-row">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="avatar-enabled" checked onchange="toggleAvatarUsage()">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Use avatar in scene generation</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Brand Block Panel -->
         <div id="brand-block-panel" class="brand-block-panel">
           <div class="panel-header" onclick="toggleBrandPanel()">
@@ -672,6 +724,14 @@
             <div class="result-actions">
               <button class="btn secondary" id="download-thumbnail-btn">Download</button>
               <button class="btn secondary" id="regenerate-thumbnail-btn">Regenerate</button>
+            </div>
+            <!-- Refine with Feedback -->
+            <div class="refine-feedback-section">
+              <div class="refine-input-row">
+                <input type="text" id="thumbnail-feedback" class="input" placeholder="e.g., Make her smile bigger, warmer background, bolder text...">
+                <button class="btn primary" id="refine-thumbnail-btn">Refine</button>
+              </div>
+              <small class="help-text">Describe what to change and click Refine</small>
             </div>
           </div>
         </div>

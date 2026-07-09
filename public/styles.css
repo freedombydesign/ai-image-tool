@@ -424,6 +424,36 @@ input[type="text"]::placeholder {
   margin-top: 0;
 }
 
+/* Refine with Feedback Section */
+.refine-feedback-section {
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-darker);
+}
+
+.refine-input-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.refine-input-row .input {
+  flex: 1;
+  margin: 0;
+}
+
+.refine-input-row .btn {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.refine-feedback-section .help-text {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
 /* YouTube Inspiration Section */
 .inspiration-section {
   margin-bottom: 1.5rem;
@@ -3053,6 +3083,195 @@ footer {
 .brand-rule-group .textarea:focus {
   border-color: var(--primary);
   outline: none;
+}
+
+/* ===== Avatar Upload Panel ===== */
+.avatar-upload-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.avatar-upload-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.avatar-upload-panel .panel-header:hover {
+  background: var(--surface-light);
+}
+
+.avatar-upload-panel .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.avatar-upload-panel .panel-title svg {
+  width: 20px;
+  height: 20px;
+  color: var(--primary);
+}
+
+.avatar-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background: var(--surface-light);
+  color: var(--text-secondary);
+}
+
+.avatar-status.active {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--primary);
+}
+
+.avatar-upload-panel .panel-toggle {
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  transition: transform 0.2s;
+}
+
+.avatar-upload-panel.expanded .panel-toggle {
+  transform: rotate(180deg);
+}
+
+.avatar-upload-panel .panel-content {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.avatar-upload-area {
+  margin: 1rem 0;
+  position: relative;
+}
+
+.avatar-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface-light);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.avatar-placeholder:hover {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.avatar-placeholder.drag-over {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.avatar-placeholder svg {
+  width: 48px;
+  height: 48px;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.avatar-placeholder span {
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.avatar-placeholder small {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.avatar-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.avatar-preview img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.remove-avatar-btn {
+  font-size: 0.8rem;
+  color: var(--error) !important;
+}
+
+.remove-avatar-btn:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+.avatar-description-section {
+  margin-top: 1rem;
+}
+
+.avatar-description-section .form-group {
+  margin-bottom: 1rem;
+}
+
+.avatar-description-section label {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.avatar-description-section .textarea {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.9rem;
+  resize: vertical;
+  min-height: 70px;
+}
+
+.avatar-description-section .textarea:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.avatar-description-section .help-text {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+}
+
+.avatar-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--surface-light);
+  border-radius: 8px;
 }
 
 /* ===== Text Overlay Modal ===== */

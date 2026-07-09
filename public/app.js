@@ -370,6 +370,177 @@ function getBrandInstructions() {
 }
 
 // ============================================
+// AVATAR UPLOAD FEATURE
+// For consistent character appearance across all scenes
+// ============================================
+
+let avatarEnabled = false;
+let avatarImageData = null; // Base64 image data (for reference display)
+let avatarDescription = ''; // Text description used in prompts
+
+function toggleAvatarPanel() {
+  const panel = document.getElementById('avatar-upload-panel');
+  const content = document.getElementById('avatar-panel-content');
+  if (panel && content) {
+    panel.classList.toggle('expanded');
+    content.hidden = !content.hidden;
+  }
+}
+
+function toggleAvatarUsage() {
+  const checkbox = document.getElementById('avatar-enabled');
+  const statusEl = document.getElementById('avatar-status');
+
+  avatarEnabled = checkbox?.checked || false;
+
+  if (statusEl && avatarImageData) {
+    statusEl.textContent = avatarEnabled ? 'Active' : 'Uploaded';
+    statusEl.classList.toggle('active', avatarEnabled);
+  }
+
+  showToast(avatarEnabled ? 'Avatar will be used in generation' : 'Avatar disabled');
+}
+
+function handleAvatarUpload(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('Please upload a valid image file');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    avatarImageData = e.target.result;
+
+    // Show preview
+    const placeholder = document.getElementById('avatar-placeholder');
+    const preview = document.getElementById('avatar-preview');
+    const avatarImage = document.getElementById('avatar-image');
+    const descSection = document.getElementById('avatar-description-section');
+    const statusEl = document.getElementById('avatar-status');
+
+    if (placeholder) placeholder.hidden = true;
+    if (preview) {
+      preview.hidden = false;
+      if (avatarImage) avatarImage.src = avatarImageData;
+    }
+    if (descSection) descSection.hidden = false;
+
+    // Update status
+    if (statusEl) {
+      statusEl.textContent = 'Uploaded';
+      statusEl.classList.add('active');
+    }
+
+    // Enable by default when uploaded
+    const checkbox = document.getElementById('avatar-enabled');
+    if (checkbox) {
+      checkbox.checked = true;
+      avatarEnabled = true;
+    }
+
+    showToast('Avatar uploaded! Describe your character for best results.');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeAvatar() {
+  avatarImageData = null;
+  avatarDescription = '';
+  avatarEnabled = false;
+
+  const placeholder = document.getElementById('avatar-placeholder');
+  const preview = document.getElementById('avatar-preview');
+  const descSection = document.getElementById('avatar-description-section');
+  const statusEl = document.getElementById('avatar-status');
+  const descInput = document.getElementById('avatar-description');
+  const checkbox = document.getElementById('avatar-enabled');
+
+  if (placeholder) placeholder.hidden = false;
+  if (preview) preview.hidden = true;
+  if (descSection) descSection.hidden = true;
+  if (statusEl) {
+    statusEl.textContent = 'No avatar';
+    statusEl.classList.remove('active');
+  }
+  if (descInput) descInput.value = '';
+  if (checkbox) checkbox.checked = false;
+
+  showToast('Avatar removed');
+}
+
+function getAvatarInstructions() {
+  if (!avatarEnabled || !avatarImageData) return '';
+
+  const descInput = document.getElementById('avatar-description');
+  const description = descInput?.value.trim() || '';
+
+  if (!description) {
+    // Basic instruction if no description provided
+    return `. MAIN CHARACTER: Include a person as the main focus of the scene, maintaining consistent appearance throughout all scenes`;
+  }
+
+  // Detailed instruction with user's description
+  return `. MAIN CHARACTER APPEARANCE (CRITICAL - maintain exact consistency): ${description}. This character MUST appear in every scene with IDENTICAL physical features, clothing, and style. The character should be the focal point of the scene`;
+}
+
+// Initialize avatar upload area
+function initAvatarUpload() {
+  const uploadArea = document.getElementById('avatar-upload-area');
+  const fileInput = document.getElementById('avatar-file');
+  const placeholder = document.getElementById('avatar-placeholder');
+  const removeBtn = document.getElementById('remove-avatar-btn');
+  const descInput = document.getElementById('avatar-description');
+
+  if (placeholder) {
+    placeholder.addEventListener('click', () => {
+      fileInput?.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleAvatarUpload(e.target.files[0]);
+      }
+    });
+  }
+
+  if (uploadArea) {
+    // Drag and drop support
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      placeholder?.classList.add('drag-over');
+    });
+
+    uploadArea.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      placeholder?.classList.remove('drag-over');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      placeholder?.classList.remove('drag-over');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleAvatarUpload(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (removeBtn) {
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeAvatar();
+    });
+  }
+
+  if (descInput) {
+    descInput.addEventListener('input', () => {
+      avatarDescription = descInput.value.trim();
+    });
+  }
+}
+
+// ============================================
 // TEXT OVERLAY LAYER
 // Programmatic text overlay (not AI-generated)
 // ============================================
@@ -1094,6 +1265,12 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
     basePrompt += brandInstructions;
   }
 
+  // Add avatar/character instructions if enabled
+  const avatarInstructions = getAvatarInstructions();
+  if (avatarInstructions) {
+    basePrompt += avatarInstructions;
+  }
+
   // Add inspiration reference note if available
   // Note: DALL-E can't see images, but we add context about wanting similar aesthetic
   if (includeInspiration && typeof sceneInspirationUrl !== 'undefined' && sceneInspirationUrl) {
@@ -1739,6 +1916,8 @@ window.addCharacter = addCharacter;
 window.removeCharacter = removeCharacter;
 window.toggleBrandPanel = toggleBrandPanel;
 window.toggleBrandBlock = toggleBrandBlock;
+window.toggleAvatarPanel = toggleAvatarPanel;
+window.toggleAvatarUsage = toggleAvatarUsage;
 window.openTextOverlay = openTextOverlay;
 window.closeTextOverlay = closeTextOverlay;
 window.updateTextOverlay = updateTextOverlay;
@@ -1761,6 +1940,9 @@ document.addEventListener('DOMContentLoaded', function() {
   if (overlayTextColor) overlayTextColor.addEventListener('input', updateTextOverlay);
   if (overlayStrokeColor) overlayStrokeColor.addEventListener('input', updateTextOverlay);
   if (overlayStrokeWidth) overlayStrokeWidth.addEventListener('input', updateTextOverlay);
+
+  // Initialize avatar upload functionality
+  initAvatarUpload();
 });
 
 // Clear Anchor Button Handler
@@ -1997,6 +2179,86 @@ async function regenerateThumbnail() {
   }
 }
 
+// Refine Thumbnail with Feedback
+async function refineThumbnail() {
+  const feedbackInput = document.getElementById('thumbnail-feedback');
+  const feedback = feedbackInput ? feedbackInput.value.trim() : '';
+
+  if (!lastThumbnailParams) {
+    showToast('No thumbnail to refine. Generate one first.');
+    return;
+  }
+
+  if (!feedback) {
+    showToast('Please describe what to change');
+    return;
+  }
+
+  showLoading('Refining thumbnail with your feedback...');
+
+  try {
+    // Append feedback to the original prompt
+    const refinedPrompt = `${lastThumbnailParams.prompt}\n\nIMPORTANT ADJUSTMENTS: ${feedback}`;
+
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...lastThumbnailParams,
+        prompt: refinedPrompt
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Update the stored params with the refined prompt
+    lastThumbnailParams.prompt = refinedPrompt;
+
+    if (thumbnailImage) {
+      thumbnailImage.src = data.image;
+    }
+
+    // Add to session history
+    thumbnailHistory.unshift({
+      imageUrl: data.image,
+      prompt: refinedPrompt,
+      timestamp: Date.now()
+    });
+
+    if (thumbnailHistory.length > 10) {
+      thumbnailHistory = thumbnailHistory.slice(0, 10);
+    }
+
+    updateThumbnailGallery();
+
+    // Save to persistent history
+    if (typeof generationHistory !== 'undefined') {
+      generationHistory.add({
+        type: 'thumbnail',
+        prompt: refinedPrompt,
+        imageUrl: data.image,
+        model: lastThumbnailParams.model || 'dall-e-3',
+        size: lastThumbnailParams.size,
+        quality: lastThumbnailParams.quality
+      });
+    }
+
+    // Clear feedback input
+    if (feedbackInput) feedbackInput.value = '';
+
+    showToast('Thumbnail refined!', false);
+
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    hideLoading();
+  }
+}
+
 // Download Thumbnail
 async function downloadThumbnail() {
   if (!thumbnailImage || !thumbnailImage.src) {
@@ -2060,6 +2322,22 @@ if (downloadThumbnailBtn) {
 
 if (regenerateThumbnailBtn) {
   regenerateThumbnailBtn.addEventListener('click', regenerateThumbnail);
+}
+
+// Refine button
+const refineThumbnailBtn = document.getElementById('refine-thumbnail-btn');
+if (refineThumbnailBtn) {
+  refineThumbnailBtn.addEventListener('click', refineThumbnail);
+}
+
+// Allow Enter key in feedback input to trigger refine
+const thumbnailFeedbackInput = document.getElementById('thumbnail-feedback');
+if (thumbnailFeedbackInput) {
+  thumbnailFeedbackInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      refineThumbnail();
+    }
+  });
 }
 
 // ============================================
