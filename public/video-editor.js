@@ -419,16 +419,29 @@ class VideoEditor {
       'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
     ];
 
+    // Check for FFmpeg library - it may be exposed as FFmpegWASM or FFmpeg
+    const FFmpegLib = window.FFmpegWASM || window.FFmpeg;
+    if (!FFmpegLib) {
+      console.error('FFmpeg library not loaded - script may not have loaded');
+      // Try loading the script dynamically
+      await this.loadFFmpegScript();
+      return;
+    }
+
     for (const coreURL of cdnOptions) {
       try {
         console.log('Trying FFmpeg from:', coreURL);
-        const { FFmpeg } = FFmpegWASM;
-        this.ffmpeg = new FFmpeg();
+        const FFmpegClass = FFmpegLib.FFmpeg || FFmpegLib;
+        this.ffmpeg = new FFmpegClass();
 
         this.ffmpeg.on('progress', ({ progress }) => {
           const percent = Math.round(progress * 100);
-          this.exportProgressBar.style.width = `${percent}%`;
-          this.exportStatus.textContent = `Encoding: ${percent}%`;
+          if (this.exportProgressBar) {
+            this.exportProgressBar.style.width = `${percent}%`;
+          }
+          if (this.exportStatus) {
+            this.exportStatus.textContent = `Encoding: ${percent}%`;
+          }
         });
 
         await this.ffmpeg.load({ coreURL });
@@ -443,7 +456,46 @@ class VideoEditor {
 
     // All CDNs failed - show error
     console.error('All FFmpeg CDNs failed');
-    showToast('Video export requires FFmpeg. Try Chrome browser or refresh the page.');
+    showToast('Video export unavailable. Will export as image slideshow instead.');
+  }
+
+  // Dynamically load FFmpeg script if not already loaded
+  async loadFFmpegScript() {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js';
+      script.onload = async () => {
+        console.log('FFmpeg script loaded dynamically');
+        // Wait a moment for the library to initialize
+        await new Promise(r => setTimeout(r, 500));
+        // Try init again
+        const FFmpegLib = window.FFmpegWASM || window.FFmpeg;
+        if (FFmpegLib) {
+          try {
+            const FFmpegClass = FFmpegLib.FFmpeg || FFmpegLib;
+            this.ffmpeg = new FFmpegClass();
+            this.ffmpeg.on('progress', ({ progress }) => {
+              const percent = Math.round(progress * 100);
+              if (this.exportProgressBar) this.exportProgressBar.style.width = `${percent}%`;
+              if (this.exportStatus) this.exportStatus.textContent = `Encoding: ${percent}%`;
+            });
+            await this.ffmpeg.load({
+              coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js'
+            });
+            this.ffmpegLoaded = true;
+            console.log('FFmpeg loaded after dynamic script load');
+            resolve();
+          } catch (e) {
+            console.error('FFmpeg init failed after dynamic load:', e);
+            reject(e);
+          }
+        } else {
+          reject(new Error('FFmpeg still not available'));
+        }
+      };
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
   }
 
   // Import scenes from batch generator
@@ -1701,7 +1753,7 @@ class VideoEditor {
 
     // Show generating state
     this.generateCaptionsBtn.disabled = true;
-    this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
+    this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
 
     try {
       // Determine file extension based on mime type
@@ -1717,51 +1769,50 @@ class VideoEditor {
         extension = 'webm';
       }
 
-      // Step 1: Upload audio to Supabase (bypasses Vercel size limits)
-      this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
+      // Step 1: Get Supabase config for direct upload (bypasses Vercel 4.5MB limit)
+      const configResponse = await fetch('/api/supabase-config');
+      if (!configResponse.ok) {
+        throw new Error('Cannot get storage config');
+      }
+      const config = await configResponse.json();
 
-      const uploadFormData = new FormData();
-      uploadFormData.append('audio', this.audioBlob, `audio.${extension}`);
+      // Step 2: Upload directly to Supabase Storage (bypasses Vercel completely)
+      const fileName = `audio-${Date.now()}.${extension}`;
+      const filePath = `audio/${fileName}`;
 
-      const uploadResult = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload-audio', true);
+      this.generateCaptionsBtn.innerHTML = '⏳ Uploading to cloud...';
 
-        xhr.onload = function() {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.responseText));
-            } catch (e) {
-              reject(new Error('Invalid upload response'));
-            }
-          } else {
-            try {
-              const err = JSON.parse(xhr.responseText);
-              reject(new Error(err.error || 'Upload failed'));
-            } catch (e) {
-              reject(new Error('Upload failed: ' + xhr.status));
-            }
-          }
-        };
+      // Direct upload to Supabase Storage REST API
+      const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
 
-        xhr.onerror = function() {
-          reject(new Error('Network error during upload'));
-        };
-
-        xhr.send(uploadFormData);
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.anonKey}`,
+          'apikey': config.anonKey,
+          'Content-Type': mimeType,
+          'x-upsert': 'true'
+        },
+        body: this.audioBlob
       });
 
-      if (!uploadResult.url) {
-        throw new Error('Failed to get audio URL');
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error('Supabase upload error:', errorText);
+        throw new Error('Failed to upload audio to cloud storage');
       }
 
-      // Step 2: Transcribe from Supabase URL
+      // Get the public URL
+      const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
+      console.log('Audio uploaded to:', publicUrl);
+
+      // Step 3: Transcribe from Supabase URL
       this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
 
       const transcribeResponse = await fetch('/api/transcribe-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: uploadResult.url })
+        body: JSON.stringify({ audioUrl: publicUrl })
       });
 
       const result = await transcribeResponse.json();

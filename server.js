@@ -2309,6 +2309,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', hasApiKey: !!process.env.OPENAI_API_KEY, hasSupabase: !!supabase });
 });
 
+// Get Supabase config for client-side direct uploads (bypasses Vercel size limits)
+app.get('/api/supabase-config', (req, res) => {
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+  res.json({
+    url: supabaseUrl,
+    anonKey: supabaseKey,
+    bucket: 'ai-tool-images'
+  });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🎨 AI Image Tool running at http://localhost:${PORT}`);

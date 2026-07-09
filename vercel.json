@@ -1,9 +1,17 @@
 {
   "version": 2,
+  "functions": {
+    "server.js": {
+      "maxDuration": 60
+    }
+  },
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     },
     {
       "src": "public/**",
@@ -11,6 +19,13 @@
     }
   ],
   "routes": [
+    {
+      "src": "/api/upload-audio",
+      "dest": "server.js",
+      "headers": {
+        "Content-Type": "multipart/form-data"
+      }
+    },
     {
       "src": "/api/(.*)",
       "dest": "server.js"
