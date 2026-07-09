@@ -25,6 +25,28 @@ const supabase = supabaseUrl && supabaseKey
 
 if (supabase) {
   console.log('Supabase connected');
+  // Ensure storage bucket exists
+  (async () => {
+    try {
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some(b => b.name === 'ai-tool-images');
+      if (!bucketExists) {
+        const { error } = await supabase.storage.createBucket('ai-tool-images', {
+          public: true,
+          fileSizeLimit: 52428800 // 50MB
+        });
+        if (error) {
+          console.log('Bucket creation note:', error.message);
+        } else {
+          console.log('Created ai-tool-images bucket');
+        }
+      } else {
+        console.log('ai-tool-images bucket ready');
+      }
+    } catch (e) {
+      console.log('Bucket check skipped:', e.message);
+    }
+  })();
 } else {
   console.log('Supabase not configured - using localStorage fallback');
 }

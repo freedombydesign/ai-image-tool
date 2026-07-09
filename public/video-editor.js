@@ -2203,11 +2203,118 @@ class VideoEditor {
     this.timelinePlayhead.style.left = `${percent}%`;
   }
 
+  // Export as ZIP (fallback when FFmpeg unavailable)
+  async exportAsZip() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first to export.');
+      return;
+    }
+
+    this.exportProgress.hidden = false;
+    this.exportVideoBtn.disabled = true;
+    this.exportStatus.textContent = 'Creating ZIP package...';
+
+    try {
+      const zip = new JSZip();
+      const imgFolder = zip.folder('images');
+
+      // Add numbered images
+      for (let i = 0; i < this.scenes.length; i++) {
+        const scene = this.scenes[i];
+        this.exportStatus.textContent = `Adding image ${i + 1}/${this.scenes.length}...`;
+        this.exportProgressBar.style.width = `${((i + 1) / this.scenes.length) * 50}%`;
+
+        try {
+          const response = await fetch(scene.imageUrl);
+          const blob = await response.blob();
+          const ext = blob.type.includes('png') ? 'png' : 'jpg';
+          imgFolder.file(`scene_${String(i + 1).padStart(3, '0')}.${ext}`, blob);
+        } catch (e) {
+          console.error(`Failed to add scene ${i + 1}:`, e);
+        }
+      }
+
+      // Add audio if available
+      if (this.audioBlob) {
+        this.exportStatus.textContent = 'Adding audio...';
+        zip.file('voiceover.mp3', this.audioBlob);
+      }
+
+      // Add captions as SRT file
+      if (this.scenes.some(s => s.caption)) {
+        this.exportStatus.textContent = 'Adding captions...';
+        const srt = this.generateSRT();
+        zip.file('captions.srt', srt);
+      }
+
+      // Add scene info
+      const sceneInfo = this.scenes.map((s, i) => ({
+        scene: i + 1,
+        duration: s.duration,
+        caption: s.caption || ''
+      }));
+      zip.file('scene_info.json', JSON.stringify(sceneInfo, null, 2));
+
+      this.exportStatus.textContent = 'Generating ZIP...';
+      this.exportProgressBar.style.width = '80%';
+
+      const content = await zip.generateAsync({ type: 'blob' });
+
+      // Download
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `video_project_${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      this.exportProgressBar.style.width = '100%';
+      this.exportStatus.textContent = 'ZIP downloaded! Import into CapCut or video editor.';
+      showToast('ZIP exported! Import images in order into CapCut.', false);
+
+    } catch (error) {
+      console.error('ZIP export error:', error);
+      showToast('ZIP export failed: ' + error.message);
+    } finally {
+      this.exportVideoBtn.disabled = false;
+      setTimeout(() => {
+        this.exportProgress.hidden = true;
+        this.exportProgressBar.style.width = '0%';
+      }, 3000);
+    }
+  }
+
+  // Generate SRT subtitle file
+  generateSRT() {
+    let srt = '';
+    let currentTime = 0;
+
+    this.scenes.forEach((scene, i) => {
+      if (scene.caption) {
+        const startTime = this.formatSRTTime(currentTime);
+        const endTime = this.formatSRTTime(currentTime + scene.duration);
+        srt += `${i + 1}\n${startTime} --> ${endTime}\n${scene.caption}\n\n`;
+      }
+      currentTime += scene.duration;
+    });
+
+    return srt;
+  }
+
+  formatSRTTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+  }
+
   // Export Video
   async exportVideo() {
+    // If FFmpeg not loaded, fall back to ZIP export
     if (!this.ffmpegLoaded) {
-      showToast('FFmpeg is still loading. Please wait...');
-      return;
+      showToast('FFmpeg unavailable. Exporting as ZIP instead...');
+      return this.exportAsZip();
     }
 
     if (this.scenes.length === 0) {
