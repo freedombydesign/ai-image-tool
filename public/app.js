@@ -2687,6 +2687,97 @@ async function addMoreScenes() {
 }
 
 // Download all scenes as ZIP
+// Upload ZIP file with scenes
+async function handleZipUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  showLoading('Extracting ZIP...', 'Reading file');
+
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const imageFiles = [];
+
+    // Get all image files from zip
+    zip.forEach((relativePath, zipEntry) => {
+      if (!zipEntry.dir && /\.(png|jpg|jpeg|webp)$/i.test(relativePath)) {
+        imageFiles.push({ path: relativePath, entry: zipEntry });
+      }
+    });
+
+    // Sort by filename to maintain order
+    imageFiles.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+
+    if (imageFiles.length === 0) {
+      hideLoading();
+      showToast('No images found in ZIP');
+      return;
+    }
+
+    // Reset scenes and create new batch
+    generatedScenes = [];
+    currentBatchId = 'batch_' + Date.now();
+    const scenesGrid = document.getElementById('scenes-grid');
+    scenesGrid.innerHTML = '';
+
+    // Process each image
+    for (let i = 0; i < imageFiles.length; i++) {
+      updateLoadingProgress(i + 1, imageFiles.length);
+      loadingText.textContent = `Processing image ${i + 1} of ${imageFiles.length}`;
+
+      const blob = await imageFiles[i].entry.async('blob');
+      const imageUrl = URL.createObjectURL(blob);
+
+      // Convert blob to base64 for Supabase storage
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve) => {
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+      const base64Url = await base64Promise;
+
+      generatedScenes[i] = {
+        index: i,
+        text: `Scene ${i + 1}`,
+        imageUrl: base64Url,
+        revisedPrompt: ''
+      };
+
+      // Create scene card
+      const card = document.createElement('div');
+      card.className = 'scene-card';
+      card.id = `scene-card-${i}`;
+      card.innerHTML = `
+        <div class="scene-number">${i + 1}</div>
+        <img src="${imageUrl}" alt="Scene ${i + 1}" class="scene-image">
+        <p class="scene-text">Scene ${i + 1}</p>
+      `;
+      scenesGrid.appendChild(card);
+    }
+
+    // Save to Supabase
+    loadingText.textContent = 'Saving to Supabase...';
+    await saveScenesToSupabase();
+
+    hideLoading();
+    showToast(`Imported ${imageFiles.length} scenes from ZIP!`, false);
+
+    // Update scene count
+    const sceneCount = document.getElementById('scene-count');
+    if (sceneCount) {
+      sceneCount.textContent = `${imageFiles.length} scenes`;
+    }
+
+  } catch (error) {
+    hideLoading();
+    console.error('ZIP upload error:', error);
+    showToast('Failed to process ZIP: ' + error.message, true);
+  }
+
+  // Reset file input
+  event.target.value = '';
+}
+
 async function downloadAllScenes() {
   const validScenes = generatedScenes.filter(s => s && s.imageUrl);
 
