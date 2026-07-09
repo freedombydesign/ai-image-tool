@@ -179,9 +179,16 @@
             <button class="btn accent" id="convert-script-btn" title="Convert script to visual scene descriptions using AI">
               <span class="btn-icon">🎬</span> Convert Script to Visuals
             </button>
-            <button class="btn secondary" id="preview-btn" title="Generate 3 test scenes to check style">
-              <span class="btn-icon">👁️</span> Preview (3 Scenes)
-            </button>
+            <div class="preview-control">
+              <button class="btn secondary" id="preview-btn" title="Generate test scenes to check style">
+                <span class="btn-icon">👁️</span> Preview
+              </button>
+              <select id="preview-count" class="preview-count-select" title="Number of scenes to preview">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+              </select>
+            </div>
             <button class="btn primary" id="generate-batch-btn">Generate All Scenes</button>
           </div>
 

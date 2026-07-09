@@ -290,6 +290,38 @@ select {
   white-space: nowrap;
 }
 
+/* Preview Control with Count Selector */
+.preview-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.preview-control .btn {
+  flex: 0 0 auto;
+}
+
+.preview-count-select {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 50px;
+}
+
+.preview-count-select:hover {
+  background: var(--border);
+}
+
+.preview-count-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .btn-icon {
   font-size: 1.1rem;
 }

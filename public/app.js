@@ -1635,7 +1635,7 @@ async function generateImage() {
   }
 }
 
-// Preview Mode - Generate only 3 test scenes
+// Preview Mode - Generate test scenes based on selected count
 async function generatePreviewScenes() {
   const script = scriptInput.value.trim();
   let allScenes = getScenesForGeneration();
@@ -1645,13 +1645,22 @@ async function generatePreviewScenes() {
     return;
   }
 
-  // Pick 3 representative scenes: first, middle, and last (or less if fewer scenes)
+  // Get selected preview count from dropdown (1, 2, or 3)
+  const previewCountSelect = document.getElementById('preview-count');
+  const requestedCount = previewCountSelect ? parseInt(previewCountSelect.value) : 3;
+
+  // Pick representative scenes based on requested count
   let previewIndices = [];
-  if (allScenes.length === 1) {
+  const maxPreviews = Math.min(requestedCount, allScenes.length);
+
+  if (maxPreviews === 1) {
+    // Just the first scene
     previewIndices = [0];
-  } else if (allScenes.length === 2) {
-    previewIndices = [0, 1];
+  } else if (maxPreviews === 2) {
+    // First and last scenes
+    previewIndices = [0, allScenes.length - 1];
   } else {
+    // First, middle, and last scenes
     const middle = Math.floor(allScenes.length / 2);
     previewIndices = [0, middle, allScenes.length - 1];
   }
@@ -1669,13 +1678,16 @@ async function generatePreviewScenes() {
   scenesGrid.innerHTML = '';
   scenesContainer.hidden = false;
 
-  // Add a preview header
+  // Add a preview header with dynamic description
   const previewHeader = document.createElement('div');
   previewHeader.className = 'preview-header';
+  const scenePositions = previewScenes.length === 1 ? 'first scene' :
+                         previewScenes.length === 2 ? 'first and last scenes' :
+                         'beginning, middle, and end scenes';
   previewHeader.innerHTML = `
     <div class="preview-notice">
       <span class="preview-badge">Preview Mode</span>
-      <p>Testing ${previewScenes.length} sample scenes (beginning, middle, end). Adjust style if needed, then generate all.</p>
+      <p>Testing ${previewScenes.length} sample ${previewScenes.length === 1 ? 'scene' : 'scenes'} (${scenePositions}). Adjust style if needed, then generate all.</p>
     </div>
   `;
   scenesGrid.before(previewHeader);
