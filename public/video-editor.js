@@ -799,12 +799,21 @@ class VideoEditor {
     this.recordingElapsed = 0;
   }
 
-  handleAudioUpload(e) {
+  async handleAudioUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    this.audioBlob = file;
-    this.loadAudioBlob(file);
+    // Read file as ArrayBuffer and create Blob for Safari compatibility
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      this.audioBlob = new Blob([arrayBuffer], { type: file.type || 'audio/mpeg' });
+      this.loadAudioBlob(this.audioBlob);
+    } catch (error) {
+      console.error('Error reading audio file:', error);
+      // Fallback to using file directly
+      this.audioBlob = file;
+      this.loadAudioBlob(file);
+    }
   }
 
   async loadAudioBlob(blob) {
