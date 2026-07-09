@@ -20,8 +20,8 @@ const MODEL_CONFIG = {
   'dall-e-3': {
     provider: 'openai',
     costPerImage: { standard: 0.04, hd: 0.08 },
-    sizes: ['1024x1024', '1792x1024', '1024x1792'],
-    description: 'Best prompt adherence, highest quality'
+    sizes: ['1024x1024', '1536x1024', '1024x1536'],
+    description: 'GPT Image 2 - Best prompt adherence, highest quality'
   },
   'flux-schnell': {
     provider: 'replicate',
@@ -330,13 +330,17 @@ app.post('/api/generate', async (req, res) => {
 
     switch (modelConfig.provider) {
       case 'openai':
-        // Using gpt-image-1 (successor to dall-e-3)
+        // Using gpt-image-2 (DALL-E 3 was retired May 2026)
+        // Supported sizes: 1024x1024, 1536x1024, 1024x1536
+        let openaiSize = size;
+        if (size === '1792x1024') openaiSize = '1536x1024';  // Map old thumbnail size
+        if (size === '1024x1792') openaiSize = '1024x1536';  // Map old portrait size
+
         const response = await openai.images.generate({
-          model: 'gpt-image-1',
+          model: 'gpt-image-2',
           prompt,
           n: 1,
-          size,
-          quality
+          size: openaiSize
         });
         result = {
           image: response.data[0].url,
