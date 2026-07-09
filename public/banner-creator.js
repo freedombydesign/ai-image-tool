@@ -524,7 +524,7 @@ class BannerCreator {
           prompt: enhancedPrompt,
           size: '1792x1024',
           quality: 'standard',
-          model: 'flux-schnell' // Fast model
+          model: 'gpt-image-1' // GPT Image - better content filter
         })
       });
 
