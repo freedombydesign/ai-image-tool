@@ -48,6 +48,7 @@ class VideoEditor {
     this.initEventListeners();
     this.initFFmpeg();
     this.loadAvatarSettings(); // Restore saved avatar state
+    this.loadSavedAudioFromPreview(); // Load audio from Batch Scenes if available
   }
 
   // Get or create a unique user ID for persistence
@@ -803,6 +804,36 @@ class VideoEditor {
     } catch (error) {
       console.error('Audio load error:', error);
       showToast('Could not load audio. Try recording again or upload an MP3/WAV file.');
+    }
+  }
+
+  // Load saved audio from Batch Scenes preview (IndexedDB)
+  async loadSavedAudioFromPreview() {
+    // Check if audio is already loaded
+    if (this.audioBlob) return;
+
+    try {
+      // Access the IndexedDB functions from app.js
+      if (typeof loadAudioFromDB !== 'function') {
+        console.log('IndexedDB functions not available yet');
+        return;
+      }
+
+      const saved = await loadAudioFromDB('previewAudio');
+      if (saved && saved.audioData) {
+        console.log('Found saved audio from Batch Scenes:', saved.fileName);
+
+        // Convert base64 data URL to blob
+        const response = await fetch(saved.audioData);
+        const blob = await response.blob();
+
+        this.audioBlob = blob;
+        await this.loadAudioBlob(blob);
+
+        showToast(`Loaded voiceover: ${saved.fileName}`, 'success');
+      }
+    } catch (err) {
+      console.warn('Could not load saved audio:', err);
     }
   }
 

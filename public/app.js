@@ -1,3 +1,85 @@
+// ==== INDEXEDDB AUDIO STORAGE ====
+// Store audio files for persistence across tabs and sessions
+
+const DB_NAME = 'AIImageStudioDB';
+const DB_VERSION = 1;
+const AUDIO_STORE = 'audioFiles';
+
+let audioDb = null;
+
+// Initialize IndexedDB
+function initAudioDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      audioDb = request.result;
+      resolve(audioDb);
+    };
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(AUDIO_STORE)) {
+        db.createObjectStore(AUDIO_STORE, { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+// Save audio to IndexedDB
+async function saveAudioToDB(id, audioData, fileName, duration) {
+  if (!audioDb) await initAudioDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = audioDb.transaction([AUDIO_STORE], 'readwrite');
+    const store = transaction.objectStore(AUDIO_STORE);
+
+    const data = {
+      id,
+      audioData,
+      fileName,
+      duration,
+      savedAt: Date.now()
+    };
+
+    const request = store.put(data);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Load audio from IndexedDB
+async function loadAudioFromDB(id) {
+  if (!audioDb) await initAudioDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = audioDb.transaction([AUDIO_STORE], 'readonly');
+    const store = transaction.objectStore(AUDIO_STORE);
+    const request = store.get(id);
+
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Delete audio from IndexedDB
+async function deleteAudioFromDB(id) {
+  if (!audioDb) await initAudioDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = audioDb.transaction([AUDIO_STORE], 'readwrite');
+    const store = transaction.objectStore(AUDIO_STORE);
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Initialize DB on page load
+initAudioDB().catch(err => console.warn('IndexedDB init failed:', err));
+
 // Style Presets - Prompt Engineering for each visual style
 const STYLE_PRESETS = {
   'photorealistic': {
@@ -2762,7 +2844,7 @@ function handlePreviewAudioFile(file) {
 
     // Create temp audio to get duration
     const tempAudio = new Audio(previewAudioData);
-    tempAudio.addEventListener('loadedmetadata', () => {
+    tempAudio.addEventListener('loadedmetadata', async () => {
       previewAudioDuration = tempAudio.duration;
 
       // Update UI
@@ -2771,6 +2853,14 @@ function handlePreviewAudioFile(file) {
 
       placeholder.hidden = true;
       loadedSection.hidden = false;
+
+      // Save to IndexedDB for persistence
+      try {
+        await saveAudioToDB('previewAudio', previewAudioData, file.name, previewAudioDuration);
+        console.log('Audio saved to IndexedDB');
+      } catch (err) {
+        console.warn('Failed to save audio to IndexedDB:', err);
+      }
 
       // Re-check sync with current script
       updateScriptStats();
@@ -2804,7 +2894,7 @@ function playPreviewAudio() {
 }
 
 // Remove preview audio
-function removePreviewAudio() {
+async function removePreviewAudio() {
   previewAudioData = null;
   previewAudioDuration = 0;
 
@@ -2819,6 +2909,13 @@ function removePreviewAudio() {
   if (previewAudioElement) {
     previewAudioElement.pause();
     previewAudioElement = null;
+  }
+
+  // Delete from IndexedDB
+  try {
+    await deleteAudioFromDB('previewAudio');
+  } catch (err) {
+    console.warn('Failed to delete audio from IndexedDB:', err);
   }
 
   showToast('Audio removed', 'info');
@@ -2936,6 +3033,40 @@ window.toggleSlideshowPlayback = function() {
 
 // Initialize preview audio upload (call directly since script runs after DOM is ready)
 setupPreviewAudioUpload();
+
+// Load saved audio from IndexedDB on page load
+async function loadSavedPreviewAudio() {
+  try {
+    const saved = await loadAudioFromDB('previewAudio');
+    if (saved && saved.audioData) {
+      previewAudioData = saved.audioData;
+      previewAudioDuration = saved.duration;
+
+      // Update UI
+      const placeholder = document.getElementById('preview-audio-placeholder');
+      const loadedSection = document.getElementById('preview-audio-loaded');
+      const audioNameEl = document.getElementById('preview-audio-name');
+      const audioDurationEl = document.getElementById('preview-audio-duration');
+
+      if (placeholder && loadedSection) {
+        placeholder.hidden = true;
+        loadedSection.hidden = false;
+        if (audioNameEl) audioNameEl.textContent = saved.fileName || 'Saved audio';
+        if (audioDurationEl) audioDurationEl.textContent = formatTime(saved.duration);
+      }
+
+      console.log('Loaded saved audio from IndexedDB:', saved.fileName);
+
+      // Update sync info
+      updateScriptStats();
+    }
+  } catch (err) {
+    console.warn('Failed to load saved audio:', err);
+  }
+}
+
+// Load saved audio after a brief delay to ensure DOM is ready
+setTimeout(loadSavedPreviewAudio, 500);
 
 // Preview Button Handler
 if (previewBtn) {
