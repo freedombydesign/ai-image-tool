@@ -6,6 +6,46 @@ class GenerationHistory {
     this.history = this.load();
   }
 
+  // Convert URL to base64 data URI (for persisting external URLs that may expire)
+  async urlToBase64(url) {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.error('Failed to convert URL to base64:', e);
+      return null;
+    }
+  }
+
+  // Compress image to reduce size for storage
+  async compressImage(base64, maxWidth = 600, quality = 0.6) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(base64);
+      img.src = base64;
+    });
+  }
+
   load() {
     try {
       const data = localStorage.getItem(this.storageKey);
@@ -29,13 +69,33 @@ class GenerationHistory {
     }
   }
 
-  add(item) {
+  async add(item) {
+    // Convert external URL to base64 for persistence (external URLs expire)
+    let imageUrl = item.imageUrl;
+    if (imageUrl && imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
+      console.log('History: Converting external URL to base64...');
+      try {
+        let base64 = await this.urlToBase64(imageUrl);
+        if (base64) {
+          // Compress if too large (> 200KB)
+          if (base64.length > 200000) {
+            console.log('History: Compressing image for storage...');
+            base64 = await this.compressImage(base64, 600, 0.6);
+          }
+          imageUrl = base64;
+        }
+      } catch (e) {
+        console.error('History: Failed to convert URL to base64:', e);
+        // Keep original URL as fallback (will expire eventually)
+      }
+    }
+
     const historyItem = {
       id: Date.now() + Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toISOString(),
       type: item.type, // 'single', 'batch', 'thumbnail', 'banner'
       prompt: item.prompt,
-      imageUrl: item.imageUrl,
+      imageUrl: imageUrl,
       settings: {
         model: item.model || 'dall-e-3',
         size: item.size,
