@@ -204,40 +204,40 @@ async function generateWithStability(prompt, model, options = {}) {
   };
 }
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('Created uploads directory');
-}
-
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
-// Use /tmp for Vercel (read-only file system) or local uploads folder
-const UPLOAD_DIR = process.env.VERCEL ? '/tmp/uploads' : 'uploads';
 
-// Ensure upload directory exists
-if (!fs.existsSync(UPLOAD_DIR)) {
+// Check if running on Vercel (serverless with read-only filesystem)
+const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL === 'true' || !!process.env.VERCEL_ENV;
+
+// Use /tmp for Vercel (only writable directory) or local uploads folder
+const UPLOAD_DIR = IS_VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
+
+// Ensure upload directory exists (only for local development, not Vercel startup)
+if (!IS_VERCEL && !fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  console.log('Created uploads directory');
 }
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // Ensure dir exists on each request (Vercel /tmp can be cleared)
-    if (!fs.existsSync(UPLOAD_DIR)) {
-      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    }
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
-});
+// Use memory storage on Vercel (we convert to base64 anyway), disk storage locally
+const storage = IS_VERCEL
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => {
+        if (!fs.existsSync(UPLOAD_DIR)) {
+          fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+        }
+        cb(null, UPLOAD_DIR);
+      },
+      filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+      }
+    });
 
 const upload = multer({
   storage,
@@ -265,6 +265,59 @@ const audioUpload = multer({
     }
   }
 });
+
+// Helper: Get file buffer from multer file (handles both memory and disk storage)
+function getFileBuffer(file) {
+  if (file.buffer) {
+    // Memory storage (Vercel)
+    return file.buffer;
+  } else if (file.path) {
+    // Disk storage (local)
+    return fs.readFileSync(file.path);
+  }
+  throw new Error('No file data available');
+}
+
+// Helper: Convert multer file to base64 data URI
+function fileToBase64DataUri(file) {
+  const buffer = getFileBuffer(file);
+  const mimeType = file.mimetype || 'image/png';
+  return `data:${mimeType};base64,${buffer.toString('base64')}`;
+}
+
+// Helper: Cleanup file if it exists on disk (only for disk storage)
+function cleanupFile(file) {
+  if (file && file.path && fs.existsSync(file.path)) {
+    fs.unlinkSync(file.path);
+  }
+}
+
+// Helper: Cleanup path directly
+function cleanupPath(filePath) {
+  if (filePath && fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+// Helper: Ensure we have a file path (for endpoints that need sharp processing)
+// If using memory storage, writes buffer to temp file first
+async function ensureFilePath(file) {
+  if (file.path && fs.existsSync(file.path)) {
+    // Disk storage - already have path
+    return file.path;
+  }
+  if (file.buffer) {
+    // Memory storage - write to temp file
+    const tempDir = '/tmp';
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const tempPath = path.join(tempDir, `${Date.now()}-${file.originalname || 'upload.png'}`);
+    fs.writeFileSync(tempPath, file.buffer);
+    return tempPath;
+  }
+  throw new Error('No file data available');
+}
 
 // Helper: Convert image to PNG and ensure correct size for DALL-E
 async function prepareImageForDalle(imagePath) {
@@ -432,15 +485,20 @@ app.post('/api/generate', async (req, res) => {
 
 // Create variations of an uploaded image
 app.post('/api/variations', upload.single('image'), async (req, res) => {
+  let filePath = null;
+  let preparedImage = null;
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Image file is required' });
     }
 
-    console.log('Creating variations for:', req.file.path);
+    // Get file path (writes to temp if using memory storage)
+    filePath = await ensureFilePath(req.file);
+    console.log('Creating variations for:', filePath);
 
     // Prepare image for DALL-E (must be PNG, square)
-    const preparedImage = await prepareImageForDalle(req.file.path);
+    preparedImage = await prepareImageForDalle(filePath);
 
     const response = await openai.images.createVariation({
       model: 'dall-e-2',
@@ -450,8 +508,8 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
     });
 
     // Cleanup temp files
-    fs.unlinkSync(req.file.path);
-    fs.unlinkSync(preparedImage);
+    cleanupPath(filePath);
+    cleanupPath(preparedImage);
 
     res.json({
       success: true,
@@ -459,6 +517,8 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Variation error:', error);
+    cleanupPath(filePath);
+    cleanupPath(preparedImage);
     res.status(500).json({ error: error.message });
   }
 });
@@ -468,6 +528,11 @@ app.post('/api/edit', upload.fields([
   { name: 'image', maxCount: 1 },
   { name: 'mask', maxCount: 1 }
 ]), async (req, res) => {
+  let imagePath = null;
+  let maskFilePath = null;
+  let preparedImage = null;
+  let maskPath = null;
+
   try {
     const { prompt } = req.body;
     const imageFile = req.files['image']?.[0];
@@ -483,13 +548,14 @@ app.post('/api/edit', upload.fields([
 
     console.log('Editing image with prompt:', prompt);
 
-    // Prepare image
-    const preparedImage = await prepareImageForDalle(imageFile.path);
+    // Get file paths (writes to temp if using memory storage)
+    imagePath = await ensureFilePath(imageFile);
+    preparedImage = await prepareImageForDalle(imagePath);
 
     // Use provided mask or create default center mask
-    let maskPath;
     if (maskFile) {
-      maskPath = await prepareImageForDalle(maskFile.path);
+      maskFilePath = await ensureFilePath(maskFile);
+      maskPath = await prepareImageForDalle(maskFilePath);
     } else {
       maskPath = await createMask(preparedImage, null);
     }
@@ -504,10 +570,10 @@ app.post('/api/edit', upload.fields([
     });
 
     // Cleanup temp files
-    fs.unlinkSync(imageFile.path);
-    fs.unlinkSync(preparedImage);
-    fs.unlinkSync(maskPath);
-    if (maskFile) fs.unlinkSync(maskFile.path);
+    cleanupPath(imagePath);
+    cleanupPath(preparedImage);
+    cleanupPath(maskPath);
+    cleanupPath(maskFilePath);
 
     res.json({
       success: true,
@@ -515,12 +581,20 @@ app.post('/api/edit', upload.fields([
     });
   } catch (error) {
     console.error('Edit error:', error);
+    cleanupPath(imagePath);
+    cleanupPath(preparedImage);
+    cleanupPath(maskPath);
+    cleanupPath(maskFilePath);
     res.status(500).json({ error: error.message });
   }
 });
 
 // Character swap - combines variation + editing
 app.post('/api/character-swap', upload.single('image'), async (req, res) => {
+  let filePath = null;
+  let preparedImage = null;
+  let maskPath = null;
+
   try {
     const { prompt } = req.body;
 
@@ -534,11 +608,12 @@ app.post('/api/character-swap', upload.single('image'), async (req, res) => {
 
     console.log('Character swap with prompt:', prompt);
 
-    // Prepare image
-    const preparedImage = await prepareImageForDalle(req.file.path);
+    // Get file path (writes to temp if using memory storage)
+    filePath = await ensureFilePath(req.file);
+    preparedImage = await prepareImageForDalle(filePath);
 
     // Create a mask for the character area (center region)
-    const maskPath = await createMask(preparedImage, null);
+    maskPath = await createMask(preparedImage, null);
 
     // Use edit endpoint with character description
     const response = await openai.images.edit({
@@ -551,9 +626,9 @@ app.post('/api/character-swap', upload.single('image'), async (req, res) => {
     });
 
     // Cleanup
-    fs.unlinkSync(req.file.path);
-    fs.unlinkSync(preparedImage);
-    fs.unlinkSync(maskPath);
+    cleanupPath(filePath);
+    cleanupPath(preparedImage);
+    cleanupPath(maskPath);
 
     res.json({
       success: true,
@@ -561,6 +636,9 @@ app.post('/api/character-swap', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Character swap error:', error);
+    cleanupPath(filePath);
+    cleanupPath(preparedImage);
+    cleanupPath(maskPath);
     res.status(500).json({ error: error.message });
   }
 });
@@ -576,8 +654,8 @@ app.post('/api/analyze-image', upload.single('image'), async (req, res) => {
 
     console.log('Analyzing image with GPT-4o Vision, type:', analysisType);
 
-    // Convert image to base64
-    const imageBuffer = fs.readFileSync(req.file.path);
+    // Convert image to base64 (works with both memory and disk storage)
+    const imageBuffer = getFileBuffer(req.file);
     const base64Image = imageBuffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/png';
 
@@ -633,8 +711,8 @@ Be specific and detailed.`;
       max_tokens: 1000
     });
 
-    // Cleanup
-    fs.unlinkSync(req.file.path);
+    // Cleanup (only if using disk storage)
+    cleanupFile(req.file);
 
     const analysis = response.choices[0].message.content;
 
@@ -646,9 +724,7 @@ Be specific and detailed.`;
 
   } catch (error) {
     console.error('Image analysis error:', error);
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
+    cleanupFile(req.file);
     res.status(500).json({ error: error.message });
   }
 });
@@ -672,24 +748,31 @@ app.post('/api/face-swap', upload.fields([
     }
 
     console.log('Starting face swap...');
+    console.log('Source file:', sourceFile.originalname, 'size:', sourceFile.size);
+    console.log('Face file:', faceFile.originalname, 'size:', faceFile.size);
 
-    // Convert images to base64 data URIs
-    const sourceBuffer = fs.readFileSync(sourceFile.path);
-    const faceBuffer = fs.readFileSync(faceFile.path);
-    const sourceBase64 = `data:${sourceFile.mimetype};base64,${sourceBuffer.toString('base64')}`;
-    const faceBase64 = `data:${faceFile.mimetype};base64,${faceBuffer.toString('base64')}`;
+    // Convert images to base64 data URIs (works with both memory and disk storage)
+    const sourceBase64 = fileToBase64DataUri(sourceFile);
+    const faceBase64 = fileToBase64DataUri(faceFile);
 
-    // Use Replicate face-swap model (lucataco/facefusion)
-    const response = await fetch('https://api.replicate.com/v1/models/lucataco/facefusion/predictions', {
+    console.log('Source base64 length:', sourceBase64.length);
+    console.log('Face base64 length:', faceBase64.length);
+
+    // Use Replicate face-swap model (lucataco/facefusion) with versioned endpoint
+    // Using versioned endpoint for reliability (similar fix to InstantID)
+    const FACEFUSION_VERSION = 'b1b33e143a30ffdd4e5d62c27b1e60a6e9a6d4dc7c1c0a10c65a7c9c86f0fc27';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        version: FACEFUSION_VERSION,
         input: {
-          target_path: sourceBase64,
-          source_path: faceBase64,
+          target_path: sourceBase64,  // The thumbnail/image to modify
+          source_path: faceBase64,    // The face to swap IN (user's avatar)
           face_enhancer_blend: 80,
           frame_enhancer_blend: 80
         }
@@ -698,10 +781,12 @@ app.post('/api/face-swap', upload.fields([
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('Replicate API error:', response.status, errorText);
       throw new Error(`Replicate API error: ${errorText}`);
     }
 
     let prediction = await response.json();
+    console.log('Face swap prediction started:', prediction.id, 'status:', prediction.status);
 
     // Poll for completion
     while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
@@ -710,15 +795,19 @@ app.post('/api/face-swap', upload.fields([
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       prediction = await pollResponse.json();
+      console.log('Face swap status:', prediction.status);
     }
 
-    // Cleanup temp files
-    fs.unlinkSync(sourceFile.path);
-    fs.unlinkSync(faceFile.path);
+    // Cleanup temp files (only if using disk storage)
+    cleanupFile(sourceFile);
+    cleanupFile(faceFile);
 
     if (prediction.status === 'failed') {
+      console.error('Face swap failed:', prediction.error);
       throw new Error(prediction.error || 'Face swap failed');
     }
+
+    console.log('Face swap succeeded, output:', prediction.output);
 
     res.json({
       success: true,
@@ -728,14 +817,10 @@ app.post('/api/face-swap', upload.fields([
 
   } catch (error) {
     console.error('Face swap error:', error);
-    // Cleanup on error
+    // Cleanup on error (only if using disk storage)
     if (req.files) {
-      if (req.files['sourceImage']?.[0] && fs.existsSync(req.files['sourceImage'][0].path)) {
-        fs.unlinkSync(req.files['sourceImage'][0].path);
-      }
-      if (req.files['faceImage']?.[0] && fs.existsSync(req.files['faceImage'][0].path)) {
-        fs.unlinkSync(req.files['faceImage'][0].path);
-      }
+      cleanupFile(req.files['sourceImage']?.[0]);
+      cleanupFile(req.files['faceImage']?.[0]);
     }
     res.status(500).json({ error: error.message });
   }
@@ -750,8 +835,8 @@ app.post('/api/analyze-avatar', upload.single('image'), async (req, res) => {
 
     console.log('Analyzing avatar with GPT-4 Vision...');
 
-    // Convert image to base64
-    const imageBuffer = fs.readFileSync(req.file.path);
+    // Convert image to base64 (works with both memory and disk storage)
+    const imageBuffer = getFileBuffer(req.file);
     const base64Image = imageBuffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/png';
 
@@ -787,8 +872,8 @@ Write a single flowing paragraph suitable for use as an artistic reference. Be d
       max_tokens: 500
     });
 
-    // Cleanup
-    fs.unlinkSync(req.file.path);
+    // Cleanup (only if using disk storage)
+    cleanupFile(req.file);
 
     const description = response.choices[0].message.content;
 
@@ -800,9 +885,7 @@ Write a single flowing paragraph suitable for use as an artistic reference. Be d
   } catch (error) {
     console.error('Avatar analysis error:', error.message);
     console.error('Full error:', JSON.stringify(error, null, 2));
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
+    cleanupFile(req.file);
     // Return more specific error messages
     let errorMessage = error.message || 'Unknown error';
     if (error.code === 'insufficient_quota') {
@@ -835,10 +918,11 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
     }
 
     console.log('Generating with InstantID, prompt:', prompt);
+    console.log('Face file:', req.file.originalname, 'size:', req.file.size);
 
-    // Convert face image to base64 data URI
-    const faceBuffer = fs.readFileSync(req.file.path);
-    const faceBase64 = `data:${req.file.mimetype};base64,${faceBuffer.toString('base64')}`;
+    // Convert face image to base64 data URI (works with both memory and disk storage)
+    const faceBase64 = fileToBase64DataUri(req.file);
+    console.log('Face base64 length:', faceBase64.length);
 
     // Use InstantID model on Replicate (zsxkib/instant-id)
     // Using the versioned predictions endpoint which is more reliable
@@ -883,14 +967,18 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       prediction = await pollResponse.json();
+      console.log('InstantID status:', prediction.status);
     }
 
-    // Cleanup
-    fs.unlinkSync(req.file.path);
+    // Cleanup (only if using disk storage)
+    cleanupFile(req.file);
 
     if (prediction.status === 'failed') {
+      console.error('InstantID failed:', prediction.error);
       throw new Error(prediction.error || 'InstantID generation failed');
     }
+
+    console.log('InstantID succeeded, output:', prediction.output);
 
     res.json({
       success: true,
@@ -900,9 +988,7 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
 
   } catch (error) {
     console.error('InstantID generation error:', error);
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
+    cleanupFile(req.file);
     res.status(500).json({ error: error.message });
   }
 });
