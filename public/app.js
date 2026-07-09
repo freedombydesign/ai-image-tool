@@ -2048,6 +2048,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Initialize avatar upload functionality
   initAvatarUpload();
+
+  // Initialize thumbnail gallery from localStorage on page load
+  if (thumbnailHistory && thumbnailHistory.length > 0) {
+    updateThumbnailGallery();
+  }
 });
 
 // Clear Anchor Button Handler
@@ -2121,10 +2126,7 @@ function saveThumbnailHistory() {
   }
 }
 
-// Initialize thumbnail gallery on page load
-if (thumbnailHistory.length > 0) {
-  setTimeout(() => updateThumbnailGallery(), 100);
-}
+// Note: Thumbnail gallery initialization moved to DOMContentLoaded handler
 
 // Thumbnail Style Selection
 if (thumbnailStyleOptions) {
@@ -2148,6 +2150,12 @@ function buildThumbnailPrompt(description, style, textHook = '', referenceData =
 
   if (textHook) {
     prompt += `. Include bold readable text saying "${textHook}" as part of the composition`;
+  }
+
+  // Add avatar/character instructions if enabled
+  const avatarInstructions = getAvatarInstructions();
+  if (avatarInstructions) {
+    prompt += avatarInstructions;
   }
 
   // Add reference guidance if provided
