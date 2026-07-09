@@ -330,19 +330,14 @@ app.post('/api/generate', async (req, res) => {
 
     switch (modelConfig.provider) {
       case 'openai':
-        // Build params - style is only valid for dall-e-3, not newer models
-        const openaiParams = {
+        // Note: style parameter removed - API no longer accepts it
+        const response = await openai.images.generate({
           model: 'dall-e-3',
           prompt,
           n: 1,
           size,
           quality
-        };
-        // Only add style if explicitly set to a valid value
-        if (style === 'vivid' || style === 'natural') {
-          openaiParams.style = style;
-        }
-        const response = await openai.images.generate(openaiParams);
+        });
         result = {
           image: response.data[0].url,
           revised_prompt: response.data[0].revised_prompt,
