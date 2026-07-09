@@ -110,6 +110,8 @@ const scenesGrid = document.getElementById('scenes-grid');
 const generateBatchBtn = document.getElementById('generate-batch-btn');
 const convertScriptBtn = document.getElementById('convert-script-btn');
 const downloadAllBtn = document.getElementById('download-all-btn');
+const sceneDurationSlider = document.getElementById('scene-duration');
+const sceneDurationDisplay = document.getElementById('scene-duration-display');
 
 // Style Selection
 const styleOptions = document.querySelectorAll('.style-option');
@@ -1108,6 +1110,20 @@ if (videoLengthSlider) {
   });
 }
 
+// Scene Duration Slider Handler
+if (sceneDurationSlider) {
+  sceneDurationSlider.addEventListener('input', () => {
+    const seconds = sceneDurationSlider.value;
+    sceneDurationDisplay.textContent = `${seconds} sec`;
+    updateScriptStats();
+  });
+}
+
+// Helper to get current scene duration setting
+function getSceneDuration() {
+  return sceneDurationSlider ? parseInt(sceneDurationSlider.value) || 6 : 6;
+}
+
 // Scene Mode Toggle Handler
 if (sceneModeSelect) {
   sceneModeSelect.addEventListener('change', () => {
@@ -1534,8 +1550,8 @@ function updateScriptStats() {
   if (estimatesPanel && numScenes > 0) {
     estimatesPanel.hidden = false;
 
-    // Estimate duration: ~3-5 seconds per scene
-    const avgSecondsPerScene = 4;
+    // Estimate duration based on scene duration slider
+    const avgSecondsPerScene = getSceneDuration();
     const totalSeconds = numScenes * avgSecondsPerScene;
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -2545,10 +2561,11 @@ function startSlideshowPlayback() {
   document.getElementById('slideshow-play-icon').hidden = true;
   document.getElementById('slideshow-pause-icon').hidden = false;
 
-  // Change scene every 3 seconds
+  // Change scene based on scene duration setting
+  const sceneDurationMs = getSceneDuration() * 1000;
   slideshowState.intervalId = setInterval(() => {
     slideshowNext();
-  }, 3000);
+  }, sceneDurationMs);
 }
 
 function stopSlideshowPlayback() {
@@ -2635,22 +2652,27 @@ function checkAudioSync(scriptDurationSeconds) {
   const difference = Math.abs(audioDuration - scriptDurationSeconds);
   const percentDiff = (difference / audioDuration) * 100;
 
+  const sceneDuration = getSceneDuration();
+
   if (percentDiff <= 15) {
     // Good sync
     syncStatus.innerHTML = `<span style="color: var(--success);">✅ Good sync!</span> Audio: ${formatTime(audioDuration)} | Scenes: ${formatTime(scriptDurationSeconds)}`;
     syncRecommendation.textContent = 'Your audio and scene timing are well aligned.';
     syncRecommendation.style.color = 'var(--success)';
+    syncInfo.classList.add('synced');
   } else if (audioDuration > scriptDurationSeconds) {
     // Audio is longer - need more scenes
-    const extraScenes = Math.ceil((audioDuration - scriptDurationSeconds) / 4);
+    const extraScenes = Math.ceil((audioDuration - scriptDurationSeconds) / sceneDuration);
     syncStatus.innerHTML = `<span style="color: var(--warning);">⚠️ Audio longer</span> Audio: ${formatTime(audioDuration)} | Scenes: ${formatTime(scriptDurationSeconds)}`;
     syncRecommendation.textContent = `Consider adding ~${extraScenes} more scenes or increasing scene duration.`;
     syncRecommendation.style.color = 'var(--warning)';
+    syncInfo.classList.remove('synced');
   } else {
     // Script is longer - too many scenes
-    const excessScenes = Math.ceil((scriptDurationSeconds - audioDuration) / 4);
+    const excessScenes = Math.ceil((scriptDurationSeconds - audioDuration) / sceneDuration);
     syncStatus.innerHTML = `<span style="color: var(--warning);">⚠️ More scenes than audio</span> Audio: ${formatTime(audioDuration)} | Scenes: ${formatTime(scriptDurationSeconds)}`;
     syncRecommendation.textContent = `Consider removing ~${excessScenes} scenes or shortening scene duration.`;
+    syncInfo.classList.remove('synced');
     syncRecommendation.style.color = 'var(--warning)';
   }
 }
@@ -2861,9 +2883,9 @@ function updateSlideshowAudioProgress() {
   progressBar.style.width = `${progress}%`;
   currentTimeEl.textContent = formatTime(audio.currentTime);
 
-  // Calculate expected scene based on audio time
-  const avgSecondsPerScene = 4;
-  const expectedScene = Math.floor(audio.currentTime / avgSecondsPerScene);
+  // Calculate expected scene based on audio time and scene duration setting
+  const sceneDuration = getSceneDuration();
+  const expectedScene = Math.floor(audio.currentTime / sceneDuration);
   const actualScene = slideshowState.currentIndex;
 
   if (Math.abs(expectedScene - actualScene) <= 1) {
@@ -2885,7 +2907,7 @@ function toggleSlideshowPlaybackWithAudio() {
   } else {
     startSlideshowPlayback();
     if (audio && previewAudioData) {
-      audio.currentTime = slideshowState.currentIndex * 4; // Sync to current scene
+      audio.currentTime = slideshowState.currentIndex * getSceneDuration(); // Sync to current scene
       audio.play().catch(() => {}); // Ignore autoplay errors
     }
   }
@@ -2906,7 +2928,7 @@ window.toggleSlideshowPlayback = function() {
   } else {
     startSlideshowPlayback();
     if (audio && previewAudioData) {
-      audio.currentTime = slideshowState.currentIndex * 4;
+      audio.currentTime = slideshowState.currentIndex * getSceneDuration();
       audio.play().catch(() => {});
     }
   }
