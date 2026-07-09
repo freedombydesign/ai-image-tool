@@ -2406,19 +2406,40 @@ async function saveThumbnailHistory(newThumbnail = null) {
   // Always save to localStorage
   try {
     localStorage.setItem('thumbnailHistory', JSON.stringify(thumbnailHistory));
+    console.log('Thumbnail history saved to localStorage, count:', thumbnailHistory.length);
   } catch (e) {
-    console.error('Failed to save thumbnail history:', e);
+    console.error('Failed to save thumbnail history to localStorage:', e);
   }
 
   // If a new thumbnail was added, sync it to Supabase
+  if (newThumbnail) {
+    console.log('New thumbnail to save:', {
+      hasImage: !!newThumbnail.imageUrl,
+      imageLength: newThumbnail.imageUrl?.length || 0,
+      isBase64: newThumbnail.imageUrl?.startsWith('data:'),
+      supabaseConnected: supabaseConnected
+    });
+  }
+
   if (supabaseConnected && newThumbnail) {
     try {
-      // Only store URL if it's not a huge base64 (over 500KB)
       let imageUrlToStore = newThumbnail.imageUrl;
-      if (imageUrlToStore && imageUrlToStore.startsWith('data:') && imageUrlToStore.length > 500000) {
-        console.log('Image too large for Supabase storage, skipping sync');
+
+      // Skip if no image URL
+      if (!imageUrlToStore) {
+        console.log('No image URL to store, skipping Supabase sync');
         return;
       }
+
+      // Only skip huge base64 images (over 500KB)
+      if (imageUrlToStore.startsWith('data:') && imageUrlToStore.length > 500000) {
+        console.log('Base64 image too large for Supabase storage, skipping sync');
+        return;
+      }
+
+      console.log('Syncing thumbnail to Supabase, URL type:',
+        imageUrlToStore.startsWith('data:') ? 'base64' :
+        imageUrlToStore.startsWith('http') ? 'URL' : 'unknown');
 
       const response = await fetch('/api/db/thumbnails', {
         method: 'POST',
@@ -2436,13 +2457,15 @@ async function saveThumbnailHistory(newThumbnail = null) {
 
       const data = await response.json();
       if (data.success) {
-        console.log('Thumbnail synced to Supabase');
+        console.log('Thumbnail synced to Supabase successfully, id:', data.id);
       } else {
         console.error('Supabase sync failed:', data.error);
       }
     } catch (e) {
       console.error('Failed to sync thumbnail to Supabase:', e);
     }
+  } else if (!supabaseConnected) {
+    console.log('Supabase not connected, skipping sync');
   }
 }
 

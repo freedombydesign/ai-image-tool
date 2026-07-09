@@ -855,13 +855,13 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
         input: {
           image: faceBase64,
           prompt: prompt,
-          negative_prompt: negativePrompt || 'blurry, low quality, distorted face, bad anatomy, ugly, disfigured',
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted face, bad anatomy, ugly, disfigured, different person, changed face',
           width: parseInt(width) || 1024,
           height: parseInt(height) || 1024,
           num_steps: 30,
-          guidance_scale: 5,
-          ip_adapter_scale: 0.8,
-          controlnet_conditioning_scale: 0.8,
+          guidance_scale: 3,
+          ip_adapter_scale: 1.0,
+          controlnet_conditioning_scale: 0.9,
           enable_safety_checker: false
         }
       })
