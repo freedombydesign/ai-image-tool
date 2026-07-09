@@ -758,9 +758,8 @@ app.post('/api/face-swap', upload.fields([
     console.log('Source base64 length:', sourceBase64.length);
     console.log('Face base64 length:', faceBase64.length);
 
-    // Use Replicate face-swap model (lucataco/facefusion) with versioned endpoint
-    // Using versioned endpoint for reliability (similar fix to InstantID)
-    const FACEFUSION_VERSION = 'b1b33e143a30ffdd4e5d62c27b1e60a6e9a6d4dc7c1c0a10c65a7c9c86f0fc27';
+    // Use Replicate face-swap model (xiankgx/face-swap)
+    const FACESWAP_VERSION = 'cff87316e31787df12002c9e20a78a017a36cb31fde9862d8dedd15ab29b7288';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -769,12 +768,12 @@ app.post('/api/face-swap', upload.fields([
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: FACEFUSION_VERSION,
+        version: FACESWAP_VERSION,
         input: {
-          target_path: sourceBase64,  // The thumbnail/image to modify
-          source_path: faceBase64,    // The face to swap IN (user's avatar)
-          face_enhancer_blend: 30,    // Lower = more natural, less distortion
-          frame_enhancer_blend: 50
+          local_target: sourceBase64,  // The image to modify (scene)
+          local_source: faceBase64,    // The face to swap IN (user's avatar)
+          weight: 0.5,                 // Blend weight for natural look
+          det_thresh: 0.1              // Face detection threshold
         }
       })
     });
