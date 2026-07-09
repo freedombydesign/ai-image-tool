@@ -437,21 +437,54 @@ class VideoEditor {
 
   // Import scenes from batch generator
   importFromBatch() {
-    if (typeof generatedScenes === 'undefined' || generatedScenes.length === 0) {
+    let scenesToImport = [];
+
+    // Try 1: Get from generatedScenes array
+    if (typeof generatedScenes !== 'undefined' && generatedScenes.length > 0) {
+      scenesToImport = generatedScenes.filter(s => s && s.imageUrl);
+    }
+
+    // Try 2: Recover from DOM scene cards if array is empty
+    if (scenesToImport.length === 0) {
+      const sceneCards = document.querySelectorAll('.scene-card img.scene-image');
+      if (sceneCards.length > 0) {
+        scenesToImport = Array.from(sceneCards).map((img, i) => ({
+          imageUrl: img.src,
+          text: ''
+        }));
+        console.log('Recovered', scenesToImport.length, 'scenes from DOM');
+      }
+    }
+
+    // Try 3: Recover from localStorage
+    if (scenesToImport.length === 0) {
+      try {
+        const saved = localStorage.getItem('sceneHistory');
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data.scenes && data.scenes.length > 0) {
+            scenesToImport = data.scenes.filter(s => s && s.imageUrl);
+            console.log('Recovered', scenesToImport.length, 'scenes from localStorage');
+          }
+        }
+      } catch (e) {
+        console.error('Failed to recover from localStorage:', e);
+      }
+    }
+
+    if (scenesToImport.length === 0) {
       showToast('No scenes available. Generate scenes in the Batch Scenes tab first.');
       return;
     }
 
-    this.scenes = generatedScenes
-      .filter(s => s && s.imageUrl)
-      .map((scene, index) => ({
-        id: index,
-        imageUrl: scene.imageUrl,
-        text: scene.text || '',
-        duration: 3, // Default 3 seconds per scene
-        caption: scene.text ? scene.text.substring(0, 100) : '',
-        startTime: index * 3
-      }));
+    this.scenes = scenesToImport.map((scene, index) => ({
+      id: index,
+      imageUrl: scene.imageUrl,
+      text: scene.text || '',
+      duration: 3, // Default 3 seconds per scene
+      caption: scene.text ? scene.text.substring(0, 100) : '',
+      startTime: index * 3
+    }));
 
     this.renderImportedScenes();
     this.renderTimeline();
