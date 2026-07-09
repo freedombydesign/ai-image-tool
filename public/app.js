@@ -370,17 +370,49 @@ function getBrandInstructions() {
 }
 
 // ============================================
+// USER ID & SUPABASE SYNC
+// ============================================
+
+// Get or create a persistent user ID
+function getUserId() {
+  let userId = localStorage.getItem('ai_tool_user_id');
+  if (!userId) {
+    userId = 'user_' + crypto.randomUUID();
+    localStorage.setItem('ai_tool_user_id', userId);
+  }
+  return userId;
+}
+
+const USER_ID = getUserId();
+let supabaseConnected = false;
+
+// Check Supabase connection on load
+async function checkSupabaseConnection() {
+  try {
+    const response = await fetch('/api/db/status');
+    const data = await response.json();
+    supabaseConnected = data.connected;
+    console.log('Supabase connected:', supabaseConnected);
+    return supabaseConnected;
+  } catch (e) {
+    console.log('Supabase not available, using localStorage');
+    return false;
+  }
+}
+
+// ============================================
 // AVATAR UPLOAD FEATURE
 // For consistent character appearance across all scenes
 // ============================================
 
-// Load avatar state from localStorage
-const savedAvatar = loadAvatarState();
+// Load avatar state from localStorage first (fast), then sync from Supabase
+const savedAvatar = loadAvatarStateLocal();
 let avatarEnabled = savedAvatar.enabled;
 let avatarImageData = savedAvatar.imageData;
 let avatarDescription = savedAvatar.description;
 
-function loadAvatarState() {
+// Load from localStorage (synchronous, for initial render)
+function loadAvatarStateLocal() {
   try {
     const saved = localStorage.getItem('avatarState');
     if (saved) {
@@ -392,7 +424,30 @@ function loadAvatarState() {
   return { enabled: false, imageData: null, description: '' };
 }
 
-function saveAvatarState() {
+// Load from Supabase (async, called on page load)
+async function loadAvatarStateFromDB() {
+  if (!supabaseConnected) return null;
+
+  try {
+    const response = await fetch(`/api/db/avatar/${USER_ID}`);
+    const data = await response.json();
+
+    if (data.success && data.avatar) {
+      return {
+        enabled: data.avatar.enabled,
+        imageData: data.avatar.image_url,
+        description: data.avatar.description || ''
+      };
+    }
+  } catch (e) {
+    console.error('Failed to load avatar from DB:', e);
+  }
+  return null;
+}
+
+// Save to both localStorage and Supabase
+async function saveAvatarState() {
+  // Always save to localStorage (fast, offline support)
   try {
     localStorage.setItem('avatarState', JSON.stringify({
       enabled: avatarEnabled,
@@ -400,7 +455,26 @@ function saveAvatarState() {
       description: avatarDescription
     }));
   } catch (e) {
-    console.error('Failed to save avatar state:', e);
+    console.error('Failed to save avatar state to localStorage:', e);
+  }
+
+  // Also sync to Supabase if connected
+  if (supabaseConnected && avatarImageData) {
+    try {
+      await fetch('/api/db/avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: USER_ID,
+          imageData: avatarImageData,
+          description: avatarDescription,
+          enabled: avatarEnabled
+        })
+      });
+      console.log('Avatar synced to Supabase');
+    } catch (e) {
+      console.error('Failed to sync avatar to Supabase:', e);
+    }
   }
 }
 
@@ -2083,7 +2157,7 @@ window.updateTextOverlay = updateTextOverlay;
 window.downloadWithTextOverlay = downloadWithTextOverlay;
 
 // Text Overlay Control Event Listeners
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   const overlayText = document.getElementById('overlay-text');
   const overlayFontSize = document.getElementById('overlay-font-size');
   const overlayFont = document.getElementById('overlay-font');
@@ -2100,6 +2174,9 @@ document.addEventListener('DOMContentLoaded', function() {
   if (overlayStrokeColor) overlayStrokeColor.addEventListener('input', updateTextOverlay);
   if (overlayStrokeWidth) overlayStrokeWidth.addEventListener('input', updateTextOverlay);
 
+  // Initialize Supabase connection and load data
+  await initSupabaseSync();
+
   // Initialize avatar upload functionality
   initAvatarUpload();
 
@@ -2108,6 +2185,55 @@ document.addEventListener('DOMContentLoaded', function() {
     updateThumbnailGallery();
   }
 });
+
+// Initialize Supabase sync on page load
+async function initSupabaseSync() {
+  // Check Supabase connection
+  await checkSupabaseConnection();
+
+  if (supabaseConnected) {
+    console.log('Supabase connected - loading data from database');
+
+    // Load avatar from Supabase (may override localStorage)
+    const dbAvatar = await loadAvatarStateFromDB();
+    if (dbAvatar && dbAvatar.imageData) {
+      avatarEnabled = dbAvatar.enabled;
+      avatarImageData = dbAvatar.imageData;
+      avatarDescription = dbAvatar.description;
+
+      // Update UI with avatar from DB
+      const avatarImage = document.getElementById('avatar-image');
+      const placeholder = document.getElementById('avatar-placeholder');
+      const preview = document.getElementById('avatar-preview');
+
+      if (avatarImage && avatarImageData) {
+        avatarImage.src = avatarImageData;
+        if (placeholder) placeholder.hidden = true;
+        if (preview) preview.hidden = false;
+      }
+
+      // Update description display
+      const descEl = document.getElementById('avatar-description');
+      if (descEl && avatarDescription) {
+        descEl.value = avatarDescription;
+      }
+
+      // Update checkbox
+      const checkbox = document.getElementById('avatar-enabled');
+      if (checkbox) checkbox.checked = avatarEnabled;
+
+      console.log('Avatar loaded from Supabase');
+    }
+
+    // Load thumbnail history from Supabase
+    const dbThumbnails = await loadThumbnailHistoryFromDB();
+    if (dbThumbnails && dbThumbnails.length > 0) {
+      thumbnailHistory = dbThumbnails;
+      updateThumbnailGallery();
+      console.log(`Loaded ${dbThumbnails.length} thumbnails from Supabase`);
+    }
+  }
+}
 
 // Clear Anchor Button Handler
 const clearAnchorBtn = document.getElementById('clear-anchor-btn');
@@ -2171,12 +2297,62 @@ function loadThumbnailHistory() {
   }
 }
 
-// Save thumbnail history to localStorage
-function saveThumbnailHistory() {
+// Load thumbnail history from Supabase
+async function loadThumbnailHistoryFromDB() {
+  if (!supabaseConnected) return [];
+
+  try {
+    const response = await fetch(`/api/db/thumbnails/${USER_ID}`);
+    const data = await response.json();
+
+    if (data.success && data.thumbnails) {
+      // Convert DB format to local format
+      return data.thumbnails.map(t => ({
+        id: t.id,
+        imageUrl: t.image_url,
+        prompt: t.prompt,
+        style: t.style,
+        model: t.model,
+        referenceUsed: t.reference_used,
+        avatarUsed: t.avatar_used,
+        timestamp: new Date(t.created_at).getTime()
+      }));
+    }
+  } catch (e) {
+    console.error('Failed to load thumbnails from DB:', e);
+  }
+  return [];
+}
+
+// Save thumbnail history to localStorage and Supabase
+async function saveThumbnailHistory(newThumbnail = null) {
+  // Always save to localStorage
   try {
     localStorage.setItem('thumbnailHistory', JSON.stringify(thumbnailHistory));
   } catch (e) {
     console.error('Failed to save thumbnail history:', e);
+  }
+
+  // If a new thumbnail was added, sync it to Supabase
+  if (supabaseConnected && newThumbnail) {
+    try {
+      await fetch('/api/db/thumbnails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: USER_ID,
+          imageUrl: newThumbnail.imageUrl,
+          prompt: newThumbnail.prompt,
+          style: newThumbnail.style,
+          model: newThumbnail.model || 'dall-e-3',
+          referenceUsed: newThumbnail.referenceUsed || false,
+          avatarUsed: newThumbnail.avatarUsed || false
+        })
+      });
+      console.log('Thumbnail synced to Supabase');
+    } catch (e) {
+      console.error('Failed to sync thumbnail to Supabase:', e);
+    }
   }
 }
 
@@ -2285,11 +2461,16 @@ async function generateThumbnail() {
     }
 
     // Add to session history
-    thumbnailHistory.unshift({
+    const newThumbnail = {
       imageUrl: data.image,
       prompt: prompt,
+      style: selectedThumbnailStyle,
+      model: model,
+      referenceUsed: !!referenceThumbData,
+      avatarUsed: avatarEnabled && !!avatarImageData,
       timestamp: Date.now()
-    });
+    };
+    thumbnailHistory.unshift(newThumbnail);
 
     // Keep only last 10
     if (thumbnailHistory.length > 10) {
@@ -2297,7 +2478,7 @@ async function generateThumbnail() {
     }
 
     updateThumbnailGallery();
-    saveThumbnailHistory(); // Persist to localStorage
+    saveThumbnailHistory(newThumbnail); // Persist to localStorage & Supabase
 
     // Save to persistent history
     if (typeof generationHistory !== 'undefined') {
@@ -2349,18 +2530,23 @@ async function regenerateThumbnail() {
     }
 
     // Add to session history
-    thumbnailHistory.unshift({
+    const newThumbnail = {
       imageUrl: data.image,
       prompt: lastThumbnailParams.prompt,
+      style: lastThumbnailParams.style || selectedThumbnailStyle,
+      model: 'dall-e-3',
+      referenceUsed: lastThumbnailParams.referenceUsed || false,
+      avatarUsed: lastThumbnailParams.avatarUsed || false,
       timestamp: Date.now()
-    });
+    };
+    thumbnailHistory.unshift(newThumbnail);
 
     if (thumbnailHistory.length > 10) {
       thumbnailHistory = thumbnailHistory.slice(0, 10);
     }
 
     updateThumbnailGallery();
-    saveThumbnailHistory(); // Persist to localStorage
+    saveThumbnailHistory(newThumbnail); // Persist to localStorage & Supabase
 
     // Save to persistent history
     if (typeof generationHistory !== 'undefined') {
@@ -2427,18 +2613,23 @@ async function refineThumbnail() {
     }
 
     // Add to session history
-    thumbnailHistory.unshift({
+    const newThumbnail = {
       imageUrl: data.image,
       prompt: refinedPrompt,
+      style: selectedThumbnailStyle,
+      model: 'dall-e-3',
+      referenceUsed: !!referenceThumbData,
+      avatarUsed: avatarEnabled && !!avatarImageData,
       timestamp: Date.now()
-    });
+    };
+    thumbnailHistory.unshift(newThumbnail);
 
     if (thumbnailHistory.length > 10) {
       thumbnailHistory = thumbnailHistory.slice(0, 10);
     }
 
     updateThumbnailGallery();
-    saveThumbnailHistory(); // Persist to localStorage
+    saveThumbnailHistory(newThumbnail); // Persist to localStorage & Supabase
 
     // Save to persistent history
     if (typeof generationHistory !== 'undefined') {
@@ -2586,18 +2777,23 @@ async function generateThumbnailWithFace() {
       }
 
       // Add to history
-      thumbnailHistory.unshift({
+      const newThumbnail = {
         imageUrl: data.image,
         prompt: prompt,
+        style: selectedThumbnailStyle,
+        model: 'instantid',
+        referenceUsed: false,
+        avatarUsed: true,
         timestamp: Date.now()
-      });
+      };
+      thumbnailHistory.unshift(newThumbnail);
 
       if (thumbnailHistory.length > 10) {
         thumbnailHistory = thumbnailHistory.slice(0, 10);
       }
 
       updateThumbnailGallery();
-      saveThumbnailHistory();
+      saveThumbnailHistory(newThumbnail);
 
       showToast('Thumbnail generated with your face!', false);
       thumbnailResult.scrollIntoView({ behavior: 'smooth' });
@@ -2749,18 +2945,23 @@ async function faceSwapThumbnail() {
       thumbnailImg.src = data.image;
 
       // Add to history
-      thumbnailHistory.unshift({
+      const newThumbnail = {
         imageUrl: data.image,
         prompt: 'Face swapped thumbnail',
+        style: 'face-swap',
+        model: 'face-swap',
+        referenceUsed: false,
+        avatarUsed: true,
         timestamp: Date.now()
-      });
+      };
+      thumbnailHistory.unshift(newThumbnail);
 
       if (thumbnailHistory.length > 10) {
         thumbnailHistory = thumbnailHistory.slice(0, 10);
       }
 
       updateThumbnailGallery();
-      saveThumbnailHistory();
+      saveThumbnailHistory(newThumbnail);
 
       showToast('Face swap complete!', false);
     } else {
