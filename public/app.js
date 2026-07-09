@@ -479,7 +479,7 @@ const savedAvatar = loadAvatarStateLocal();
 let avatarEnabled = savedAvatar.enabled;
 let avatarImageData = savedAvatar.imageData;
 let avatarDescription = savedAvatar.description;
-let useInstantID = savedAvatar.useInstantID || false;
+let useCharacterRef = savedAvatar.useCharacterRef || false;
 
 // Load from localStorage (synchronous, for initial render)
 function loadAvatarStateLocal() {
@@ -491,26 +491,26 @@ function loadAvatarStateLocal() {
   } catch (e) {
     console.error('Failed to load avatar state:', e);
   }
-  return { enabled: false, imageData: null, description: '', useInstantID: false };
+  return { enabled: false, imageData: null, description: '', useCharacterRef: false };
 }
 
-// Toggle InstantID face matching
-function toggleInstantID() {
-  const checkbox = document.getElementById('use-instantid');
-  useInstantID = checkbox?.checked || false;
+// Toggle Character Reference mode (full character matching)
+function toggleCharacterRef() {
+  const checkbox = document.getElementById('use-character-ref');
+  useCharacterRef = checkbox?.checked || false;
   saveAvatarState();
 
-  if (useInstantID && !avatarImageData) {
+  if (useCharacterRef && !avatarImageData) {
     showToast('Please upload an avatar photo first');
     checkbox.checked = false;
-    useInstantID = false;
-  } else if (useInstantID) {
-    showToast('InstantID enabled - scenes will match your face!');
+    useCharacterRef = false;
+  } else if (useCharacterRef) {
+    showToast('Character Reference enabled - scenes will match your full appearance!');
   }
 }
 
-// Make toggleInstantID available globally
-window.toggleInstantID = toggleInstantID;
+// Make toggleCharacterRef available globally
+window.toggleCharacterRef = toggleCharacterRef;
 
 // Load from Supabase (async, called on page load)
 async function loadAvatarStateFromDB() {
@@ -541,7 +541,7 @@ async function saveAvatarState() {
       enabled: avatarEnabled,
       imageData: avatarImageData,
       description: avatarDescription,
-      useInstantID: useInstantID
+      useCharacterRef: useCharacterRef
     }));
   } catch (e) {
     console.error('Failed to save avatar state to localStorage:', e);
@@ -753,9 +753,9 @@ function initAvatarUpload() {
     if (descSection) descSection.hidden = false;
     if (descInput) descInput.value = avatarDescription;
     if (checkbox) checkbox.checked = avatarEnabled;
-    // Restore InstantID checkbox
-    const instantIdCheckbox = document.getElementById('use-instantid');
-    if (instantIdCheckbox) instantIdCheckbox.checked = useInstantID;
+    // Restore Character Reference checkbox
+    const charRefCheckbox = document.getElementById('use-character-ref');
+    if (charRefCheckbox) charRefCheckbox.checked = useCharacterRef;
     if (statusEl) {
       statusEl.textContent = avatarEnabled ? 'Active' : 'Uploaded';
       statusEl.classList.toggle('active', avatarEnabled);
@@ -1724,10 +1724,10 @@ async function generatePreviewScenes() {
     scenesGrid.appendChild(card);
   });
 
-  // Check if using InstantID for face matching
-  const shouldUseInstantID = useInstantID && avatarImageData;
-  if (shouldUseInstantID) {
-    showLoading('Generating preview with your face (InstantID)...', `0 of ${previewScenes.length} scenes`);
+  // Check if using Character Reference for face matching
+  const shouldUseCharacterRef = useCharacterRef && avatarImageData;
+  if (shouldUseCharacterRef) {
+    showLoading('Generating preview with your face (Character Reference)...', `0 of ${previewScenes.length} scenes`);
   } else {
     showLoading('Generating preview...', `0 of ${previewScenes.length} scenes`);
   }
@@ -1746,18 +1746,18 @@ async function generatePreviewScenes() {
       const model = document.getElementById('batch-model')?.value || 'dall-e-3';
       let data;
 
-      if (shouldUseInstantID) {
-        // Use InstantID to generate with user's face
+      if (shouldUseCharacterRef) {
+        // Use character reference to generate with user's full appearance
         const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
         const [width, height] = size.split('x').map(Number);
 
         const formData = new FormData();
-        formData.append('faceImage', avatarBlob, 'avatar.png');
+        formData.append('referenceImage', avatarBlob, 'avatar.png');
         formData.append('prompt', styledPrompt);
         formData.append('width', width);
         formData.append('height', height);
 
-        const response = await fetch('/api/generate-with-face', {
+        const response = await fetch('/api/generate-with-reference', {
           method: 'POST',
           body: formData
         });
@@ -1871,10 +1871,10 @@ async function generateBatchScenes() {
   // Get selected model
   const model = document.getElementById('batch-model')?.value || 'dall-e-3';
 
-  // Check if using InstantID for face matching
-  const shouldUseInstantID = useInstantID && avatarImageData;
-  if (shouldUseInstantID) {
-    showLoading('Generating scenes with your face (InstantID)...', `0 of ${scenesToGenerate} scenes`);
+  // Check if using Character Reference for face matching
+  const shouldUseCharacterRef = useCharacterRef && avatarImageData;
+  if (shouldUseCharacterRef) {
+    showLoading('Generating scenes with your face (Character Reference)...', `0 of ${scenesToGenerate} scenes`);
   }
 
   // Generate scenes sequentially to avoid rate limits
@@ -1895,18 +1895,18 @@ async function generateBatchScenes() {
     try {
       let data;
 
-      if (shouldUseInstantID) {
-        // Use InstantID to generate with user's face
+      if (shouldUseCharacterRef) {
+        // Use character reference to generate with user's full appearance
         const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
         const [width, height] = size.split('x').map(Number);
 
         const formData = new FormData();
-        formData.append('faceImage', avatarBlob, 'avatar.png');
+        formData.append('referenceImage', avatarBlob, 'avatar.png');
         formData.append('prompt', styledPrompt);
         formData.append('width', width);
         formData.append('height', height);
 
-        const response = await fetch('/api/generate-with-face', {
+        const response = await fetch('/api/generate-with-reference', {
           method: 'POST',
           body: formData
         });
@@ -3110,13 +3110,13 @@ if (generateThumbnailBtn) {
   generateThumbnailBtn.addEventListener('click', generateThumbnail);
 }
 
-// Generate with Face (InstantID) button
+// Generate with Face (Character Reference) button
 const generateThumbnailWithFaceBtn = document.getElementById('generate-thumbnail-with-face-btn');
 if (generateThumbnailWithFaceBtn) {
   generateThumbnailWithFaceBtn.addEventListener('click', generateThumbnailWithFace);
 }
 
-// Generate thumbnail with user's face using InstantID
+// Generate thumbnail with user's face using Character Reference
 async function generateThumbnailWithFace() {
   // Check if avatar is uploaded
   if (!avatarImageData) {
@@ -3133,7 +3133,7 @@ async function generateThumbnailWithFace() {
     return;
   }
 
-  showLoading('Generating thumbnail with your face (InstantID)...');
+  showLoading('Generating thumbnail with your face (Character Reference)...');
 
   try {
     // Build the prompt
@@ -3149,16 +3149,16 @@ async function generateThumbnailWithFace() {
     }
     prompt += '. YouTube thumbnail, 16:9, eye-catching, professional';
 
-    // Convert avatar to blob
+    // Convert avatar to blob for character reference
     const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
 
     const formData = new FormData();
-    formData.append('faceImage', avatarBlob, 'avatar.png');
+    formData.append('referenceImage', avatarBlob, 'avatar.png');
     formData.append('prompt', prompt);
     formData.append('width', '1792');
     formData.append('height', '1024');
 
-    const response = await fetch('/api/generate-with-face', {
+    const response = await fetch('/api/generate-with-reference', {
       method: 'POST',
       body: formData
     });
@@ -3199,7 +3199,7 @@ async function generateThumbnailWithFace() {
       throw new Error(data.error || 'Generation failed');
     }
   } catch (error) {
-    console.error('InstantID generation error:', error);
+    console.error('Character Reference generation error:', error);
     showToast(`Generation failed: ${error.message}`);
   } finally {
     hideLoading();
@@ -3228,21 +3228,21 @@ async function generateBannerWithFace() {
     return;
   }
 
-  showLoading('Generating banner with your face (InstantID)...');
+  showLoading('Generating banner with your face (Character Reference)...');
 
   try {
     const prompt = `${description}. YouTube channel banner, wide format, professional, featuring a person prominently`;
 
-    // Convert avatar to blob
+    // Convert avatar to blob for character reference
     const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
 
     const formData = new FormData();
-    formData.append('faceImage', avatarBlob, 'avatar.png');
+    formData.append('referenceImage', avatarBlob, 'avatar.png');
     formData.append('prompt', prompt);
     formData.append('width', '1536');
     formData.append('height', '1024');
 
-    const response = await fetch('/api/generate-with-face', {
+    const response = await fetch('/api/generate-with-reference', {
       method: 'POST',
       body: formData
     });
@@ -3267,7 +3267,7 @@ async function generateBannerWithFace() {
       throw new Error(data.error || 'Generation failed');
     }
   } catch (error) {
-    console.error('Banner InstantID error:', error);
+    console.error('Banner Character Reference error:', error);
     showToast(`Generation failed: ${error.message}`);
   } finally {
     hideLoading();

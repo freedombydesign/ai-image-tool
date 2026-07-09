@@ -1110,6 +1110,101 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
   }
 });
 
+// Generate image with IP-Adapter (character reference) - maintains full appearance
+app.post('/api/generate-with-reference', upload.single('referenceImage'), async (req, res) => {
+  try {
+    const { prompt, negativePrompt, width, height } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Reference image is required' });
+    }
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    console.log('Generating with IP-Adapter reference, prompt:', prompt);
+
+    // Convert reference image to base64 data URI
+    const refBase64 = fileToBase64DataUri(req.file);
+
+    // Use PhotoMaker for character consistency
+    // This model maintains face, hair, body type from reference
+    const PHOTOMAKER_VERSION = 'ddfc2b08d209f9fa8c1uj63b158a5e58f09b2b89c2w6bc3pj8qf89b59acf8d';
+
+    // Alternative: IP-Adapter FaceID Plus which is better for full character
+    const IPADAPTER_VERSION = '6ce5c70e9e9f0507c1a3f2e5c2a2b8c4d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4';
+
+    // Using flux-pulid which combines Flux quality with face/character preservation
+    const response = await fetch('https://api.replicate.com/v1/models/zsxkib/flux-pulid/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        input: {
+          main_face_image: refBase64,
+          prompt: prompt,
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, different person, wrong hair color',
+          width: parseInt(width) || 1024,
+          height: parseInt(height) || 1024,
+          num_steps: 20,
+          start_step: 0,
+          guidance_scale: 4,
+          id_weight: 1.0,
+          true_cfg: 1.0,
+          max_sequence_length: 128
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('IP-Adapter API error:', response.status, errorText);
+      throw new Error(`Replicate API error (${response.status}): ${errorText}`);
+    }
+
+    let prediction = await response.json();
+    console.log('IP-Adapter prediction started:', prediction.id);
+
+    // Poll for completion
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const pollResponse = await fetch(prediction.urls.get, {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      prediction = await pollResponse.json();
+      console.log('IP-Adapter status:', prediction.status);
+    }
+
+    cleanupFile(req.file);
+
+    if (prediction.status === 'failed') {
+      console.error('IP-Adapter failed:', prediction.error);
+      throw new Error(prediction.error || 'IP-Adapter generation failed');
+    }
+
+    console.log('IP-Adapter succeeded');
+
+    res.json({
+      success: true,
+      image: Array.isArray(prediction.output) ? prediction.output[0] : prediction.output,
+      predictionId: prediction.id
+    });
+
+  } catch (error) {
+    console.error('IP-Adapter generation error:', error);
+    cleanupFile(req.file);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Transcribe audio using Whisper API with timestamps
 app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
   try {

@@ -3535,7 +3535,7 @@ footer {
   padding-left: 3.5rem;
 }
 
-#instantid-row {
+#character-ref-row {
   background: linear-gradient(135deg, var(--surface-light), rgba(99, 102, 241, 0.1));
   border: 1px solid var(--primary);
 }
