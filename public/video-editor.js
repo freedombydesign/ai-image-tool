@@ -477,13 +477,19 @@ class VideoEditor {
       return;
     }
 
+    // Get scene duration from slider or default to 6 seconds
+    const sceneDuration = typeof getSceneDuration === 'function'
+      ? getSceneDuration()
+      : (document.getElementById('scene-duration')?.value || 6);
+    const duration = parseInt(sceneDuration);
+
     this.scenes = scenesToImport.map((scene, index) => ({
       id: index,
       imageUrl: scene.imageUrl,
       text: scene.text || '',
-      duration: 3, // Default 3 seconds per scene
+      duration: duration,
       caption: scene.text ? scene.text.substring(0, 100) : '',
-      startTime: index * 3
+      startTime: index * duration
     }));
 
     this.renderImportedScenes();
