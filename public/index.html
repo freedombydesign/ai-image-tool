@@ -645,7 +645,11 @@
             <h3>5. Captions</h3>
             <div class="caption-toolbar">
               <button class="btn secondary small" id="generate-captions-btn">🎤 Generate from Audio</button>
+              <button class="btn secondary small" id="generate-captions-script-btn" onclick="generateCaptionsFromScript()">📝 Generate from Script</button>
               <button class="btn secondary small" id="clear-captions-btn">🗑️ Clear All</button>
+            </div>
+            <div class="form-group" style="margin-top: 0.5rem;">
+              <textarea id="caption-script-input" rows="3" placeholder="Paste your script here to auto-generate captions for each scene..."></textarea>
             </div>
             <div class="caption-controls">
               <div class="form-group">

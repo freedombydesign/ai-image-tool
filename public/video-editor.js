@@ -413,26 +413,37 @@ class VideoEditor {
   }
 
   async initFFmpeg() {
-    try {
-      const { FFmpeg } = FFmpegWASM;
-      this.ffmpeg = new FFmpeg();
+    // CDN options to try
+    const cdnOptions = [
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+      'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+    ];
 
-      this.ffmpeg.on('progress', ({ progress }) => {
-        const percent = Math.round(progress * 100);
-        this.exportProgressBar.style.width = `${percent}%`;
-        this.exportStatus.textContent = `Encoding: ${percent}%`;
-      });
+    for (const coreURL of cdnOptions) {
+      try {
+        console.log('Trying FFmpeg from:', coreURL);
+        const { FFmpeg } = FFmpegWASM;
+        this.ffmpeg = new FFmpeg();
 
-      await this.ffmpeg.load({
-        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-      });
+        this.ffmpeg.on('progress', ({ progress }) => {
+          const percent = Math.round(progress * 100);
+          this.exportProgressBar.style.width = `${percent}%`;
+          this.exportStatus.textContent = `Encoding: ${percent}%`;
+        });
 
-      this.ffmpegLoaded = true;
-      console.log('FFmpeg loaded successfully');
-    } catch (error) {
-      console.error('Failed to load FFmpeg:', error);
-      showToast('Video export requires FFmpeg. Some browsers may not support this feature.');
+        await this.ffmpeg.load({ coreURL });
+
+        this.ffmpegLoaded = true;
+        console.log('FFmpeg loaded successfully from:', coreURL);
+        return; // Success - exit loop
+      } catch (error) {
+        console.error('Failed to load FFmpeg from', coreURL, error);
+      }
     }
+
+    // All CDNs failed - show error
+    console.error('All FFmpeg CDNs failed');
+    showToast('Video export requires FFmpeg. Try Chrome browser or refresh the page.');
   }
 
   // Import scenes from batch generator
@@ -2612,4 +2623,76 @@ function applySceneDuration() {
   videoEditor.updateTotalDuration();
 
   showToast(`Applied ${duration} sec duration to all ${videoEditor.scenes.length} scenes`);
+}
+
+// Generate captions from script text (no audio transcription needed)
+function generateCaptionsFromScript() {
+  if (!videoEditor || !videoEditor.scenes || videoEditor.scenes.length === 0) {
+    showToast('No scenes imported yet. Import scenes first.');
+    return;
+  }
+
+  const scriptInput = document.getElementById('caption-script-input');
+  const scriptText = scriptInput?.value?.trim();
+
+  if (!scriptText) {
+    showToast('Please paste your script in the text area first.');
+    return;
+  }
+
+  // Split script into sentences or by double newlines
+  let segments = [];
+
+  // Try splitting by double newlines first (paragraph breaks)
+  if (scriptText.includes('\n\n')) {
+    segments = scriptText.split(/\n\n+/).filter(s => s.trim());
+  } else if (scriptText.includes('\n')) {
+    // Single newlines
+    segments = scriptText.split(/\n+/).filter(s => s.trim());
+  } else {
+    // Split by sentences (. ! ?)
+    segments = scriptText.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+  }
+
+  // If we have more segments than scenes, combine some
+  // If fewer segments than scenes, distribute evenly
+  const numScenes = videoEditor.scenes.length;
+
+  if (segments.length === 0) {
+    showToast('Could not parse script. Please check the format.');
+    return;
+  }
+
+  // Distribute segments across scenes
+  const captions = [];
+
+  if (segments.length >= numScenes) {
+    // More segments than scenes - combine segments per scene
+    const segmentsPerScene = Math.ceil(segments.length / numScenes);
+    for (let i = 0; i < numScenes; i++) {
+      const start = i * segmentsPerScene;
+      const end = Math.min(start + segmentsPerScene, segments.length);
+      const sceneCaption = segments.slice(start, end).join(' ').trim();
+      captions.push(sceneCaption || '');
+    }
+  } else {
+    // Fewer segments than scenes - some scenes get empty captions
+    const scenesPerSegment = Math.ceil(numScenes / segments.length);
+    for (let i = 0; i < numScenes; i++) {
+      const segmentIndex = Math.floor(i / scenesPerSegment);
+      if (segmentIndex < segments.length && (i % scenesPerSegment === 0)) {
+        captions.push(segments[segmentIndex].trim());
+      } else {
+        captions.push('');
+      }
+    }
+  }
+
+  // Apply captions to scenes
+  videoEditor.scenes.forEach((scene, index) => {
+    scene.caption = captions[index] || '';
+  });
+
+  videoEditor.renderCaptions();
+  showToast(`Generated captions for ${numScenes} scenes from script!`, false);
 }
