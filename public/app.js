@@ -505,7 +505,7 @@ function toggleCharacterRef() {
     checkbox.checked = false;
     useCharacterRef = false;
   } else if (useCharacterRef) {
-    showToast('Character Reference enabled - scenes will match your full appearance!');
+    showToast('Character Reference enabled - scenes will match your full appearance!', false);
   }
 }
 
