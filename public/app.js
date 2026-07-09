@@ -1958,6 +1958,12 @@ async function generateBatchScenes() {
     showToast(`${failCount} scene${failCount !== 1 ? 's' : ''} failed to generate`);
   }
 
+  // Auto face-swap newly generated scenes if any previews were face-swapped
+  const hasFaceSwappedPreviews = existingScenes.some(s => s?.faceSwapped);
+  if (hasFaceSwappedPreviews && avatarImageData && successCount > 0) {
+    await autoFaceSwapNewScenes();
+  }
+
   scenesContainer.scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -3360,6 +3366,68 @@ async function faceSwapAllScenes() {
     showToast(`Face swapped ${successCount} scenes successfully!`);
   } else {
     showToast(`Face swapped ${successCount} scenes, ${failCount} failed`);
+  }
+}
+
+// Auto Face Swap - only swaps newly generated scenes (not already face-swapped)
+async function autoFaceSwapNewScenes() {
+  // Get scenes that need face swapping (have image but not yet swapped)
+  const scenesToSwap = generatedScenes.filter(s => s && s.imageUrl && !s.faceSwapped);
+
+  if (scenesToSwap.length === 0) {
+    return;
+  }
+
+  showLoading(`Auto face-swapping new scenes...`, `0 of ${scenesToSwap.length}`);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  // Convert avatar to blob once
+  const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+  for (let i = 0; i < scenesToSwap.length; i++) {
+    const scene = scenesToSwap[i];
+    updateLoadingProgress(i + 1, scenesToSwap.length);
+
+    try {
+      const sceneBlob = await fetch(scene.imageUrl).then(r => r.blob());
+
+      const formData = new FormData();
+      formData.append('sourceImage', sceneBlob, 'scene.png');
+      formData.append('faceImage', avatarBlob, 'avatar.png');
+
+      const response = await fetch('/api/face-swap', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      scene.imageUrl = data.image;
+      scene.faceSwapped = true;
+      updateSceneCard(scene.index, data.image);
+      successCount++;
+
+    } catch (error) {
+      console.error(`Auto face swap failed for scene ${scene.index + 1}:`, error);
+      failCount++;
+    }
+
+    if (i < scenesToSwap.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  }
+
+  hideLoading();
+  saveSceneHistory();
+
+  if (successCount > 0) {
+    showToast(`Auto face-swapped ${successCount} new scenes!`);
   }
 }
 
