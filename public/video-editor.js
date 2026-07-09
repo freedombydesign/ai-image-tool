@@ -1706,40 +1706,57 @@ class VideoEditor {
         extension = 'webm';
       }
 
-      // Use XMLHttpRequest for better Safari compatibility
-      const formData = new FormData();
-      formData.append('audio', this.audioBlob, `audio.${extension}`);
+      // Step 1: Upload audio to Supabase (bypasses Vercel size limits)
+      this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
 
-      const result = await new Promise((resolve, reject) => {
+      const uploadFormData = new FormData();
+      uploadFormData.append('audio', this.audioBlob, `audio.${extension}`);
+
+      const uploadResult = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/transcribe', true);
+        xhr.open('POST', '/api/upload-audio', true);
 
         xhr.onload = function() {
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               resolve(JSON.parse(xhr.responseText));
             } catch (e) {
-              reject(new Error('Invalid JSON response'));
+              reject(new Error('Invalid upload response'));
             }
           } else {
             try {
               const err = JSON.parse(xhr.responseText);
-              reject(new Error(err.error || 'Transcription failed'));
+              reject(new Error(err.error || 'Upload failed'));
             } catch (e) {
-              reject(new Error('Transcription failed: ' + xhr.status));
+              reject(new Error('Upload failed: ' + xhr.status));
             }
           }
         };
 
         xhr.onerror = function() {
-          reject(new Error('Network error during transcription'));
+          reject(new Error('Network error during upload'));
         };
 
-        xhr.send(formData);
+        xhr.send(uploadFormData);
       });
 
-      if (result.error) {
-        throw new Error(result.error);
+      if (!uploadResult.url) {
+        throw new Error('Failed to get audio URL');
+      }
+
+      // Step 2: Transcribe from Supabase URL
+      this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
+
+      const transcribeResponse = await fetch('/api/transcribe-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl: uploadResult.url })
+      });
+
+      const result = await transcribeResponse.json();
+
+      if (!transcribeResponse.ok || result.error) {
+        throw new Error(result.error || 'Transcription failed');
       }
 
       console.log('Transcription for captions:', result);

@@ -1205,6 +1205,96 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
   }
 });
 
+// Upload audio to Supabase Storage
+app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Audio file is required' });
+    }
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileName = `audio_${Date.now()}_${req.file.originalname || 'audio.mp3'}`;
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('ai-tool-images')
+      .upload(`audio/${fileName}`, fileBuffer, {
+        contentType: req.file.mimetype || 'audio/mpeg',
+        upsert: true
+      });
+
+    // Cleanup local file
+    fs.unlinkSync(req.file.path);
+
+    if (error) throw error;
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('ai-tool-images')
+      .getPublicUrl(`audio/${fileName}`);
+
+    res.json({ success: true, url: urlData.publicUrl, path: data.path });
+  } catch (error) {
+    console.error('Audio upload error:', error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Transcribe audio from URL (for large files uploaded to Supabase)
+app.post('/api/transcribe-url', async (req, res) => {
+  try {
+    const { audioUrl } = req.body;
+
+    if (!audioUrl) {
+      return res.status(400).json({ error: 'audioUrl is required' });
+    }
+
+    console.log('Transcribing audio from URL:', audioUrl);
+
+    // Download audio from URL
+    const response = await fetch(audioUrl);
+    if (!response.ok) {
+      throw new Error('Failed to download audio from URL');
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Save to temp file
+    const tempPath = `/tmp/audio_${Date.now()}.mp3`;
+    fs.writeFileSync(tempPath, buffer);
+
+    // Transcribe with Whisper
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(tempPath),
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['segment', 'word']
+    });
+
+    // Cleanup
+    fs.unlinkSync(tempPath);
+
+    res.json({
+      success: true,
+      transcription: transcription.text,
+      segments: transcription.segments,
+      words: transcription.words
+    });
+
+  } catch (error) {
+    console.error('Transcription error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Transcribe audio using Whisper API with timestamps
 app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
   try {
