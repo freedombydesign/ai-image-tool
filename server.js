@@ -1135,21 +1135,17 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
     // Convert reference image to base64 data URI
     const refBase64 = fileToBase64DataUri(req.file);
 
-    // Use PhotoMaker for character consistency
-    // This model maintains face, hair, body type from reference
-    const PHOTOMAKER_VERSION = 'ddfc2b08d209f9fa8c1uj63b158a5e58f09b2b89c2w6bc3pj8qf89b59acf8d';
-
-    // Alternative: IP-Adapter FaceID Plus which is better for full character
-    const IPADAPTER_VERSION = '6ce5c70e9e9f0507c1a3f2e5c2a2b8c4d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4';
-
     // Using flux-pulid which combines Flux quality with face/character preservation
-    const response = await fetch('https://api.replicate.com/v1/models/zsxkib/flux-pulid/predictions', {
+    const PULID_VERSION = '8baa7ef2255075b46f4d91cd238c21d31181b3e6a864463f967960bb0112525b';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        version: PULID_VERSION,
         input: {
           main_face_image: refBase64,
           prompt: prompt,
