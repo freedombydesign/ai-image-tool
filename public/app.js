@@ -127,6 +127,75 @@ let isPreviewMode = false;
 // YouTube inspiration reference for scene generation
 let sceneInspirationUrl = null;
 
+// Scene Persistence Functions
+function saveSceneHistory() {
+  try {
+    const validScenes = generatedScenes.filter(s => s && s.imageUrl);
+    if (validScenes.length === 0) return;
+
+    const sceneData = {
+      scenes: validScenes.map(s => ({
+        text: s.text,
+        imageUrl: s.imageUrl,
+        revisedPrompt: s.revisedPrompt || ''
+      })),
+      script: scriptInput?.value || '',
+      timestamp: Date.now()
+    };
+
+    localStorage.setItem('sceneHistory', JSON.stringify(sceneData));
+    console.log('Scene history saved:', validScenes.length, 'scenes');
+  } catch (e) {
+    console.error('Failed to save scene history:', e);
+  }
+}
+
+function loadSceneHistory() {
+  try {
+    const saved = localStorage.getItem('sceneHistory');
+    if (!saved) return null;
+    return JSON.parse(saved);
+  } catch (e) {
+    console.error('Failed to load scene history:', e);
+    return null;
+  }
+}
+
+function restoreSceneHistory() {
+  const sceneData = loadSceneHistory();
+  if (!sceneData || !sceneData.scenes || sceneData.scenes.length === 0) return;
+
+  // Restore script if present
+  if (sceneData.script && scriptInput) {
+    scriptInput.value = sceneData.script;
+  }
+
+  // Restore scenes
+  generatedScenes = sceneData.scenes.map((s, i) => ({
+    text: s.text,
+    imageUrl: s.imageUrl,
+    revisedPrompt: s.revisedPrompt || ''
+  }));
+
+  // Render the scene cards
+  const gallery = document.getElementById('scene-gallery');
+  if (!gallery) return;
+
+  gallery.innerHTML = '';
+  gallery.hidden = false;
+
+  generatedScenes.forEach((scene, index) => {
+    const card = createSceneCard(index, scene.text, scene.imageUrl);
+    gallery.appendChild(card);
+  });
+
+  // Show the gallery section
+  const gallerySection = document.querySelector('.batch-results');
+  if (gallerySection) gallerySection.hidden = false;
+
+  console.log('Restored', generatedScenes.length, 'scenes from history');
+}
+
 // Style Anchor for consistent visual style across scenes
 let styleAnchor = null; // { sceneIndex, imageUrl, style, prompt }
 
@@ -1330,6 +1399,7 @@ async function generateFromVisualScenes() {
 
   if (successCount > 0) {
     showToast(`Generated ${successCount} scene${successCount !== 1 ? 's' : ''} successfully!`, false);
+    saveSceneHistory(); // Persist scenes to localStorage
   }
   if (failCount > 0) {
     showToast(`${failCount} scene${failCount !== 1 ? 's' : ''} failed to generate`);
@@ -1682,6 +1752,7 @@ async function generatePreviewScenes() {
 
   if (successCount > 0) {
     showToast(`Preview: ${successCount} scene${successCount !== 1 ? 's' : ''} generated. Review and adjust style before generating all.`, false);
+    saveSceneHistory(); // Persist scenes to localStorage
   }
 
   scenesContainer.scrollIntoView({ behavior: 'smooth' });
@@ -1771,6 +1842,7 @@ async function generateBatchScenes() {
 
   if (successCount > 0) {
     showToast(`Generated ${successCount} scene${successCount !== 1 ? 's' : ''} successfully!`, false);
+    saveSceneHistory(); // Persist scenes to localStorage
   }
   if (failCount > 0) {
     showToast(`${failCount} scene${failCount !== 1 ? 's' : ''} failed to generate`);
@@ -2253,6 +2325,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Initialize Supabase connection and load data
   await initSupabaseSync();
+
+  // Restore saved scenes from localStorage
+  restoreSceneHistory();
 
   // Initialize avatar upload functionality
   initAvatarUpload();
