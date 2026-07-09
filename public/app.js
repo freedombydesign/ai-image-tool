@@ -1,5 +1,9 @@
 // Style Presets - Prompt Engineering for each visual style
 const STYLE_PRESETS = {
+  'photorealistic': {
+    name: 'Photorealistic Film',
+    prompt: 'photorealistic cinematic film still, professional photography, realistic lighting, shallow depth of field, 8K ultra HD quality, natural skin textures, movie scene aesthetic, ARRI camera look, film grain, lifelike proportions',
+  },
   'cinematic-2d': {
     name: 'Cinematic 2D Animation',
     prompt: 'cinematic 2D animated style, high quality animation, smooth gradients, professional animated movie aesthetic, vibrant colors, clean lines, Disney/Pixar inspired 2D look',
