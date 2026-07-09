@@ -228,7 +228,91 @@ let isPreviewMode = false;
 let sceneInspirationUrl = null;
 
 // Scene Persistence Functions
+let currentBatchId = null;
+
+// Get or create user ID for Supabase
+function getUserId() {
+  let userId = localStorage.getItem('ai_tool_user_id');
+  if (!userId) {
+    userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('ai_tool_user_id', userId);
+  }
+  return userId;
+}
+
+// Save scenes to Supabase
+async function saveScenesToSupabase() {
+  const validScenes = generatedScenes.filter(s => s && s.imageUrl);
+  if (validScenes.length === 0) return;
+
+  if (!currentBatchId) {
+    currentBatchId = 'batch_' + Date.now();
+  }
+
+  try {
+    const response = await fetch('/api/db/batch-scenes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: getUserId(),
+        batchId: currentBatchId,
+        scenes: validScenes.map(s => ({
+          imageUrl: s.imageUrl,
+          text: s.text || '',
+          style: lastGenerateParams?.style || '',
+          model: lastGenerateParams?.model || 'unknown'
+        }))
+      })
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      console.log('Scenes saved to Supabase:', validScenes.length);
+    } else {
+      console.error('Supabase save error:', data.error);
+    }
+  } catch (e) {
+    console.error('Failed to save to Supabase:', e);
+  }
+}
+
+// Load scene batches from Supabase
+async function loadSceneBatchesFromSupabase() {
+  try {
+    const response = await fetch(`/api/db/batch-scenes/${getUserId()}`);
+    const data = await response.json();
+
+    if (data.success && data.batches && data.batches.length > 0) {
+      return data.batches;
+    }
+    return [];
+  } catch (e) {
+    console.error('Failed to load from Supabase:', e);
+    return [];
+  }
+}
+
+// Load specific batch from Supabase
+async function loadBatchFromSupabase(batchId) {
+  try {
+    const response = await fetch(`/api/db/batch-scenes/${getUserId()}/${batchId}`);
+    const data = await response.json();
+
+    if (data.success && data.scenes) {
+      return data.scenes;
+    }
+    return [];
+  } catch (e) {
+    console.error('Failed to load batch from Supabase:', e);
+    return [];
+  }
+}
+
 function saveSceneHistory() {
+  // Save to Supabase (primary)
+  saveScenesToSupabase();
+
+  // Also try localStorage as backup (may fail for large batches)
   try {
     const validScenes = generatedScenes.filter(s => s && s.imageUrl);
     if (validScenes.length === 0) return;
@@ -244,9 +328,9 @@ function saveSceneHistory() {
     };
 
     localStorage.setItem('sceneHistory', JSON.stringify(sceneData));
-    console.log('Scene history saved:', validScenes.length, 'scenes');
+    console.log('Scene history saved to localStorage:', validScenes.length, 'scenes');
   } catch (e) {
-    console.error('Failed to save scene history:', e);
+    console.warn('localStorage backup failed (expected for large batches):', e.message);
   }
 }
 

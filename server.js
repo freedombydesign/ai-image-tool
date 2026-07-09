@@ -1825,6 +1825,155 @@ app.get('/api/db/avatar-video-cache/:userId', async (req, res) => {
 });
 
 // ============================================
+// BATCH SCENES STORAGE (SUPABASE)
+// ============================================
+
+// Save batch scenes to Supabase
+app.post('/api/db/batch-scenes', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, batchId, scenes } = req.body;
+
+    if (!userId || !batchId || !scenes || !Array.isArray(scenes)) {
+      return res.status(400).json({ error: 'userId, batchId, and scenes array required' });
+    }
+
+    // Prepare scene records
+    const sceneRecords = scenes.map((scene, index) => ({
+      user_id: userId,
+      batch_id: batchId,
+      scene_index: index,
+      image_url: scene.imageUrl,
+      prompt: scene.text || scene.prompt || '',
+      style: scene.style || '',
+      model: scene.model || 'unknown'
+    }));
+
+    // Insert all scenes
+    const { data, error } = await supabase
+      .from('ai_tool_batch_scenes')
+      .insert(sceneRecords)
+      .select();
+
+    if (error) throw error;
+
+    console.log(`Saved ${sceneRecords.length} scenes to Supabase for batch ${batchId}`);
+    res.json({ success: true, count: sceneRecords.length });
+  } catch (error) {
+    console.error('Save batch scenes error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get batch scenes history for user
+app.get('/api/db/batch-scenes/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('ai_tool_batch_scenes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Group by batch_id
+    const batches = {};
+    (data || []).forEach(scene => {
+      if (!batches[scene.batch_id]) {
+        batches[scene.batch_id] = {
+          batchId: scene.batch_id,
+          createdAt: scene.created_at,
+          scenes: []
+        };
+      }
+      batches[scene.batch_id].scenes.push({
+        index: scene.scene_index,
+        imageUrl: scene.image_url,
+        text: scene.prompt,
+        style: scene.style,
+        model: scene.model
+      });
+    });
+
+    // Sort scenes within each batch by index
+    Object.values(batches).forEach(batch => {
+      batch.scenes.sort((a, b) => a.index - b.index);
+    });
+
+    res.json({ success: true, batches: Object.values(batches) });
+  } catch (error) {
+    console.error('Get batch scenes error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get specific batch
+app.get('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, batchId } = req.params;
+
+    const { data, error } = await supabase
+      .from('ai_tool_batch_scenes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('batch_id', batchId)
+      .order('scene_index', { ascending: true });
+
+    if (error) throw error;
+
+    const scenes = (data || []).map(scene => ({
+      index: scene.scene_index,
+      imageUrl: scene.image_url,
+      text: scene.prompt,
+      style: scene.style,
+      model: scene.model
+    }));
+
+    res.json({ success: true, scenes });
+  } catch (error) {
+    console.error('Get batch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a batch
+app.delete('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, batchId } = req.params;
+
+    const { error } = await supabase
+      .from('ai_tool_batch_scenes')
+      .delete()
+      .eq('user_id', userId)
+      .eq('batch_id', batchId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete batch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // IMAGE-TO-VIDEO GENERATION
 // ============================================
 
