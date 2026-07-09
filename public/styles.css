@@ -997,18 +997,26 @@ footer {
 
 .scenes-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 1rem;
 }
 
 .scenes-header h3 {
   font-size: 1.25rem;
+  margin: 0;
 }
 
 .scenes-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.scenes-actions .btn {
+  white-space: nowrap;
 }
 
 /* Preview Header */
