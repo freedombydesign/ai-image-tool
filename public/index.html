@@ -478,6 +478,18 @@
               </div>
             </div>
             <div id="imported-scenes" class="imported-scenes-grid"></div>
+
+            <!-- Scene Duration Control -->
+            <div class="form-group slider-group" id="video-scene-duration-group" style="margin-top: 1rem;">
+              <label for="video-scene-duration">Scene Duration</label>
+              <div class="slider-container">
+                <span class="slider-min">3s</span>
+                <input type="range" id="video-scene-duration" min="3" max="30" value="6" step="1" onchange="updateAllSceneDurations(this.value)">
+                <span class="slider-max">30s</span>
+                <span id="video-scene-duration-display" class="slider-value">6 sec</span>
+              </div>
+              <button class="btn small secondary" onclick="applySceneDuration()" style="margin-top: 0.5rem;">Apply to All Scenes</button>
+            </div>
           </div>
 
           <!-- Step 2: Audio -->

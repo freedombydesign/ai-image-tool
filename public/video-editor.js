@@ -2494,7 +2494,43 @@ class VideoEditor {
 let videoEditor;
 document.addEventListener('DOMContentLoaded', () => {
   videoEditor = new VideoEditor();
+
+  // Set up video scene duration slider
+  const durationSlider = document.getElementById('video-scene-duration');
+  const durationDisplay = document.getElementById('video-scene-duration-display');
+  if (durationSlider && durationDisplay) {
+    durationSlider.addEventListener('input', () => {
+      durationDisplay.textContent = `${durationSlider.value} sec`;
+    });
+  }
 });
 
 // Make it globally accessible
 window.videoEditor = videoEditor;
+
+// Update scene duration display
+function updateAllSceneDurations(value) {
+  const display = document.getElementById('video-scene-duration-display');
+  if (display) display.textContent = `${value} sec`;
+}
+
+// Apply scene duration to all scenes
+function applySceneDuration() {
+  if (!videoEditor || !videoEditor.scenes || videoEditor.scenes.length === 0) {
+    showToast('No scenes imported yet');
+    return;
+  }
+
+  const slider = document.getElementById('video-scene-duration');
+  const duration = parseInt(slider?.value || 6);
+
+  videoEditor.scenes.forEach((scene, index) => {
+    scene.duration = duration;
+    scene.startTime = index * duration;
+  });
+
+  videoEditor.renderTimeline();
+  videoEditor.updateTotalDuration();
+
+  showToast(`Applied ${duration} sec duration to all ${videoEditor.scenes.length} scenes`);
+}
