@@ -374,9 +374,35 @@ function getBrandInstructions() {
 // For consistent character appearance across all scenes
 // ============================================
 
-let avatarEnabled = false;
-let avatarImageData = null; // Base64 image data (for reference display)
-let avatarDescription = ''; // Text description used in prompts
+// Load avatar state from localStorage
+const savedAvatar = loadAvatarState();
+let avatarEnabled = savedAvatar.enabled;
+let avatarImageData = savedAvatar.imageData;
+let avatarDescription = savedAvatar.description;
+
+function loadAvatarState() {
+  try {
+    const saved = localStorage.getItem('avatarState');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load avatar state:', e);
+  }
+  return { enabled: false, imageData: null, description: '' };
+}
+
+function saveAvatarState() {
+  try {
+    localStorage.setItem('avatarState', JSON.stringify({
+      enabled: avatarEnabled,
+      imageData: avatarImageData,
+      description: avatarDescription
+    }));
+  } catch (e) {
+    console.error('Failed to save avatar state:', e);
+  }
+}
 
 function toggleAvatarPanel() {
   const panel = document.getElementById('avatar-upload-panel');
@@ -399,6 +425,7 @@ function toggleAvatarUsage() {
   }
 
   updateAvatarStatusIndicators(); // Update status across all tabs
+  saveAvatarState(); // Auto-save to localStorage
   showToast(avatarEnabled ? 'Avatar will be used in generation' : 'Avatar disabled');
 }
 
@@ -440,6 +467,7 @@ function handleAvatarUpload(file) {
     }
 
     updateAvatarStatusIndicators(); // Update status across all tabs
+    saveAvatarState(); // Auto-save to localStorage
     showToast('Avatar uploaded! Describe your character for best results.');
   };
   reader.readAsDataURL(file);
@@ -468,6 +496,7 @@ function removeAvatar() {
   if (checkbox) checkbox.checked = false;
 
   updateAvatarStatusIndicators(); // Update status across all tabs
+  saveAvatarState(); // Auto-save to localStorage
   showToast('Avatar removed');
 }
 
@@ -493,6 +522,28 @@ function initAvatarUpload() {
   const placeholder = document.getElementById('avatar-placeholder');
   const removeBtn = document.getElementById('remove-avatar-btn');
   const descInput = document.getElementById('avatar-description');
+  const preview = document.getElementById('avatar-preview');
+  const avatarImage = document.getElementById('avatar-image');
+  const descSection = document.getElementById('avatar-description-section');
+  const statusEl = document.getElementById('avatar-status');
+  const checkbox = document.getElementById('avatar-enabled');
+
+  // Restore saved avatar state on page load
+  if (avatarImageData) {
+    if (placeholder) placeholder.hidden = true;
+    if (preview) {
+      preview.hidden = false;
+      if (avatarImage) avatarImage.src = avatarImageData;
+    }
+    if (descSection) descSection.hidden = false;
+    if (descInput) descInput.value = avatarDescription;
+    if (checkbox) checkbox.checked = avatarEnabled;
+    if (statusEl) {
+      statusEl.textContent = avatarEnabled ? 'Active' : 'Uploaded';
+      statusEl.classList.toggle('active', avatarEnabled);
+    }
+    updateAvatarStatusIndicators();
+  }
 
   if (placeholder) {
     placeholder.addEventListener('click', () => {
@@ -539,6 +590,7 @@ function initAvatarUpload() {
   if (descInput) {
     descInput.addEventListener('input', () => {
       avatarDescription = descInput.value.trim();
+      saveAvatarState(); // Auto-save description changes
     });
   }
 }
