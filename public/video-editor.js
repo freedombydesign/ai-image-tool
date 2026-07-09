@@ -436,7 +436,7 @@ class VideoEditor {
   }
 
   // Import scenes from batch generator
-  importFromBatch() {
+  async importFromBatch() {
     let scenesToImport = [];
 
     // Try 1: Get from generatedScenes array
@@ -456,7 +456,27 @@ class VideoEditor {
       }
     }
 
-    // Try 3: Recover from localStorage
+    // Try 3: Load from Supabase (most reliable after refresh)
+    if (scenesToImport.length === 0) {
+      try {
+        showToast('Loading scenes from Supabase...', 'info');
+        const userId = localStorage.getItem('ai_tool_user_id');
+        if (userId) {
+          const response = await fetch(`/api/db/batch-scenes/${userId}`);
+          const data = await response.json();
+          if (data.success && data.batches && data.batches.length > 0) {
+            // Get most recent batch
+            const latestBatch = data.batches[0];
+            scenesToImport = latestBatch.scenes.filter(s => s && s.imageUrl);
+            console.log('Loaded', scenesToImport.length, 'scenes from Supabase');
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load from Supabase:', e);
+      }
+    }
+
+    // Try 4: Recover from localStorage (fallback)
     if (scenesToImport.length === 0) {
       try {
         const saved = localStorage.getItem('sceneHistory');
