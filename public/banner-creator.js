@@ -510,20 +510,21 @@ class BannerCreator {
       return;
     }
 
-    showLoading('Generating background...');
+    showLoading('Generating background (Flux - fast)...');
 
     try {
       // Enhance prompt for banner dimensions
       const enhancedPrompt = `${prompt}, wide panoramic composition suitable for a YouTube channel banner, 16:9 aspect ratio, no text or logos`;
 
+      // Use Flux Schnell for faster generation (3-5 seconds vs 15-20 for DALL-E)
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: enhancedPrompt,
-          size: '1792x1024', // Closest DALL-E size to banner ratio
+          size: '1792x1024',
           quality: 'standard',
-          style: 'vivid'
+          model: 'flux-schnell' // Fast model
         })
       });
 
