@@ -886,13 +886,19 @@ class VideoEditor {
         URL.revokeObjectURL(this.currentAudioUrl);
       }
 
-      const url = URL.createObjectURL(blob);
+      // Firefox fix: ensure correct MIME type
+      let audioBlob = blob;
+      if (!blob.type || blob.type === 'application/octet-stream') {
+        // Try to detect type from file signature or default to mp3
+        audioBlob = new Blob([blob], { type: 'audio/mpeg' });
+      }
+
+      const url = URL.createObjectURL(audioBlob);
       this.currentAudioUrl = url;
 
       // Set up audio player with error handling
       this.audioPlayer.onerror = (e) => {
         console.error('Audio player error:', e);
-        // Try to get more info about the error
         const error = this.audioPlayer.error;
         if (error) {
           console.error('Audio error code:', error.code, 'message:', error.message);
@@ -912,7 +918,15 @@ class VideoEditor {
 
       this.audioPlayer.src = url;
       this.audioPlayer.load(); // Force reload
-      this.audioPreview.hidden = false;
+
+      // Show audio preview section - Firefox fix: use style directly
+      if (this.audioPreview) {
+        this.audioPreview.hidden = false;
+        this.audioPreview.style.display = 'block';
+        console.log('Audio preview shown');
+      } else {
+        console.error('audioPreview element not found!');
+      }
 
       // Try to decode audio for waveform (may fail for some formats)
       try {
