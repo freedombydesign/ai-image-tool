@@ -1095,14 +1095,17 @@ footer {
 
 .scene-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0 1rem 1rem;
 }
 
 .scene-actions .btn {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 80px;
   padding: 0.5rem;
   font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 /* Preview Single Scene Button */
@@ -3507,12 +3510,26 @@ footer {
 
 .avatar-toggle-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
   margin-top: 1rem;
   padding: 0.75rem;
   background: var(--surface-light);
   border-radius: 8px;
+}
+
+.instantid-note {
+  width: 100%;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  padding-left: 3.5rem;
+}
+
+#instantid-row {
+  background: linear-gradient(135deg, var(--surface-light), rgba(99, 102, 241, 0.1));
+  border: 1px solid var(--primary);
 }
 
 /* Avatar Quick Status (for Thumbnail & Single Image tabs) */

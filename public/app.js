@@ -479,6 +479,7 @@ const savedAvatar = loadAvatarStateLocal();
 let avatarEnabled = savedAvatar.enabled;
 let avatarImageData = savedAvatar.imageData;
 let avatarDescription = savedAvatar.description;
+let useInstantID = savedAvatar.useInstantID || false;
 
 // Load from localStorage (synchronous, for initial render)
 function loadAvatarStateLocal() {
@@ -490,8 +491,26 @@ function loadAvatarStateLocal() {
   } catch (e) {
     console.error('Failed to load avatar state:', e);
   }
-  return { enabled: false, imageData: null, description: '' };
+  return { enabled: false, imageData: null, description: '', useInstantID: false };
 }
+
+// Toggle InstantID face matching
+function toggleInstantID() {
+  const checkbox = document.getElementById('use-instantid');
+  useInstantID = checkbox?.checked || false;
+  saveAvatarState();
+
+  if (useInstantID && !avatarImageData) {
+    showToast('Please upload an avatar photo first');
+    checkbox.checked = false;
+    useInstantID = false;
+  } else if (useInstantID) {
+    showToast('InstantID enabled - scenes will match your face!');
+  }
+}
+
+// Make toggleInstantID available globally
+window.toggleInstantID = toggleInstantID;
 
 // Load from Supabase (async, called on page load)
 async function loadAvatarStateFromDB() {
@@ -521,7 +540,8 @@ async function saveAvatarState() {
     localStorage.setItem('avatarState', JSON.stringify({
       enabled: avatarEnabled,
       imageData: avatarImageData,
-      description: avatarDescription
+      description: avatarDescription,
+      useInstantID: useInstantID
     }));
   } catch (e) {
     console.error('Failed to save avatar state to localStorage:', e);
@@ -730,6 +750,9 @@ function initAvatarUpload() {
     if (descSection) descSection.hidden = false;
     if (descInput) descInput.value = avatarDescription;
     if (checkbox) checkbox.checked = avatarEnabled;
+    // Restore InstantID checkbox
+    const instantIdCheckbox = document.getElementById('use-instantid');
+    if (instantIdCheckbox) instantIdCheckbox.checked = useInstantID;
     if (statusEl) {
       statusEl.textContent = avatarEnabled ? 'Active' : 'Uploaded';
       statusEl.classList.toggle('active', avatarEnabled);
@@ -1698,7 +1721,13 @@ async function generatePreviewScenes() {
     scenesGrid.appendChild(card);
   });
 
-  showLoading('Generating preview...', `0 of ${previewScenes.length} scenes`);
+  // Check if using InstantID for face matching
+  const shouldUseInstantID = useInstantID && avatarImageData;
+  if (shouldUseInstantID) {
+    showLoading('Generating preview with your face (InstantID)...', `0 of ${previewScenes.length} scenes`);
+  } else {
+    showLoading('Generating preview...', `0 of ${previewScenes.length} scenes`);
+  }
 
   let successCount = 0;
   let failCount = 0;
@@ -1712,13 +1741,33 @@ async function generatePreviewScenes() {
 
     try {
       const model = document.getElementById('batch-model')?.value || 'dall-e-3';
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
-      });
+      let data;
 
-      const data = await response.json();
+      if (shouldUseInstantID) {
+        // Use InstantID to generate with user's face
+        const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+        const [width, height] = size.split('x').map(Number);
+
+        const formData = new FormData();
+        formData.append('faceImage', avatarBlob, 'avatar.png');
+        formData.append('prompt', styledPrompt);
+        formData.append('width', width);
+        formData.append('height', height);
+
+        const response = await fetch('/api/generate-with-face', {
+          method: 'POST',
+          body: formData
+        });
+        data = await response.json();
+      } else {
+        // Use regular generation
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+        });
+        data = await response.json();
+      }
 
       if (data.error) {
         throw new Error(data.error);
@@ -1806,6 +1855,12 @@ async function generateBatchScenes() {
   // Get selected model
   const model = document.getElementById('batch-model')?.value || 'dall-e-3';
 
+  // Check if using InstantID for face matching
+  const shouldUseInstantID = useInstantID && avatarImageData;
+  if (shouldUseInstantID) {
+    showLoading('Generating scenes with your face (InstantID)...', `0 of ${scenes.length} scenes`);
+  }
+
   // Generate scenes sequentially to avoid rate limits
   for (let i = 0; i < scenes.length; i++) {
     const sceneText = scenes[i];
@@ -1814,13 +1869,33 @@ async function generateBatchScenes() {
     updateLoadingProgress(i + 1, scenes.length);
 
     try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
-      });
+      let data;
 
-      const data = await response.json();
+      if (shouldUseInstantID) {
+        // Use InstantID to generate with user's face
+        const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+        const [width, height] = size.split('x').map(Number);
+
+        const formData = new FormData();
+        formData.append('faceImage', avatarBlob, 'avatar.png');
+        formData.append('prompt', styledPrompt);
+        formData.append('width', width);
+        formData.append('height', height);
+
+        const response = await fetch('/api/generate-with-face', {
+          method: 'POST',
+          body: formData
+        });
+        data = await response.json();
+      } else {
+        // Use regular generation
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+        });
+        data = await response.json();
+      }
 
       if (data.error) {
         throw new Error(data.error);
