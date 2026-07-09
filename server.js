@@ -342,8 +342,19 @@ app.post('/api/generate', async (req, res) => {
           n: 1,
           size: openaiSize
         });
+
+        // gpt-image-2 returns base64 by default, convert to data URL
+        let imageUrl;
+        if (response.data[0].url) {
+          imageUrl = response.data[0].url;
+        } else if (response.data[0].b64_json) {
+          imageUrl = `data:image/png;base64,${response.data[0].b64_json}`;
+        } else {
+          throw new Error('No image data in response');
+        }
+
         result = {
-          image: response.data[0].url,
+          image: imageUrl,
           revised_prompt: response.data[0].revised_prompt,
           model: model
         };
