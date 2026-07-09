@@ -1498,6 +1498,30 @@ function updateScriptStats() {
   if (previewCostDisplay) {
     previewCostDisplay.textContent = `(Preview: ~$${previewCost.toFixed(2)})`;
   }
+
+  // Update estimates panel
+  const estimatesPanel = document.getElementById('script-estimates');
+  const estimatedDuration = document.getElementById('estimated-duration');
+  const estimatedCostEl = document.getElementById('estimated-cost');
+
+  if (estimatesPanel && numScenes > 0) {
+    estimatesPanel.hidden = false;
+
+    // Estimate duration: ~3-5 seconds per scene
+    const avgSecondsPerScene = 4;
+    const totalSeconds = numScenes * avgSecondsPerScene;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    estimatedDuration.textContent = `~${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+    // Show cost estimate
+    estimatedCostEl.textContent = `~$${totalCost.toFixed(2)}`;
+
+    // Check sync with uploaded audio
+    checkAudioSync(totalSeconds);
+  } else if (estimatesPanel) {
+    estimatesPanel.hidden = true;
+  }
 }
 
 scriptInput.addEventListener('input', updateScriptStats);
@@ -1995,11 +2019,12 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
       <div class="scene-text">${truncatedText}</div>
     </div>
     <div class="scene-actions">
-      <button class="btn preview-single-btn" onclick="previewSingleScene(${index})" title="Generate only this scene">
+      <button class="btn preview-single-btn" onclick="previewSingleScene(${index})" title="Generate this scene">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-          <polygon points="5 3 19 12 5 21 5 3"/>
+          <circle cx="12" cy="12" r="10"/>
+          <polygon points="10 8 16 12 10 16 10 8"/>
         </svg>
-        Preview
+        Generate
       </button>
       <button class="scene-anchor-btn ${isAnchor ? 'is-anchor' : ''}" onclick="setStyleAnchor(${index})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2406,6 +2431,463 @@ if (faceSwapAllBtn) {
   faceSwapAllBtn.addEventListener('click', faceSwapAllScenes);
 }
 
+// ============================================
+// SLIDESHOW FUNCTIONALITY
+// ============================================
+let slideshowState = {
+  currentIndex: 0,
+  isPlaying: false,
+  intervalId: null,
+  scenes: []
+};
+
+function openSlideshow() {
+  // Get scenes that have images
+  const scenesWithImages = generatedScenes.filter(s => s && s.imageUrl);
+
+  if (scenesWithImages.length === 0) {
+    showToast('No generated scenes to preview. Generate some scenes first!');
+    return;
+  }
+
+  slideshowState.scenes = scenesWithImages;
+  slideshowState.currentIndex = 0;
+  slideshowState.isPlaying = false;
+
+  const modal = document.getElementById('slideshow-modal');
+  modal.hidden = false;
+
+  updateSlideshowDisplay();
+
+  // Auto-start playback
+  setTimeout(() => toggleSlideshowPlayback(), 500);
+}
+
+function closeSlideshow() {
+  const modal = document.getElementById('slideshow-modal');
+  const audio = document.getElementById('slideshow-audio');
+
+  modal.hidden = true;
+  document.body.style.overflow = '';
+  stopSlideshowPlayback();
+
+  // Stop audio if playing
+  if (audio) {
+    audio.pause();
+    audio.currentTime = 0;
+  }
+}
+
+function updateSlideshowDisplay() {
+  const scene = slideshowState.scenes[slideshowState.currentIndex];
+  if (!scene) return;
+
+  const img = document.getElementById('slideshow-image');
+  const text = document.getElementById('slideshow-scene-text');
+  const counter = document.getElementById('slideshow-counter');
+  const progressFill = document.getElementById('slideshow-progress-fill');
+
+  img.src = scene.imageUrl;
+  text.textContent = scene.text || '';
+  counter.textContent = `${slideshowState.currentIndex + 1} / ${slideshowState.scenes.length}`;
+
+  const progress = ((slideshowState.currentIndex + 1) / slideshowState.scenes.length) * 100;
+  progressFill.style.width = `${progress}%`;
+}
+
+function slideshowNext() {
+  slideshowState.currentIndex = (slideshowState.currentIndex + 1) % slideshowState.scenes.length;
+  updateSlideshowDisplay();
+}
+
+function slideshowPrev() {
+  slideshowState.currentIndex = (slideshowState.currentIndex - 1 + slideshowState.scenes.length) % slideshowState.scenes.length;
+  updateSlideshowDisplay();
+}
+
+function toggleSlideshowPlayback() {
+  if (slideshowState.isPlaying) {
+    stopSlideshowPlayback();
+  } else {
+    startSlideshowPlayback();
+  }
+}
+
+function startSlideshowPlayback() {
+  slideshowState.isPlaying = true;
+  document.getElementById('slideshow-play-icon').hidden = true;
+  document.getElementById('slideshow-pause-icon').hidden = false;
+
+  // Change scene every 3 seconds
+  slideshowState.intervalId = setInterval(() => {
+    slideshowNext();
+  }, 3000);
+}
+
+function stopSlideshowPlayback() {
+  slideshowState.isPlaying = false;
+  document.getElementById('slideshow-play-icon').hidden = false;
+  document.getElementById('slideshow-pause-icon').hidden = true;
+
+  if (slideshowState.intervalId) {
+    clearInterval(slideshowState.intervalId);
+    slideshowState.intervalId = null;
+  }
+}
+
+// Slideshow Button Event Listeners
+const playSlideshowBtn = document.getElementById('play-slideshow-btn');
+if (playSlideshowBtn) {
+  playSlideshowBtn.addEventListener('click', () => {
+    // Use audio-enabled version if available
+    if (typeof openSlideshowWithAudio === 'function') {
+      openSlideshowWithAudio();
+    } else {
+      openSlideshow();
+    }
+  });
+}
+
+const closeSlideshowBtn = document.getElementById('close-slideshow-btn');
+if (closeSlideshowBtn) {
+  closeSlideshowBtn.addEventListener('click', closeSlideshow);
+}
+
+const slideshowPrevBtn = document.getElementById('slideshow-prev-btn');
+if (slideshowPrevBtn) {
+  slideshowPrevBtn.addEventListener('click', slideshowPrev);
+}
+
+const slideshowNextBtn = document.getElementById('slideshow-next-btn');
+if (slideshowNextBtn) {
+  slideshowNextBtn.addEventListener('click', slideshowNext);
+}
+
+const slideshowPlayPauseBtn = document.getElementById('slideshow-play-pause-btn');
+if (slideshowPlayPauseBtn) {
+  slideshowPlayPauseBtn.addEventListener('click', toggleSlideshowPlayback);
+}
+
+// Keyboard controls for slideshow
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('slideshow-modal');
+  if (modal && !modal.hidden) {
+    if (e.key === 'Escape') {
+      closeSlideshow();
+    } else if (e.key === 'ArrowRight') {
+      slideshowNext();
+    } else if (e.key === 'ArrowLeft') {
+      slideshowPrev();
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      toggleSlideshowPlayback();
+    }
+  }
+});
+
+// ==== AUDIO PREVIEW FUNCTIONALITY ====
+
+// Preview audio state
+let previewAudioData = null;
+let previewAudioDuration = 0;
+
+// Check audio sync between script duration and uploaded audio
+function checkAudioSync(scriptDurationSeconds) {
+  const syncInfo = document.getElementById('sync-info');
+  const syncStatus = document.getElementById('sync-status');
+  const syncRecommendation = document.getElementById('sync-recommendation');
+
+  if (!syncInfo || !previewAudioData || previewAudioDuration === 0) {
+    if (syncInfo) syncInfo.hidden = true;
+    return;
+  }
+
+  syncInfo.hidden = false;
+
+  const audioDuration = previewAudioDuration;
+  const difference = Math.abs(audioDuration - scriptDurationSeconds);
+  const percentDiff = (difference / audioDuration) * 100;
+
+  if (percentDiff <= 15) {
+    // Good sync
+    syncStatus.innerHTML = `<span style="color: var(--success);">✅ Good sync!</span> Audio: ${formatTime(audioDuration)} | Scenes: ${formatTime(scriptDurationSeconds)}`;
+    syncRecommendation.textContent = 'Your audio and scene timing are well aligned.';
+    syncRecommendation.style.color = 'var(--success)';
+  } else if (audioDuration > scriptDurationSeconds) {
+    // Audio is longer - need more scenes
+    const extraScenes = Math.ceil((audioDuration - scriptDurationSeconds) / 4);
+    syncStatus.innerHTML = `<span style="color: var(--warning);">⚠️ Audio longer</span> Audio: ${formatTime(audioDuration)} | Scenes: ${formatTime(scriptDurationSeconds)}`;
+    syncRecommendation.textContent = `Consider adding ~${extraScenes} more scenes or increasing scene duration.`;
+    syncRecommendation.style.color = 'var(--warning)';
+  } else {
+    // Script is longer - too many scenes
+    const excessScenes = Math.ceil((scriptDurationSeconds - audioDuration) / 4);
+    syncStatus.innerHTML = `<span style="color: var(--warning);">⚠️ More scenes than audio</span> Audio: ${formatTime(audioDuration)} | Scenes: ${formatTime(scriptDurationSeconds)}`;
+    syncRecommendation.textContent = `Consider removing ~${excessScenes} scenes or shortening scene duration.`;
+    syncRecommendation.style.color = 'var(--warning)';
+  }
+}
+
+// Format seconds to MM:SS
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Setup preview audio upload
+function setupPreviewAudioUpload() {
+  const uploadArea = document.getElementById('preview-audio-upload-area');
+  const fileInput = document.getElementById('preview-audio-file');
+  const placeholder = document.getElementById('preview-audio-placeholder');
+  const loadedSection = document.getElementById('preview-audio-loaded');
+  const audioNameEl = document.getElementById('preview-audio-name');
+  const audioDurationEl = document.getElementById('preview-audio-duration');
+  const playBtn = document.getElementById('play-preview-audio-btn');
+  const removeBtn = document.getElementById('remove-preview-audio-btn');
+
+  if (!uploadArea || !fileInput) return;
+
+  // Click to upload
+  uploadArea.addEventListener('click', (e) => {
+    if (e.target.closest('#play-preview-audio-btn') || e.target.closest('#remove-preview-audio-btn')) {
+      return; // Don't trigger file dialog when clicking buttons
+    }
+    fileInput.click();
+  });
+
+  // Drag and drop
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+  });
+
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('audio/')) {
+      handlePreviewAudioFile(file);
+    }
+  });
+
+  // File input change
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      handlePreviewAudioFile(file);
+    }
+  });
+
+  // Play button
+  if (playBtn) {
+    playBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      playPreviewAudio();
+    });
+  }
+
+  // Remove button
+  if (removeBtn) {
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removePreviewAudio();
+    });
+  }
+}
+
+// Handle preview audio file
+function handlePreviewAudioFile(file) {
+  const placeholder = document.getElementById('preview-audio-placeholder');
+  const loadedSection = document.getElementById('preview-audio-loaded');
+  const audioNameEl = document.getElementById('preview-audio-name');
+  const audioDurationEl = document.getElementById('preview-audio-duration');
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    previewAudioData = e.target.result;
+
+    // Create temp audio to get duration
+    const tempAudio = new Audio(previewAudioData);
+    tempAudio.addEventListener('loadedmetadata', () => {
+      previewAudioDuration = tempAudio.duration;
+
+      // Update UI
+      audioNameEl.textContent = file.name;
+      audioDurationEl.textContent = formatTime(previewAudioDuration);
+
+      placeholder.hidden = true;
+      loadedSection.hidden = false;
+
+      // Re-check sync with current script
+      updateScriptStats();
+
+      showToast(`Audio loaded: ${file.name} (${formatTime(previewAudioDuration)})`, 'success');
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+// Play preview audio
+let previewAudioElement = null;
+function playPreviewAudio() {
+  const playBtn = document.getElementById('play-preview-audio-btn');
+
+  if (previewAudioElement && !previewAudioElement.paused) {
+    previewAudioElement.pause();
+    playBtn.textContent = '▶️ Play';
+    return;
+  }
+
+  if (previewAudioData) {
+    previewAudioElement = new Audio(previewAudioData);
+    previewAudioElement.play();
+    playBtn.textContent = '⏸️ Pause';
+
+    previewAudioElement.addEventListener('ended', () => {
+      playBtn.textContent = '▶️ Play';
+    });
+  }
+}
+
+// Remove preview audio
+function removePreviewAudio() {
+  previewAudioData = null;
+  previewAudioDuration = 0;
+
+  const placeholder = document.getElementById('preview-audio-placeholder');
+  const loadedSection = document.getElementById('preview-audio-loaded');
+  const syncInfo = document.getElementById('sync-info');
+
+  placeholder.hidden = false;
+  loadedSection.hidden = true;
+  if (syncInfo) syncInfo.hidden = true;
+
+  if (previewAudioElement) {
+    previewAudioElement.pause();
+    previewAudioElement = null;
+  }
+
+  showToast('Audio removed', 'info');
+}
+
+// Enhanced slideshow with audio sync
+function openSlideshowWithAudio() {
+  const scenesWithImages = generatedScenes.filter(s => s && s.imageUrl);
+  if (scenesWithImages.length === 0) {
+    showToast('No generated scenes to preview. Generate some scenes first!', 'error');
+    return;
+  }
+
+  slideshowState.scenes = scenesWithImages;
+  slideshowState.currentIndex = 0;
+  slideshowState.isPlaying = false;
+
+  const modal = document.getElementById('slideshow-modal');
+  const audioSection = document.getElementById('slideshow-audio-section');
+  const slideshowAudio = document.getElementById('slideshow-audio');
+
+  modal.hidden = false;
+  document.body.style.overflow = 'hidden';
+
+  // Setup audio if available
+  if (previewAudioData && slideshowAudio) {
+    slideshowAudio.src = previewAudioData;
+    audioSection.hidden = false;
+
+    // Setup audio time display
+    slideshowAudio.addEventListener('loadedmetadata', () => {
+      document.getElementById('slideshow-total-time').textContent = formatTime(slideshowAudio.duration);
+    });
+
+    slideshowAudio.addEventListener('timeupdate', updateSlideshowAudioProgress);
+  } else {
+    audioSection.hidden = true;
+  }
+
+  updateSlideshowDisplay();
+
+  // Auto-start playback with audio
+  setTimeout(() => {
+    startSlideshowPlayback();
+    if (previewAudioData && slideshowAudio) {
+      slideshowAudio.play().catch(() => {});
+    }
+  }, 500);
+}
+
+// Update audio progress during slideshow
+function updateSlideshowAudioProgress() {
+  const audio = document.getElementById('slideshow-audio');
+  const progressBar = document.getElementById('slideshow-audio-progress');
+  const currentTimeEl = document.getElementById('slideshow-current-time');
+  const syncIndicator = document.getElementById('sync-indicator');
+  const syncStatusText = document.getElementById('sync-status-text');
+
+  if (!audio || audio.paused) return;
+
+  const progress = (audio.currentTime / audio.duration) * 100;
+  progressBar.style.width = `${progress}%`;
+  currentTimeEl.textContent = formatTime(audio.currentTime);
+
+  // Calculate expected scene based on audio time
+  const avgSecondsPerScene = 4;
+  const expectedScene = Math.floor(audio.currentTime / avgSecondsPerScene);
+  const actualScene = slideshowState.currentIndex;
+
+  if (Math.abs(expectedScene - actualScene) <= 1) {
+    syncIndicator.style.color = 'var(--success)';
+    syncStatusText.textContent = 'Audio synced';
+  } else {
+    syncIndicator.style.color = 'var(--warning)';
+    syncStatusText.textContent = `Scene ${expectedScene + 1} expected`;
+  }
+}
+
+// Enhanced playback toggle with audio
+function toggleSlideshowPlaybackWithAudio() {
+  const audio = document.getElementById('slideshow-audio');
+
+  if (slideshowState.isPlaying) {
+    pauseSlideshowPlayback();
+    if (audio && previewAudioData) audio.pause();
+  } else {
+    startSlideshowPlayback();
+    if (audio && previewAudioData) {
+      audio.currentTime = slideshowState.currentIndex * 4; // Sync to current scene
+      audio.play().catch(() => {}); // Ignore autoplay errors
+    }
+  }
+}
+
+// Override original openSlideshow to use audio version
+const originalOpenSlideshow = typeof openSlideshow === 'function' ? openSlideshow : null;
+window.openSlideshow = openSlideshowWithAudio;
+
+// Override toggle playback to include audio
+const originalTogglePlayback = typeof toggleSlideshowPlayback === 'function' ? toggleSlideshowPlayback : null;
+window.toggleSlideshowPlayback = function() {
+  const audio = document.getElementById('slideshow-audio');
+
+  if (slideshowState.isPlaying) {
+    pauseSlideshowPlayback();
+    if (audio && previewAudioData && !audio.paused) audio.pause();
+  } else {
+    startSlideshowPlayback();
+    if (audio && previewAudioData) {
+      audio.currentTime = slideshowState.currentIndex * 4;
+      audio.play().catch(() => {});
+    }
+  }
+};
+
+// Initialize preview audio upload (call directly since script runs after DOM is ready)
+setupPreviewAudioUpload();
+
 // Preview Button Handler
 if (previewBtn) {
   previewBtn.addEventListener('click', generatePreviewScenes);
@@ -2647,6 +3129,74 @@ async function compressImage(base64, maxWidth = 800, quality = 0.7) {
     };
     img.onerror = () => resolve(base64); // Return original on error
     img.src = base64;
+  });
+}
+
+// Compress blob/URL to a smaller blob for API uploads (reduces Vercel payload size)
+async function compressImageBlob(imageSource, maxWidth = 1024, quality = 0.85) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Handle blob or URL
+      let imageUrl;
+      if (imageSource instanceof Blob) {
+        imageUrl = URL.createObjectURL(imageSource);
+      } else {
+        imageUrl = imageSource;
+      }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Scale down if larger than maxWidth
+        if (width > maxWidth || height > maxWidth) {
+          if (width > height) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          } else {
+            width = (width * maxWidth) / height;
+            height = maxWidth;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (imageSource instanceof Blob) {
+              URL.revokeObjectURL(imageUrl);
+            }
+            resolve(blob);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+
+      img.onerror = () => {
+        if (imageSource instanceof Blob) {
+          URL.revokeObjectURL(imageUrl);
+        }
+        // Return original blob on error
+        if (imageSource instanceof Blob) {
+          resolve(imageSource);
+        } else {
+          reject(new Error('Failed to load image'));
+        }
+      };
+
+      img.src = imageUrl;
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -3322,20 +3872,24 @@ async function faceSwapAllScenes() {
   let successCount = 0;
   let failCount = 0;
 
-  // Convert avatar to blob once
-  const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+  // Convert and compress avatar to blob once (reduces payload size for Vercel limits)
+  const rawAvatarBlob = await fetch(avatarImageData).then(r => r.blob());
+  const avatarBlob = await compressImageBlob(rawAvatarBlob, 1024, 0.85);
+  console.log(`Avatar compressed: ${(rawAvatarBlob.size / 1024).toFixed(1)}KB -> ${(avatarBlob.size / 1024).toFixed(1)}KB`);
 
   for (let i = 0; i < scenesWithImages.length; i++) {
     const scene = scenesWithImages[i];
     updateLoadingProgress(i + 1, scenesWithImages.length);
 
     try {
-      // Fetch scene image as blob
-      const sceneBlob = await fetch(scene.imageUrl).then(r => r.blob());
+      // Fetch and compress scene image to reduce payload size
+      const rawSceneBlob = await fetch(scene.imageUrl).then(r => r.blob());
+      const sceneBlob = await compressImageBlob(rawSceneBlob, 1024, 0.85);
+      console.log(`Scene ${i + 1} compressed: ${(rawSceneBlob.size / 1024).toFixed(1)}KB -> ${(sceneBlob.size / 1024).toFixed(1)}KB`);
 
       const formData = new FormData();
-      formData.append('sourceImage', sceneBlob, 'scene.png');
-      formData.append('faceImage', avatarBlob, 'avatar.png');
+      formData.append('sourceImage', sceneBlob, 'scene.jpg');
+      formData.append('faceImage', avatarBlob, 'avatar.jpg');
 
       const response = await fetch('/api/face-swap', {
         method: 'POST',

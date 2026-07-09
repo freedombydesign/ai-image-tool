@@ -95,6 +95,16 @@
               <span id="scene-count">0 scenes detected</span>
               <span id="char-count">0/20,000</span>
             </div>
+            <div class="script-estimates" id="script-estimates" hidden>
+              <div class="estimate-row">
+                <span class="estimate-label">📊 Estimated Duration:</span>
+                <span id="estimated-duration" class="estimate-value">~0:00</span>
+              </div>
+              <div class="estimate-row">
+                <span class="estimate-label">💰 Est. Generation Cost:</span>
+                <span id="estimated-cost" class="estimate-value">~$0.00</span>
+              </div>
+            </div>
           </div>
 
           <!-- Video Settings -->
@@ -123,6 +133,43 @@
                 <input type="number" id="manual-scene-count" min="1" max="100" value="10" placeholder="# scenes" class="manual-count-input" disabled>
               </div>
               <small class="help-text" id="scene-help">Scenes will be split by line breaks in your script</small>
+            </div>
+          </div>
+
+          <!-- Audio Preview Section -->
+          <div class="settings-card audio-preview-card">
+            <h4>🎙️ Audio Preview (Optional)</h4>
+            <p class="card-description">Upload your voiceover to preview timing sync before generating all scenes</p>
+
+            <div class="audio-upload-area" id="preview-audio-upload-area">
+              <input type="file" id="preview-audio-file" accept="audio/*" hidden>
+              <div class="upload-placeholder" id="preview-audio-placeholder">
+                <span class="upload-icon">🎵</span>
+                <span>Click to upload audio or drag & drop</span>
+                <span class="upload-hint">MP3, WAV, M4A supported</span>
+              </div>
+              <div class="audio-loaded" id="preview-audio-loaded" hidden>
+                <div class="audio-info">
+                  <span class="audio-icon">🎵</span>
+                  <div class="audio-details">
+                    <span id="preview-audio-name">audio.mp3</span>
+                    <span id="preview-audio-duration" class="audio-duration">0:00</span>
+                  </div>
+                </div>
+                <div class="audio-actions">
+                  <button class="btn text small" id="play-preview-audio-btn">▶️ Play</button>
+                  <button class="btn text small danger" id="remove-preview-audio-btn">🗑️ Remove</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="sync-info" id="sync-info" hidden>
+              <div class="sync-status" id="sync-status">
+                <!-- Sync status will be updated dynamically -->
+              </div>
+              <div class="sync-recommendation" id="sync-recommendation">
+                <!-- Recommendation will be shown here -->
+              </div>
             </div>
           </div>
 
@@ -376,6 +423,9 @@
           <div class="scenes-header">
             <h3>Generated Scenes</h3>
             <div class="scenes-actions">
+              <button class="btn accent" id="play-slideshow-btn" title="Play all scenes as a slideshow">
+                <span class="btn-icon">▶️</span> Play Slideshow
+              </button>
               <button class="btn primary" id="face-swap-all-btn" title="Swap your avatar face onto all scenes">
                 <span class="btn-icon">🔄</span> Face Swap All
               </button>
@@ -1690,6 +1740,65 @@
                   Download with Text
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slideshow Modal -->
+      <div id="slideshow-modal" class="slideshow-modal" hidden>
+        <div class="slideshow-content">
+          <button class="slideshow-close-btn" id="close-slideshow-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div class="slideshow-image-container">
+            <img id="slideshow-image" src="" alt="Scene">
+            <div class="slideshow-scene-text" id="slideshow-scene-text"></div>
+          </div>
+          <div class="slideshow-controls">
+            <button class="slideshow-nav-btn" id="slideshow-prev-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <button class="slideshow-play-btn" id="slideshow-play-pause-btn">
+              <svg id="slideshow-play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              <svg id="slideshow-pause-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden>
+                <line x1="6" y1="4" x2="6" y2="20"/>
+                <line x1="18" y1="4" x2="18" y2="20"/>
+              </svg>
+            </button>
+            <button class="slideshow-nav-btn" id="slideshow-next-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+          </div>
+          <div class="slideshow-progress">
+            <span id="slideshow-counter">1 / 1</span>
+            <div class="slideshow-progress-bar">
+              <div class="slideshow-progress-fill" id="slideshow-progress-fill"></div>
+            </div>
+          </div>
+
+          <!-- Audio Sync Controls -->
+          <div class="slideshow-audio-section" id="slideshow-audio-section" hidden>
+            <audio id="slideshow-audio" preload="auto"></audio>
+            <div class="slideshow-audio-controls">
+              <span class="slideshow-time" id="slideshow-current-time">0:00</span>
+              <div class="slideshow-audio-bar">
+                <div class="slideshow-audio-progress" id="slideshow-audio-progress"></div>
+              </div>
+              <span class="slideshow-time" id="slideshow-total-time">0:00</span>
+            </div>
+            <div class="slideshow-sync-status" id="slideshow-sync-status">
+              <span class="sync-indicator" id="sync-indicator">●</span>
+              <span id="sync-status-text">Audio synced</span>
             </div>
           </div>
         </div>
