@@ -330,9 +330,9 @@ app.post('/api/generate', async (req, res) => {
 
     switch (modelConfig.provider) {
       case 'openai':
-        // Note: style parameter removed - API no longer accepts it
+        // Using gpt-image-1 (successor to dall-e-3)
         const response = await openai.images.generate({
-          model: 'dall-e-3',
+          model: 'gpt-image-1',
           prompt,
           n: 1,
           size,
