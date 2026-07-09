@@ -10,9 +10,9 @@ const sharp = require('sharp');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize OpenAI
+// Initialize OpenAI (trim to remove any accidental whitespace/newlines from env vars)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: (process.env.OPENAI_API_KEY || '').trim()
 });
 
 // Model configurations with pricing info
@@ -55,12 +55,24 @@ const MODEL_CONFIG = {
 
 // Helper: Generate with Replicate (Flux)
 async function generateWithReplicate(prompt, model, options = {}) {
-  const apiKey = process.env.REPLICATE_API_TOKEN;
+  const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
   if (!apiKey) {
     throw new Error('REPLICATE_API_TOKEN not configured. Add it to your .env file.');
   }
 
   const modelConfig = MODEL_CONFIG[model];
+
+  // Flux models use aspect_ratio, not pixel dimensions
+  // Map common dimensions to aspect ratios
+  let aspectRatio = options.aspectRatio || '16:9';
+  if (options.width && options.height) {
+    const ratio = options.width / options.height;
+    if (ratio > 1.6) aspectRatio = '16:9';      // Wide (1792x1024, etc.)
+    else if (ratio > 1.2) aspectRatio = '4:3';  // Standard wide
+    else if (ratio > 0.9) aspectRatio = '1:1';  // Square
+    else if (ratio > 0.7) aspectRatio = '3:4';  // Portrait
+    else aspectRatio = '9:16';                  // Tall
+  }
 
   // Start the prediction
   const response = await fetch('https://api.replicate.com/v1/predictions', {
@@ -76,10 +88,8 @@ async function generateWithReplicate(prompt, model, options = {}) {
       input: {
         prompt: prompt,
         num_outputs: 1,
-        aspect_ratio: options.aspectRatio || '16:9',
-        output_format: 'png',
-        ...(options.width && { width: options.width }),
-        ...(options.height && { height: options.height })
+        aspect_ratio: aspectRatio,
+        output_format: 'png'
       }
     })
   });
@@ -112,13 +122,41 @@ async function generateWithReplicate(prompt, model, options = {}) {
 
 // Helper: Generate with Stability AI
 async function generateWithStability(prompt, model, options = {}) {
-  const apiKey = process.env.STABILITY_API_KEY;
+  const apiKey = (process.env.STABILITY_API_KEY || '').trim();
   if (!apiKey) {
     throw new Error('STABILITY_API_KEY not configured. Add it to your .env file.');
   }
 
   const modelConfig = MODEL_CONFIG[model];
   const engine = modelConfig.engine;
+
+  // Map requested dimensions to closest supported sizes
+  // SDXL supports: 1024x1024, 1152x896, 896x1152
+  // SD3 supports: 1024x1024
+  let width = options.width || 1024;
+  let height = options.height || 1024;
+
+  if (model === 'stable-diffusion-3') {
+    // SD3 only supports 1024x1024
+    width = 1024;
+    height = 1024;
+  } else {
+    // SDXL - pick closest aspect ratio
+    const ratio = width / height;
+    if (ratio > 1.1) {
+      // Landscape - use 1152x896 (1.29 ratio)
+      width = 1152;
+      height = 896;
+    } else if (ratio < 0.9) {
+      // Portrait - use 896x1152
+      width = 896;
+      height = 1152;
+    } else {
+      // Square-ish - use 1024x1024
+      width = 1024;
+      height = 1024;
+    }
+  }
 
   const response = await fetch(`https://api.stability.ai/v1/generation/${engine}/text-to-image`, {
     method: 'POST',
@@ -130,8 +168,8 @@ async function generateWithStability(prompt, model, options = {}) {
     body: JSON.stringify({
       text_prompts: [{ text: prompt, weight: 1 }],
       cfg_scale: 7,
-      width: options.width || 1024,
-      height: options.height || 1024,
+      width: width,
+      height: height,
       samples: 1,
       steps: 30
     })
@@ -321,8 +359,8 @@ app.post('/api/generate', async (req, res) => {
 
       case 'stability':
         const stabilityResult = await generateWithStability(prompt, model, {
-          width: Math.min(width, 1024),
-          height: Math.min(height, 1024)
+          width,
+          height
         });
         result = {
           image: stabilityResult.url,
@@ -631,6 +669,86 @@ function matchScenesToTranscription(scenes, transcription) {
 
   return sceneTimings;
 }
+
+// Convert script text to visual scene descriptions using GPT
+app.post('/api/script-to-scenes', async (req, res) => {
+  try {
+    const { script, sceneCount = 10, brandRules = null, style = 'professional' } = req.body;
+
+    if (!script) {
+      return res.status(400).json({ error: 'Script text is required' });
+    }
+
+    console.log(`Converting script to ${sceneCount} visual scenes...`);
+
+    // Build the system prompt for scene conversion
+    let systemPrompt = `You are a visual director converting video scripts into image generation prompts.
+
+Your job is to read a script and create ${sceneCount} distinct visual scene descriptions that would work as AI-generated images for a video.
+
+CRITICAL RULES:
+1. Output ONLY visual descriptions - describe what we SEE, not what we hear
+2. Each scene should be a single, clear visual moment (not abstract concepts)
+3. Include: subjects, actions, setting, lighting, mood, composition
+4. Use professional video/photography terminology
+5. NO text in images - text will be added separately with overlays
+6. Make scenes visually distinct but thematically cohesive
+7. Focus on emotions, body language, and visual metaphors for abstract concepts`;
+
+    // Add brand rules if provided
+    if (brandRules) {
+      systemPrompt += `\n\nBRAND STYLING TO APPLY TO ALL SCENES:`;
+      if (brandRules.mood) systemPrompt += `\n- Mood: ${brandRules.mood}`;
+      if (brandRules.lighting) systemPrompt += `\n- Lighting: ${brandRules.lighting}`;
+      if (brandRules.colors) systemPrompt += `\n- Colors: ${brandRules.colors}`;
+      if (brandRules.avoid) systemPrompt += `\n- AVOID: ${brandRules.avoid}`;
+    }
+
+    systemPrompt += `\n\nOutput format - return a JSON array with exactly ${sceneCount} objects:
+[
+  {
+    "sceneNumber": 1,
+    "visualDescription": "Detailed image prompt describing what we see...",
+    "scriptExcerpt": "Brief quote from script this scene represents",
+    "mood": "emotional tone of this scene"
+  }
+]
+
+Only output the JSON array, no other text.`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Convert this script into ${sceneCount} visual scene descriptions:\n\n${script}` }
+      ],
+      temperature: 0.7,
+      max_tokens: 4000
+    });
+
+    let scenes;
+    try {
+      // Parse the JSON response
+      const responseText = completion.choices[0].message.content.trim();
+      // Handle potential markdown code blocks
+      const jsonText = responseText.replace(/^```json\n?|\n?```$/g, '').trim();
+      scenes = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('Failed to parse GPT response:', completion.choices[0].message.content);
+      throw new Error('Failed to parse scene descriptions from AI response');
+    }
+
+    res.json({
+      success: true,
+      scenes: scenes,
+      totalScenes: scenes.length
+    });
+
+  } catch (error) {
+    console.error('Script-to-scenes error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Health check
 app.get('/api/health', (req, res) => {

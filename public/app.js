@@ -104,6 +104,7 @@ const costEstimate = document.getElementById('cost-estimate');
 const scenesContainer = document.getElementById('scenes-container');
 const scenesGrid = document.getElementById('scenes-grid');
 const generateBatchBtn = document.getElementById('generate-batch-btn');
+const convertScriptBtn = document.getElementById('convert-script-btn');
 const downloadAllBtn = document.getElementById('download-all-btn');
 
 // Style Selection
@@ -726,6 +727,224 @@ function getScenesForGeneration() {
   return parseScriptToScenes(script);
 }
 
+// Store converted visual scene descriptions
+let convertedVisualScenes = null;
+
+// Convert script to visual scene descriptions using AI
+async function convertScriptToVisualScenes() {
+  const script = scriptInput.value.trim();
+  if (!script) {
+    showToast('Please enter a script first');
+    return null;
+  }
+
+  const sceneCount = getCurrentSceneCount();
+
+  // Gather brand rules if enabled
+  let brandRules = null;
+  const brandEnabled = document.getElementById('brand-rules-enabled')?.checked;
+  if (brandEnabled) {
+    brandRules = {
+      mood: document.getElementById('brand-mood')?.value || '',
+      lighting: document.getElementById('brand-lighting')?.value || '',
+      colors: document.getElementById('brand-colors')?.value || '',
+      avoid: document.getElementById('brand-avoid')?.value || ''
+    };
+  }
+
+  showLoading('Converting script to visual scenes...', 'AI is analyzing your script');
+
+  try {
+    const response = await fetch('/api/script-to-scenes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script,
+        sceneCount,
+        brandRules
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Store the converted scenes
+    convertedVisualScenes = data.scenes;
+
+    hideLoading();
+    showToast(`Script converted to ${data.scenes.length} visual scenes!`, false);
+
+    // Show a preview of the converted scenes
+    showConvertedScenesPreview(data.scenes);
+
+    return data.scenes;
+
+  } catch (error) {
+    hideLoading();
+    console.error('Script conversion error:', error);
+    showToast(`Conversion failed: ${error.message}`);
+    return null;
+  }
+}
+
+// Show preview of converted visual scenes before generation
+function showConvertedScenesPreview(scenes) {
+  const previewContainer = document.getElementById('converted-scenes-preview');
+  if (!previewContainer) return;
+
+  previewContainer.innerHTML = `
+    <div class="converted-preview-header">
+      <h4>Visual Scene Descriptions</h4>
+      <p>Review and edit before generating images</p>
+    </div>
+    <div class="converted-scenes-list">
+      ${scenes.map((scene, i) => `
+        <div class="converted-scene-item">
+          <div class="scene-number">Scene ${scene.sceneNumber || i + 1}</div>
+          <div class="scene-mood">${scene.mood || ''}</div>
+          <textarea class="scene-visual-input" data-scene-index="${i}" rows="3">${scene.visualDescription}</textarea>
+          <div class="scene-excerpt">"${scene.scriptExcerpt || ''}"</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="converted-preview-actions">
+      <button class="btn secondary" onclick="clearConvertedScenes()">Clear & Re-convert</button>
+      <button class="btn primary" onclick="generateFromVisualScenes()">Generate Images</button>
+    </div>
+  `;
+  previewContainer.hidden = false;
+  previewContainer.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Clear converted scenes
+function clearConvertedScenes() {
+  convertedVisualScenes = null;
+  const previewContainer = document.getElementById('converted-scenes-preview');
+  if (previewContainer) {
+    previewContainer.innerHTML = '';
+    previewContainer.hidden = true;
+  }
+}
+
+// Get visual scenes (either from conversion or fallback to raw script)
+function getVisualScenesForGeneration() {
+  // If we have converted visual scenes, use them
+  if (convertedVisualScenes && convertedVisualScenes.length > 0) {
+    // Check if user edited any scenes
+    const editedScenes = [];
+    document.querySelectorAll('.scene-visual-input').forEach((input, i) => {
+      editedScenes[i] = {
+        ...convertedVisualScenes[i],
+        visualDescription: input.value
+      };
+    });
+    return editedScenes.length > 0 ? editedScenes : convertedVisualScenes;
+  }
+
+  // Fallback to raw script parsing (old behavior)
+  return getScenesForGeneration().map((text, i) => ({
+    sceneNumber: i + 1,
+    visualDescription: text,
+    scriptExcerpt: text.substring(0, 50),
+    mood: ''
+  }));
+}
+
+// Generate images from visual scene descriptions
+async function generateFromVisualScenes() {
+  const visualScenes = getVisualScenesForGeneration();
+
+  if (visualScenes.length === 0) {
+    showToast('No scenes to generate');
+    return;
+  }
+
+  // Hide the preview
+  const previewContainer = document.getElementById('converted-scenes-preview');
+  if (previewContainer) previewContainer.hidden = true;
+
+  const size = document.getElementById('batch-size').value;
+  const quality = document.getElementById('batch-quality').value;
+  const model = document.getElementById('batch-model')?.value || 'dall-e-3';
+
+  generatedScenes = [];
+  scenesGrid.innerHTML = '';
+  scenesContainer.hidden = false;
+
+  // Create placeholder cards
+  visualScenes.forEach((scene, index) => {
+    const displayText = scene.scriptExcerpt || scene.visualDescription.substring(0, 100);
+    const card = createSceneCard(index, displayText, null, true);
+    scenesGrid.appendChild(card);
+  });
+
+  showLoading('Generating scenes...', `0 of ${visualScenes.length} scenes`);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < visualScenes.length; i++) {
+    const scene = visualScenes[i];
+    const styledPrompt = buildStyledPrompt(scene.visualDescription, selectedStyle);
+
+    updateLoadingProgress(i + 1, visualScenes.length);
+
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      generatedScenes[i] = {
+        index: i,
+        text: scene.scriptExcerpt || scene.visualDescription,
+        visualDescription: scene.visualDescription,
+        imageUrl: data.image,
+        prompt: styledPrompt,
+        revisedPrompt: data.revised_prompt
+      };
+
+      updateSceneCard(i, data.image);
+      successCount++;
+
+    } catch (error) {
+      console.error(`Failed to generate scene ${i + 1}:`, error);
+      markSceneError(i);
+      failCount++;
+    }
+
+    if (i < visualScenes.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  hideLoading();
+
+  if (successCount > 0) {
+    showToast(`Generated ${successCount} scene${successCount !== 1 ? 's' : ''} successfully!`, false);
+  }
+  if (failCount > 0) {
+    showToast(`${failCount} scene${failCount !== 1 ? 's' : ''} failed to generate`);
+  }
+
+  scenesContainer.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Make functions globally available
+window.convertScriptToVisualScenes = convertScriptToVisualScenes;
+window.clearConvertedScenes = clearConvertedScenes;
+window.generateFromVisualScenes = generateFromVisualScenes;
+
 // Update scene count and cost estimate
 function updateScriptStats() {
   const script = scriptInput.value;
@@ -741,15 +960,35 @@ function updateScriptStats() {
     sceneCount.textContent = `${numScenes} scene${numScenes !== 1 ? 's' : ''} detected`;
   }
 
-  // Calculate cost estimate
+  // Calculate cost estimate based on selected model
+  const model = document.getElementById('batch-model').value;
   const quality = document.getElementById('batch-quality').value;
   const size = document.getElementById('batch-size').value;
 
-  let costPerImage = 0.04; // Standard 1024x1024
-  if (quality === 'hd') {
-    costPerImage = size === '1024x1024' ? 0.08 : 0.12;
-  } else {
-    costPerImage = size === '1024x1024' ? 0.04 : 0.08;
+  let costPerImage = 0.04; // Default DALL-E standard
+
+  switch (model) {
+    case 'dall-e-3':
+      if (quality === 'hd') {
+        costPerImage = size === '1024x1024' ? 0.08 : 0.12;
+      } else {
+        costPerImage = size === '1024x1024' ? 0.04 : 0.08;
+      }
+      break;
+    case 'flux-schnell':
+      costPerImage = 0.003;
+      break;
+    case 'flux-pro':
+      costPerImage = 0.05;
+      break;
+    case 'stable-diffusion-xl':
+      costPerImage = 0.002;
+      break;
+    case 'stable-diffusion-3':
+      costPerImage = 0.065;
+      break;
+    default:
+      costPerImage = 0.04;
   }
 
   const totalCost = numScenes * costPerImage;
@@ -764,6 +1003,7 @@ function updateScriptStats() {
 }
 
 scriptInput.addEventListener('input', updateScriptStats);
+document.getElementById('batch-model').addEventListener('change', updateScriptStats);
 document.getElementById('batch-quality').addEventListener('change', updateScriptStats);
 document.getElementById('batch-size').addEventListener('change', updateScriptStats);
 
@@ -1482,6 +1722,11 @@ regenerateBtn.addEventListener('click', regenerateLastImage);
 // Preview Button Handler
 if (previewBtn) {
   previewBtn.addEventListener('click', generatePreviewScenes);
+}
+
+// Convert Script Button Handler
+if (convertScriptBtn) {
+  convertScriptBtn.addEventListener('click', convertScriptToVisualScenes);
 }
 
 // Make functions globally available for onclick handlers

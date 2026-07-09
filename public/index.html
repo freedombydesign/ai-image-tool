@@ -175,11 +175,17 @@
           </div>
 
           <div class="generate-buttons">
+            <button class="btn accent" id="convert-script-btn" title="Convert script to visual scene descriptions using AI">
+              <span class="btn-icon">🎬</span> Convert Script to Visuals
+            </button>
             <button class="btn secondary" id="preview-btn" title="Generate 3 test scenes to check style">
               <span class="btn-icon">👁️</span> Preview (3 Scenes)
             </button>
             <button class="btn primary" id="generate-batch-btn">Generate All Scenes</button>
           </div>
+
+          <!-- Converted Visual Scenes Preview -->
+          <div id="converted-scenes-preview" class="converted-scenes-preview" hidden></div>
         </div>
 
         <!-- Style Anchor Panel (shows when an anchor is set) -->
