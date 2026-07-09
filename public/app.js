@@ -2401,14 +2401,99 @@ async function loadThumbnailHistoryFromDB() {
   return [];
 }
 
+// Convert URL to base64 data URI (for persisting external URLs that may expire)
+async function urlToBase64(url) {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error('Failed to convert URL to base64:', e);
+    return null;
+  }
+}
+
+// Compress image to reduce size for storage
+async function compressImage(base64, maxWidth = 800, quality = 0.7) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      // Scale down if too large
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(base64); // Return original on error
+    img.src = base64;
+  });
+}
+
 // Save thumbnail history to localStorage and Supabase
 async function saveThumbnailHistory(newThumbnail = null) {
+  // If a new thumbnail was added, convert external URL to base64 first
+  if (newThumbnail && newThumbnail.imageUrl) {
+    // Convert external URLs to base64 to persist them (Replicate URLs expire)
+    if (newThumbnail.imageUrl.startsWith('http') && !newThumbnail.imageUrl.startsWith('data:')) {
+      console.log('Converting external URL to base64 for persistence...');
+      try {
+        let base64 = await urlToBase64(newThumbnail.imageUrl);
+        if (base64) {
+          // Compress if too large (> 300KB)
+          if (base64.length > 300000) {
+            console.log('Compressing image for storage...');
+            base64 = await compressImage(base64, 800, 0.7);
+          }
+          newThumbnail.imageUrl = base64;
+          console.log('Image converted to base64, size:', base64.length);
+
+          // Update the thumbnail in the history array too
+          const idx = thumbnailHistory.findIndex(t => t.timestamp === newThumbnail.timestamp);
+          if (idx >= 0) {
+            thumbnailHistory[idx].imageUrl = base64;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to convert URL to base64:', e);
+      }
+    }
+  }
+
   // Always save to localStorage
   try {
     localStorage.setItem('thumbnailHistory', JSON.stringify(thumbnailHistory));
     console.log('Thumbnail history saved to localStorage, count:', thumbnailHistory.length);
   } catch (e) {
     console.error('Failed to save thumbnail history to localStorage:', e);
+    // If localStorage is full, try to remove oldest items
+    if (e.name === 'QuotaExceededError') {
+      console.log('localStorage full, removing oldest thumbnails...');
+      while (thumbnailHistory.length > 5) {
+        thumbnailHistory.pop();
+      }
+      try {
+        localStorage.setItem('thumbnailHistory', JSON.stringify(thumbnailHistory));
+      } catch (e2) {
+        console.error('Still failed after removing items:', e2);
+      }
+    }
   }
 
   // If a new thumbnail was added, sync it to Supabase
@@ -2431,9 +2516,9 @@ async function saveThumbnailHistory(newThumbnail = null) {
         return;
       }
 
-      // Only skip huge base64 images (over 500KB)
-      if (imageUrlToStore.startsWith('data:') && imageUrlToStore.length > 500000) {
-        console.log('Base64 image too large for Supabase storage, skipping sync');
+      // Skip only extremely large images (over 1MB)
+      if (imageUrlToStore.startsWith('data:') && imageUrlToStore.length > 1000000) {
+        console.log('Base64 image too large for Supabase storage, keeping in localStorage only');
         return;
       }
 
@@ -2457,7 +2542,7 @@ async function saveThumbnailHistory(newThumbnail = null) {
 
       const data = await response.json();
       if (data.success) {
-        console.log('Thumbnail synced to Supabase successfully, id:', data.id);
+        console.log('Thumbnail synced to Supabase successfully, id:', data.thumbnail?.id);
       } else {
         console.error('Supabase sync failed:', data.error);
       }
@@ -2465,7 +2550,7 @@ async function saveThumbnailHistory(newThumbnail = null) {
       console.error('Failed to sync thumbnail to Supabase:', e);
     }
   } else if (!supabaseConnected) {
-    console.log('Supabase not connected, skipping sync');
+    console.log('Supabase not connected, using localStorage only');
   }
 }
 
