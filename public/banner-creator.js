@@ -105,8 +105,21 @@ class BannerCreator {
       state.backgroundImageData = this.canvas.toDataURL('image/png');
     }
 
-    localStorage.setItem('bannerCreatorState', JSON.stringify(state));
-    console.log('Banner state saved');
+    try {
+      localStorage.setItem('bannerCreatorState', JSON.stringify(state));
+      console.log('Banner state saved');
+    } catch (e) {
+      // Quota exceeded - try saving without the image
+      if (e.name === 'QuotaExceededError') {
+        console.warn('localStorage full, saving without background image');
+        delete state.backgroundImageData;
+        try {
+          localStorage.setItem('bannerCreatorState', JSON.stringify(state));
+        } catch (e2) {
+          console.warn('Could not save banner state:', e2);
+        }
+      }
+    }
   }
 
   // Load banner state from localStorage
