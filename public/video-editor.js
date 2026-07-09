@@ -22,6 +22,15 @@ class VideoEditor {
     this.bgMusicLoop = true;
     this.bgMusicDuck = true; // Duck during voiceover
 
+    // Talking Avatar
+    this.avatarEnabled = false;
+    this.avatarPhotoUrl = null;
+    this.avatarPhotoBlob = null;
+    this.avatarPosition = 'bottom-right';
+    this.avatarSize = 'medium';
+    this.avatarShape = 'circle';
+    this.avatarVideos = []; // Generated avatar videos per scene
+
     // FFmpeg
     this.ffmpeg = null;
     this.ffmpegLoaded = false;
@@ -97,6 +106,21 @@ class VideoEditor {
     this.exportStatus = document.getElementById('export-status');
     this.exportVideoBtn = document.getElementById('export-video-btn');
 
+    // Talking Avatar
+    this.enableAvatarToggle = document.getElementById('enable-avatar-overlay');
+    this.avatarOverlayOptions = document.getElementById('avatar-overlay-options');
+    this.editorAvatarUpload = document.getElementById('editor-avatar-upload');
+    this.editorAvatarFile = document.getElementById('editor-avatar-file');
+    this.editorAvatarPreview = document.getElementById('editor-avatar-preview');
+    this.editorAvatarImg = document.getElementById('editor-avatar-img');
+    this.clearAvatarBtn = document.getElementById('clear-editor-avatar');
+    this.avatarPositionSelect = document.getElementById('avatar-position');
+    this.avatarSizeSelect = document.getElementById('avatar-size');
+    this.avatarShapeSelect = document.getElementById('avatar-shape');
+    this.avatarCostEstimate = document.getElementById('avatar-cost-estimate');
+    this.avatarGenerationStatus = document.getElementById('avatar-generation-status');
+    this.editorAvatarPlaceholder = document.getElementById('editor-avatar-placeholder');
+
     // Preview Modal
     this.previewModal = document.getElementById('video-preview-modal');
     this.closePreviewBtn = document.getElementById('close-preview');
@@ -165,6 +189,37 @@ class VideoEditor {
 
     // Export
     this.exportVideoBtn.addEventListener('click', () => this.exportVideo());
+
+    // Talking Avatar
+    if (this.enableAvatarToggle) {
+      this.enableAvatarToggle.addEventListener('change', (e) => this.toggleAvatarOverlay(e.target.checked));
+    }
+    if (this.editorAvatarUpload) {
+      this.editorAvatarUpload.addEventListener('click', () => {
+        if (this.editorAvatarFile) this.editorAvatarFile.click();
+      });
+    }
+    if (this.editorAvatarFile) {
+      this.editorAvatarFile.addEventListener('change', (e) => this.handleAvatarPhotoUpload(e));
+    }
+    if (this.clearAvatarBtn) {
+      this.clearAvatarBtn.addEventListener('click', () => this.clearAvatarPhoto());
+    }
+    if (this.avatarPositionSelect) {
+      this.avatarPositionSelect.addEventListener('change', (e) => {
+        this.avatarPosition = e.target.value;
+      });
+    }
+    if (this.avatarSizeSelect) {
+      this.avatarSizeSelect.addEventListener('change', (e) => {
+        this.avatarSize = e.target.value;
+      });
+    }
+    if (this.avatarShapeSelect) {
+      this.avatarShapeSelect.addEventListener('change', (e) => {
+        this.avatarShape = e.target.value;
+      });
+    }
 
     // Preview Modal
     this.closePreviewBtn.addEventListener('click', () => this.closePreview());
@@ -655,6 +710,337 @@ class VideoEditor {
 
     this.bgMusicPreview.hidden = true;
     showToast('Background music removed.', false);
+  }
+
+  // Talking Avatar Methods
+  toggleAvatarOverlay(enabled) {
+    this.avatarEnabled = enabled;
+    if (this.avatarOverlayOptions) {
+      this.avatarOverlayOptions.hidden = !enabled;
+    }
+    this.updateAvatarCostEstimate();
+  }
+
+  handleAvatarPhotoUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Please upload an image file.');
+      return;
+    }
+
+    this.avatarPhotoBlob = file;
+
+    // Revoke previous URL
+    if (this.avatarPhotoUrl) {
+      URL.revokeObjectURL(this.avatarPhotoUrl);
+    }
+
+    this.avatarPhotoUrl = URL.createObjectURL(file);
+
+    // Update preview image
+    if (this.editorAvatarImg) {
+      this.editorAvatarImg.src = this.avatarPhotoUrl;
+    }
+
+    // Show preview container, hide placeholder
+    if (this.editorAvatarPreview) {
+      this.editorAvatarPreview.hidden = false;
+    }
+
+    if (this.editorAvatarPlaceholder) {
+      this.editorAvatarPlaceholder.hidden = true;
+    }
+
+    this.updateAvatarCostEstimate();
+    showToast('Avatar photo loaded!', false);
+  }
+
+  clearAvatarPhoto() {
+    if (this.avatarPhotoUrl) {
+      URL.revokeObjectURL(this.avatarPhotoUrl);
+      this.avatarPhotoUrl = null;
+    }
+    this.avatarPhotoBlob = null;
+
+    // Clear and hide preview
+    if (this.editorAvatarImg) {
+      this.editorAvatarImg.src = '';
+    }
+
+    if (this.editorAvatarPreview) {
+      this.editorAvatarPreview.hidden = true;
+    }
+
+    // Show placeholder
+    if (this.editorAvatarPlaceholder) {
+      this.editorAvatarPlaceholder.hidden = false;
+    }
+
+    // Reset file input
+    if (this.editorAvatarFile) {
+      this.editorAvatarFile.value = '';
+    }
+
+    this.updateAvatarCostEstimate();
+    showToast('Avatar photo cleared.', false);
+  }
+
+  updateAvatarCostEstimate() {
+    if (!this.avatarGenerationStatus) return;
+
+    if (!this.avatarEnabled || !this.avatarPhotoBlob || this.scenes.length === 0) {
+      this.avatarGenerationStatus.hidden = true;
+      return;
+    }
+
+    // Calculate total audio duration to estimate cost
+    // LivePortrait costs ~$0.05 per 90-second segment
+    const totalDuration = this.audioDuration || this.getTotalDuration();
+    const segmentLength = 90; // seconds per segment
+    const numSegments = Math.ceil(totalDuration / segmentLength);
+    const costPerSegment = 0.05;
+    const estimatedCost = (numSegments * costPerSegment).toFixed(2);
+
+    if (this.avatarCostEstimate) {
+      this.avatarCostEstimate.textContent = `$${estimatedCost}`;
+    }
+
+    const sceneCountEl = document.getElementById('avatar-scene-count');
+    if (sceneCountEl) {
+      sceneCountEl.textContent = numSegments;
+    }
+
+    this.avatarGenerationStatus.hidden = false;
+  }
+
+  // Split audio into segments for avatar generation
+  async splitAudioForAvatar() {
+    if (!this.audioBlob) {
+      throw new Error('No audio available to split');
+    }
+
+    const totalDuration = this.audioDuration || this.getTotalDuration();
+    const segmentLength = 90; // 90 seconds max per LivePortrait call
+    const segments = [];
+
+    // If audio is short enough, use it as-is
+    if (totalDuration <= segmentLength) {
+      segments.push({
+        blob: this.audioBlob,
+        startTime: 0,
+        endTime: totalDuration,
+        index: 0
+      });
+      return segments;
+    }
+
+    // Need to split audio using Web Audio API
+    if (!this.audioBuffer) {
+      // Decode audio
+      const arrayBuffer = await this.audioBlob.arrayBuffer();
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      this.audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    }
+
+    const sampleRate = this.audioBuffer.sampleRate;
+    const numChannels = this.audioBuffer.numberOfChannels;
+
+    let startTime = 0;
+    let segmentIndex = 0;
+
+    while (startTime < totalDuration) {
+      const endTime = Math.min(startTime + segmentLength, totalDuration);
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.floor(endTime * sampleRate);
+      const segmentSamples = endSample - startSample;
+
+      // Create new audio buffer for this segment
+      const offlineCtx = new OfflineAudioContext(numChannels, segmentSamples, sampleRate);
+      const segmentBuffer = offlineCtx.createBuffer(numChannels, segmentSamples, sampleRate);
+
+      // Copy samples
+      for (let channel = 0; channel < numChannels; channel++) {
+        const sourceData = this.audioBuffer.getChannelData(channel);
+        const destData = segmentBuffer.getChannelData(channel);
+        for (let i = 0; i < segmentSamples; i++) {
+          destData[i] = sourceData[startSample + i];
+        }
+      }
+
+      // Convert buffer to WAV blob
+      const wavBlob = this.audioBufferToWav(segmentBuffer);
+
+      segments.push({
+        blob: wavBlob,
+        startTime: startTime,
+        endTime: endTime,
+        index: segmentIndex
+      });
+
+      startTime = endTime;
+      segmentIndex++;
+    }
+
+    return segments;
+  }
+
+  // Convert AudioBuffer to WAV blob
+  audioBufferToWav(buffer) {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = buffer.length * blockAlign;
+    const headerSize = 44;
+    const totalSize = headerSize + dataSize;
+
+    const arrayBuffer = new ArrayBuffer(totalSize);
+    const view = new DataView(arrayBuffer);
+
+    // WAV header
+    this.writeString(view, 0, 'RIFF');
+    view.setUint32(4, totalSize - 8, true);
+    this.writeString(view, 8, 'WAVE');
+    this.writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    this.writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // Interleave channels and write samples
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const sample = buffer.getChannelData(channel)[i];
+        const clipped = Math.max(-1, Math.min(1, sample));
+        const int16 = clipped < 0 ? clipped * 0x8000 : clipped * 0x7FFF;
+        view.setInt16(offset, int16, true);
+        offset += 2;
+      }
+    }
+
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+  }
+
+  writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+
+  // Generate talking avatar videos for all scenes
+  async generateAvatarVideos() {
+    if (!this.avatarEnabled || !this.avatarPhotoBlob || !this.audioBlob) {
+      return [];
+    }
+
+    const statusEl = this.exportStatus;
+    if (statusEl) statusEl.textContent = 'Splitting audio for avatar...';
+
+    // Split audio into segments
+    const audioSegments = await this.splitAudioForAvatar();
+    console.log(`Split audio into ${audioSegments.length} segments`);
+
+    this.avatarVideos = [];
+
+    for (let i = 0; i < audioSegments.length; i++) {
+      const segment = audioSegments[i];
+      if (statusEl) {
+        statusEl.textContent = `Generating avatar video ${i + 1}/${audioSegments.length}...`;
+      }
+
+      try {
+        // Prepare form data for avatar generation
+        const formData = new FormData();
+        formData.append('avatarImage', this.avatarPhotoBlob, 'avatar.png');
+        formData.append('audioFile', segment.blob, `segment_${i}.wav`);
+
+        // Call the avatar generation API
+        const response = await fetch('/api/animate-avatar', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Avatar generation failed');
+        }
+
+        this.avatarVideos.push({
+          videoUrl: result.videoUrl,
+          startTime: segment.startTime,
+          endTime: segment.endTime,
+          index: segment.index
+        });
+
+        console.log(`Avatar video ${i + 1} generated:`, result.videoUrl);
+
+      } catch (error) {
+        console.error(`Failed to generate avatar video ${i + 1}:`, error);
+        showToast(`Avatar generation failed for segment ${i + 1}: ${error.message}`);
+        // Continue with remaining segments
+      }
+    }
+
+    return this.avatarVideos;
+  }
+
+  // Get avatar video for a specific time
+  getAvatarVideoAtTime(time) {
+    return this.avatarVideos.find(video =>
+      time >= video.startTime && time < video.endTime
+    );
+  }
+
+  // Calculate avatar overlay position and size for canvas
+  getAvatarOverlayRect(canvasWidth, canvasHeight) {
+    // Size multipliers
+    const sizeMap = {
+      'small': 0.15,
+      'medium': 0.25,
+      'large': 0.35
+    };
+
+    const sizeFactor = sizeMap[this.avatarSize] || 0.25;
+    const avatarWidth = Math.floor(canvasWidth * sizeFactor);
+    const avatarHeight = Math.floor(avatarWidth * (9/16)); // 16:9 aspect ratio for video
+
+    const padding = 20;
+    let x, y;
+
+    switch (this.avatarPosition) {
+      case 'top-left':
+        x = padding;
+        y = padding;
+        break;
+      case 'top-right':
+        x = canvasWidth - avatarWidth - padding;
+        y = padding;
+        break;
+      case 'bottom-left':
+        x = padding;
+        y = canvasHeight - avatarHeight - padding;
+        break;
+      case 'bottom-right':
+      default:
+        x = canvasWidth - avatarWidth - padding;
+        y = canvasHeight - avatarHeight - padding;
+        break;
+    }
+
+    return { x, y, width: avatarWidth, height: avatarHeight };
   }
 
   renderWaveform() {
@@ -1391,7 +1777,7 @@ class VideoEditor {
 
     this.exportProgress.hidden = false;
     this.exportVideoBtn.disabled = true;
-    this.exportStatus.textContent = 'Preparing frames...';
+    this.exportStatus.textContent = 'Preparing export...';
 
     try {
       const [width, height] = this.exportResolution.value.split('x').map(Number);
@@ -1399,13 +1785,30 @@ class VideoEditor {
       const totalDuration = this.getTotalDuration();
       const totalFrames = Math.ceil(totalDuration * fps);
 
-      // Generate frames
+      // Step 1: Generate avatar videos if enabled
+      let avatarVideoElements = [];
+      if (this.avatarEnabled && this.avatarPhotoBlob && this.audioBlob) {
+        this.exportStatus.textContent = 'Generating talking avatar...';
+        await this.generateAvatarVideos();
+
+        // Load avatar videos as video elements for frame extraction
+        if (this.avatarVideos.length > 0) {
+          this.exportStatus.textContent = 'Loading avatar videos...';
+          avatarVideoElements = await Promise.all(
+            this.avatarVideos.map(av => this.loadVideoElement(av.videoUrl))
+          );
+          console.log(`Loaded ${avatarVideoElements.length} avatar video elements`);
+        }
+      }
+
+      // Step 2: Generate frames
+      this.exportStatus.textContent = 'Preparing frames...';
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
 
-      // Load all images first
+      // Load all scene images first
       const images = await Promise.all(
         this.scenes.map(scene => this.loadImage(scene.imageUrl))
       );
@@ -1421,10 +1824,15 @@ class VideoEditor {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
 
-        // Draw image with effects
+        // Draw scene image with effects
         this.drawFrameWithEffects(ctx, img, scene, time, width, height);
 
-        // Draw caption
+        // Draw avatar overlay if available
+        if (avatarVideoElements.length > 0) {
+          await this.drawAvatarOverlay(ctx, time, width, height, avatarVideoElements);
+        }
+
+        // Draw caption (on top of everything)
         this.drawCaptionOnCanvas(ctx, scene, width, height);
 
         // Convert to image data
@@ -1664,6 +2072,122 @@ class VideoEditor {
         resolve(new Uint8Array(arrayBuffer));
       }, 'image/png');
     });
+  }
+
+  // Load a video element from URL
+  loadVideoElement(url) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.crossOrigin = 'anonymous';
+      video.muted = true; // Mute to allow auto-play
+      video.preload = 'auto';
+
+      video.onloadeddata = () => {
+        console.log('Video loaded:', url, 'duration:', video.duration);
+        resolve(video);
+      };
+
+      video.onerror = (e) => {
+        console.error('Failed to load video:', url, e);
+        reject(new Error(`Failed to load video: ${url}`));
+      };
+
+      video.src = url;
+      video.load();
+    });
+  }
+
+  // Draw avatar overlay on canvas at specific time
+  async drawAvatarOverlay(ctx, time, canvasWidth, canvasHeight, avatarVideoElements) {
+    // Find the avatar video for this time
+    const avatarIndex = this.avatarVideos.findIndex(av =>
+      time >= av.startTime && time < av.endTime
+    );
+
+    if (avatarIndex === -1 || !avatarVideoElements[avatarIndex]) {
+      return;
+    }
+
+    const avatarVideo = this.avatarVideos[avatarIndex];
+    const videoElement = avatarVideoElements[avatarIndex];
+
+    // Calculate time within this avatar video segment
+    const localTime = time - avatarVideo.startTime;
+
+    // Seek video to the correct time
+    if (Math.abs(videoElement.currentTime - localTime) > 0.1) {
+      videoElement.currentTime = localTime;
+      // Wait for seek to complete
+      await new Promise(resolve => {
+        const checkSeek = () => {
+          if (videoElement.readyState >= 2) {
+            resolve();
+          } else {
+            requestAnimationFrame(checkSeek);
+          }
+        };
+        checkSeek();
+      });
+    }
+
+    // Get overlay position and size
+    const rect = this.getAvatarOverlayRect(canvasWidth, canvasHeight);
+
+    // Draw the avatar video frame with shape masking
+    ctx.save();
+
+    if (this.avatarShape === 'circle') {
+      // Circular mask
+      const centerX = rect.x + rect.width / 2;
+      const centerY = rect.y + rect.height / 2;
+      const radius = Math.min(rect.width, rect.height) / 2;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+
+      // Draw centered and cropped to circle
+      const size = radius * 2;
+      ctx.drawImage(
+        videoElement,
+        rect.x + (rect.width - size) / 2,
+        rect.y + (rect.height - size) / 2,
+        size,
+        size
+      );
+
+      // Add border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+    } else if (this.avatarShape === 'rounded') {
+      // Rounded rectangle mask
+      const radius = 20;
+      ctx.beginPath();
+      ctx.roundRect(rect.x, rect.y, rect.width, rect.height, radius);
+      ctx.closePath();
+      ctx.clip();
+
+      ctx.drawImage(videoElement, rect.x, rect.y, rect.width, rect.height);
+
+      // Add border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+    } else {
+      // Rectangle (no mask needed)
+      ctx.drawImage(videoElement, rect.x, rect.y, rect.width, rect.height);
+
+      // Add border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    }
+
+    ctx.restore();
   }
 }
 

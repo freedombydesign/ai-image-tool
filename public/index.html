@@ -443,9 +443,83 @@
             </div>
           </div>
 
-          <!-- Step 3: Timeline -->
+          <!-- Step 3: Talking Avatar -->
+          <div class="editor-section" id="avatar-section">
+            <h3>3. Talking Avatar (Optional)</h3>
+            <p class="section-desc">Add an animated talking avatar synced to your voiceover</p>
+
+            <div class="avatar-toggle">
+              <label class="toggle-switch">
+                <input type="checkbox" id="enable-avatar-overlay">
+                <span class="toggle-slider"></span>
+              </label>
+              <span>Enable Talking Avatar</span>
+            </div>
+
+            <div id="avatar-overlay-options" class="avatar-overlay-options" hidden>
+              <!-- Avatar Photo Upload -->
+              <div class="avatar-upload-row">
+                <div class="upload-area small" id="editor-avatar-upload">
+                  <input type="file" id="editor-avatar-file" accept="image/*" hidden>
+                  <div class="upload-placeholder" id="editor-avatar-placeholder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <span>Upload Avatar Photo</span>
+                  </div>
+                  <div id="editor-avatar-preview" class="avatar-preview-small" hidden>
+                    <img id="editor-avatar-img" src="" alt="Avatar">
+                    <button class="btn text small" id="clear-editor-avatar">Change</button>
+                  </div>
+                </div>
+                <div class="avatar-settings">
+                  <div class="form-group">
+                    <label for="avatar-position">Position</label>
+                    <select id="avatar-position">
+                      <option value="bottom-right" selected>Bottom Right</option>
+                      <option value="bottom-left">Bottom Left</option>
+                      <option value="bottom-center">Bottom Center</option>
+                      <option value="top-right">Top Right</option>
+                      <option value="top-left">Top Left</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="avatar-size">Size</label>
+                    <select id="avatar-size">
+                      <option value="small">Small (20%)</option>
+                      <option value="medium" selected>Medium (30%)</option>
+                      <option value="large">Large (40%)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="avatar-shape">Shape</label>
+                    <select id="avatar-shape">
+                      <option value="circle" selected>Circle</option>
+                      <option value="rectangle">Rectangle</option>
+                      <option value="rounded">Rounded</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Avatar Status -->
+              <div id="avatar-generation-status" class="avatar-status" hidden>
+                <div class="status-header">
+                  <span class="status-icon">🎬</span>
+                  <span class="status-text">Avatar will be generated for each scene during export</span>
+                </div>
+                <div class="avatar-cost-estimate">
+                  Estimated cost: <strong id="avatar-cost-estimate">$0.00</strong>
+                  (<span id="avatar-scene-count">0</span> scenes × ~$0.05/scene)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Timeline -->
           <div class="editor-section">
-            <h3>3. Timeline</h3>
+            <h3>4. Timeline</h3>
             <div class="timeline-container">
               <div class="timeline-toolbar">
                 <button class="btn secondary small" id="play-preview-btn">▶️ Preview</button>
@@ -460,9 +534,9 @@
             </div>
           </div>
 
-          <!-- Step 4: Captions -->
+          <!-- Step 5: Captions -->
           <div class="editor-section">
-            <h3>4. Captions</h3>
+            <h3>5. Captions</h3>
             <div class="caption-toolbar">
               <button class="btn secondary small" id="generate-captions-btn">🎤 Generate from Audio</button>
               <button class="btn secondary small" id="clear-captions-btn">🗑️ Clear All</button>
@@ -492,9 +566,9 @@
             </div>
           </div>
 
-          <!-- Step 5: Effects -->
+          <!-- Step 6: Effects -->
           <div class="editor-section">
-            <h3>5. Effects</h3>
+            <h3>6. Effects</h3>
             <div class="effects-grid">
               <div class="form-group">
                 <label for="transition-type">Transitions</label>
@@ -529,9 +603,9 @@
             </div>
           </div>
 
-          <!-- Step 6: Export -->
+          <!-- Step 7: Export -->
           <div class="editor-section">
-            <h3>6. Export Video</h3>
+            <h3>7. Export Video</h3>
             <div class="export-options">
               <div class="form-group">
                 <label for="export-resolution">Resolution</label>
