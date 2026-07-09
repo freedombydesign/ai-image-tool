@@ -2450,6 +2450,118 @@ async function animateAllScenes() {
   showToast('All scenes animated!', 'success');
 }
 
+// Add more scenes to fill audio gap
+async function addMoreScenes() {
+  const currentCount = generatedScenes.filter(s => s && s.imageUrl).length;
+
+  if (currentCount === 0) {
+    showToast('Generate some scenes first', 'error');
+    return;
+  }
+
+  // Calculate how many more scenes needed based on audio
+  const sceneDuration = getSceneDuration();
+  const currentDuration = currentCount * sceneDuration;
+  const audioDuration = previewAudioDuration || 0;
+
+  let suggestedMore = 10;
+  if (audioDuration > 0) {
+    const neededScenes = Math.ceil(audioDuration / sceneDuration);
+    suggestedMore = Math.max(0, neededScenes - currentCount);
+  }
+
+  const moreCount = prompt(
+    `You have ${currentCount} scenes (${formatTime(currentDuration)}).\n` +
+    (audioDuration > 0 ? `Your audio is ${formatTime(audioDuration)}.\n` : '') +
+    `\nHow many more scenes to add?`,
+    suggestedMore.toString()
+  );
+
+  if (!moreCount || isNaN(parseInt(moreCount))) return;
+
+  const numToAdd = parseInt(moreCount);
+  if (numToAdd <= 0) return;
+
+  const script = scriptInput.value.trim();
+  const existingTexts = generatedScenes.map(s => s.text);
+
+  // Split script into more segments for new scenes
+  const words = script.split(/\s+/);
+  const wordsPerScene = Math.ceil(words.length / (currentCount + numToAdd));
+
+  // Generate prompts for new scenes by re-splitting the script
+  const allSegments = [];
+  for (let i = 0; i < words.length; i += wordsPerScene) {
+    allSegments.push(words.slice(i, i + wordsPerScene).join(' '));
+  }
+
+  // Take segments that don't match existing scenes
+  const newSegments = allSegments.slice(currentCount, currentCount + numToAdd);
+
+  if (newSegments.length === 0) {
+    // If no new segments, create variations of existing scenes
+    for (let i = 0; i < numToAdd; i++) {
+      const baseScene = generatedScenes[i % currentCount];
+      newSegments.push(baseScene.text + ' (different angle, alternative composition)');
+    }
+  }
+
+  showToast(`Adding ${numToAdd} more scenes...`, 'info');
+
+  const size = document.getElementById('batch-size').value;
+  const quality = document.getElementById('batch-quality').value;
+  const model = document.getElementById('batch-model')?.value || 'dall-e-3';
+  const stylePrompt = STYLE_PRESETS[selectedStyle]?.prompt || '';
+
+  // Add new scene cards
+  const startIndex = generatedScenes.length;
+  for (let i = 0; i < newSegments.length; i++) {
+    const index = startIndex + i;
+    generatedScenes[index] = { text: newSegments[i], prompt: null, imageUrl: null };
+    const card = createSceneCard(index, newSegments[i], null, true);
+    scenesGrid.appendChild(card);
+  }
+
+  // Generate images for new scenes
+  for (let i = 0; i < newSegments.length; i++) {
+    const index = startIndex + i;
+    const text = newSegments[i];
+
+    try {
+      const fullPrompt = `${stylePrompt}. Scene: ${text}`;
+
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: fullPrompt, size, quality, model })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        markSceneError(index);
+        continue;
+      }
+
+      generatedScenes[index] = {
+        text: text,
+        prompt: fullPrompt,
+        imageUrl: data.image,
+        model: model
+      };
+
+      updateSceneCard(index, data.image);
+
+    } catch (error) {
+      console.error(`Scene ${index + 1} failed:`, error);
+      markSceneError(index);
+    }
+  }
+
+  showToast(`Added ${numToAdd} scenes! Total: ${generatedScenes.length}`, 'success');
+  updateScriptStats();
+}
+
 // Download all scenes as ZIP
 async function downloadAllScenes() {
   const validScenes = generatedScenes.filter(s => s && s.imageUrl);
