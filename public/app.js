@@ -715,16 +715,19 @@ function removeAvatar() {
 function getAvatarInstructions() {
   if (!avatarEnabled || !avatarImageData) return '';
 
+  // Use stored variable first, fallback to DOM input
   const descInput = document.getElementById('avatar-description');
-  const description = descInput?.value.trim() || '';
+  const description = avatarDescription || descInput?.value.trim() || '';
+
+  console.log('Avatar description being used:', description);
 
   if (!description) {
     // Basic instruction if no description provided
     return `. MAIN CHARACTER: Include a person as the main focus of the scene, maintaining consistent appearance throughout all scenes`;
   }
 
-  // Detailed instruction with user's description
-  return `. MAIN CHARACTER APPEARANCE (CRITICAL - maintain exact consistency): ${description}. This character MUST appear in every scene with IDENTICAL physical features, clothing, and style. The character should be the focal point of the scene`;
+  // Detailed instruction with user's description - emphasize hair/appearance consistency
+  return `. MAIN CHARACTER APPEARANCE (EXACT MATCH REQUIRED): ${description}. CRITICAL: This exact character with these EXACT physical features (especially hair color, hair style, skin tone) MUST appear consistently in every single scene. Do not vary the hair color or style.`;
 }
 
 // Initialize avatar upload area
