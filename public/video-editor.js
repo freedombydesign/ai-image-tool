@@ -2803,17 +2803,89 @@ class VideoEditor {
     if (!currentScene) return;
 
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       this.ctx.fillStyle = '#000';
       this.ctx.fillRect(0, 0, this.previewCanvas.width, this.previewCanvas.height);
 
       // Apply Ken Burns effect
       this.applyKenBurnsEffect(img, currentScene);
 
+      // Draw avatar overlay if enabled and videos exist
+      if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
+        await this.drawAvatarOnPreview();
+      }
+
       // Draw caption
       this.drawCaption(currentScene);
     };
     img.src = currentScene.imageUrl;
+  }
+
+  // Draw avatar on preview canvas
+  async drawAvatarOnPreview() {
+    // Find the avatar video for current time
+    const avatarVideo = this.avatarVideos.find(av =>
+      this.playbackTime >= av.startTime && this.playbackTime < av.endTime
+    );
+
+    if (!avatarVideo || !avatarVideo.videoUrl) return;
+
+    // Get or create video element for this avatar
+    if (!this.previewAvatarVideos) {
+      this.previewAvatarVideos = {};
+    }
+
+    let videoEl = this.previewAvatarVideos[avatarVideo.videoUrl];
+    if (!videoEl) {
+      videoEl = document.createElement('video');
+      videoEl.crossOrigin = 'anonymous';
+      videoEl.muted = true;
+      videoEl.src = avatarVideo.videoUrl;
+      videoEl.load();
+      this.previewAvatarVideos[avatarVideo.videoUrl] = videoEl;
+
+      // Wait for video to be ready
+      await new Promise(resolve => {
+        videoEl.onloadeddata = resolve;
+        videoEl.onerror = resolve;
+      });
+    }
+
+    // Seek to correct time
+    const localTime = this.playbackTime - avatarVideo.startTime;
+    if (Math.abs(videoEl.currentTime - localTime) > 0.15) {
+      videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+    }
+
+    // Get overlay position and size
+    const rect = this.getAvatarOverlayRect(this.previewCanvas.width, this.previewCanvas.height);
+
+    // Draw the avatar
+    this.ctx.save();
+
+    if (this.avatarShape === 'circle') {
+      const centerX = rect.x + rect.width / 2;
+      const centerY = rect.y + rect.height / 2;
+      const radius = Math.min(rect.width, rect.height) / 2;
+
+      this.ctx.beginPath();
+      this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      this.ctx.closePath();
+      this.ctx.clip();
+
+      this.ctx.drawImage(
+        videoEl,
+        rect.x + (rect.width - radius * 2) / 2,
+        rect.y + (rect.height - radius * 2) / 2,
+        radius * 2,
+        radius * 2
+      );
+    } else {
+      // Rectangle or square
+      this.ctx.drawImage(videoEl, rect.x, rect.y, rect.width, rect.height);
+    }
+
+    this.ctx.restore();
   }
 
   getSceneAtTime(time) {
