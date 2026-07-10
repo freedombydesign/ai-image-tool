@@ -2695,10 +2695,41 @@ class VideoEditor {
       return;
     }
 
+    // Sync uploaded avatar segments to avatarVideos array for preview
+    this.syncUploadedAvatarSegments();
+
     this.previewModal.hidden = false;
     this.setupPreviewCanvas();
     this.playbackTime = 0;
     this.updatePreviewFrame();
+  }
+
+  // Sync uploaded avatar segments from window.uploadedAvatarSegments to this.avatarVideos
+  syncUploadedAvatarSegments() {
+    const uploadedSegments = window.uploadedAvatarSegments || {};
+    const segmentKeys = Object.keys(uploadedSegments).map(Number).sort((a, b) => a - b);
+
+    if (segmentKeys.length === 0) return;
+
+    // Calculate segment duration based on audio
+    const totalDuration = this.audioDuration || this.getTotalDuration();
+    const segmentDuration = totalDuration / segmentKeys.length;
+
+    // Build avatarVideos array from uploaded segments
+    this.avatarVideos = [];
+    segmentKeys.forEach((segNum, index) => {
+      const seg = uploadedSegments[segNum];
+      if (seg && seg.url) {
+        this.avatarVideos.push({
+          videoUrl: seg.url,
+          startTime: index * segmentDuration,
+          endTime: (index + 1) * segmentDuration,
+          segmentIndex: segNum
+        });
+      }
+    });
+
+    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview`);
   }
 
   closePreview() {
@@ -4646,6 +4677,12 @@ async function handleSegmentUpload(segmentNum, file) {
         font-size: 12px;
       ">▶ Preview</button>
     `;
+
+    // Enable avatar overlay when segments are uploaded
+    if (typeof videoEditor !== 'undefined') {
+      videoEditor.avatarEnabled = true;
+      videoEditor.syncUploadedAvatarSegments();
+    }
 
     // Update status
     const totalSegments = videoEditor.audioDuration ? Math.ceil(videoEditor.audioDuration / 90) : 8;
