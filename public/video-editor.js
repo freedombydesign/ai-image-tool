@@ -2991,8 +2991,31 @@ async function generateAvatarOnly() {
   const segmentLength = 90; // 90 seconds per segment
   const numSegments = Math.ceil(audioDuration / segmentLength);
 
+  // Ask user which segment to start from (to skip already-generated ones)
+  let startFromSegment = 1;
   if (numSegments > 1) {
-    statusEl.textContent = `Audio is ${Math.round(audioDuration)}s - will generate ${numSegments} segments (~90s each)...`;
+    const skipPrompt = prompt(
+      `Your audio needs ${numSegments} segments.\n\n` +
+      `Already have some? Enter the segment # to START from:\n` +
+      `• Enter 1 to generate ALL segments\n` +
+      `• Enter 5 to skip 1-4 and generate 5-${numSegments}\n\n` +
+      `Start from segment:`,
+      '1'
+    );
+
+    if (skipPrompt === null) {
+      // User cancelled
+      return;
+    }
+
+    startFromSegment = parseInt(skipPrompt) || 1;
+    if (startFromSegment < 1) startFromSegment = 1;
+    if (startFromSegment > numSegments) {
+      showToast(`Only ${numSegments} segments needed. Nothing to generate.`);
+      return;
+    }
+
+    statusEl.textContent = `Will generate segments ${startFromSegment}-${numSegments} (skipping ${startFromSegment - 1})...`;
   }
 
   btn.disabled = true;
@@ -3033,11 +3056,28 @@ async function generateAvatarOnly() {
     const avatarVideos = [];
     let cachedCount = 0;
     let generatedCount = 0;
+    let skippedCount = 0;
 
     for (let i = 0; i < audioSegments.length; i++) {
       const segment = audioSegments[i];
-      statusEl.textContent = `Checking segment ${i + 1}/${audioSegments.length}...`;
-      btn.textContent = `⏳ ${i + 1}/${audioSegments.length}`;
+      const segmentNum = i + 1;
+
+      // Skip segments before startFromSegment (user already has these)
+      if (segmentNum < startFromSegment) {
+        skippedCount++;
+        avatarVideos.push({
+          index: i,
+          videoUrl: null,  // User has these externally
+          startTime: segment.startTime,
+          endTime: segment.endTime,
+          skipped: true
+        });
+        console.log(`Segment ${segmentNum} skipped (user has externally)`);
+        continue;
+      }
+
+      statusEl.textContent = `Checking segment ${segmentNum}/${audioSegments.length}...`;
+      btn.textContent = `⏳ ${segmentNum}/${audioSegments.length}`;
 
       // Check cache first to avoid re-processing
       const audioHash = await videoEditor.generateAudioHash(segment.blob);
@@ -3053,13 +3093,13 @@ async function generateAvatarOnly() {
           cached: true
         });
         cachedCount++;
-        console.log(`Segment ${i + 1} loaded from cache`);
+        console.log(`Segment ${segmentNum} loaded from cache`);
         continue;
       }
 
       // Not cached - need to generate
       generatedCount++;
-      statusEl.textContent = `Generating segment ${i + 1}/${audioSegments.length} (${cachedCount} cached)...`;
+      statusEl.textContent = `Generating segment ${segmentNum}/${audioSegments.length} (${skippedCount} skipped, ${cachedCount} cached)...`;
 
       // Upload this audio segment
       const mimeType = 'audio/wav';
@@ -3141,29 +3181,39 @@ async function generateAvatarOnly() {
     }
 
     // Show summary
-    statusEl.textContent = `Done! ${cachedCount} from cache, ${generatedCount} newly generated.`;
+    statusEl.textContent = `Done! ${skippedCount} skipped, ${cachedCount} from cache, ${generatedCount} newly generated.`;
 
-    // Download all avatar videos
-    statusEl.textContent = `Downloading ${avatarVideos.length} avatar video(s)...`;
+    // Filter out skipped videos (user has these externally)
+    const videosToDownload = avatarVideos.filter(v => !v.skipped && v.videoUrl);
 
-    if (avatarVideos.length === 1) {
+    if (videosToDownload.length === 0) {
+      statusEl.textContent = 'No new videos to download (all skipped or cached without URL).';
+      showSegmentManager(avatarVideos, config, avatarPublicUrl);
+      return;
+    }
+
+    // Download generated avatar videos
+    statusEl.textContent = `Downloading ${videosToDownload.length} avatar video(s)...`;
+
+    if (videosToDownload.length === 1) {
       // Single video - download directly
-      const videoResponse = await fetch(avatarVideos[0].videoUrl);
+      const videoResponse = await fetch(videosToDownload[0].videoUrl);
       const videoBlob = await videoResponse.blob();
       const url = URL.createObjectURL(videoBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'talking_avatar.mp4';
+      a.download = `avatar_part_${String(videosToDownload[0].index + 1).padStart(2, '0')}.mp4`;
       a.click();
       URL.revokeObjectURL(url);
     } else {
       // Multiple videos - download as ZIP
       const zip = new JSZip();
-      for (let i = 0; i < avatarVideos.length; i++) {
-        statusEl.textContent = `Downloading video ${i + 1}/${avatarVideos.length}...`;
-        const videoResponse = await fetch(avatarVideos[i].videoUrl);
+      for (let i = 0; i < videosToDownload.length; i++) {
+        const vid = videosToDownload[i];
+        statusEl.textContent = `Downloading video ${i + 1}/${videosToDownload.length}...`;
+        const videoResponse = await fetch(vid.videoUrl);
         const videoBlob = await videoResponse.blob();
-        zip.file(`avatar_part_${String(i + 1).padStart(2, '0')}.mp4`, videoBlob);
+        zip.file(`avatar_part_${String(vid.index + 1).padStart(2, '0')}.mp4`, videoBlob);
       }
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(zipBlob);
@@ -3174,8 +3224,8 @@ async function generateAvatarOnly() {
       URL.revokeObjectURL(url);
     }
 
-    statusEl.textContent = `Done! ${avatarVideos.length} avatar video(s) downloaded. Import into CapCut.`;
-    showToast(`${avatarVideos.length} avatar video(s) downloaded!`, false);
+    statusEl.textContent = `Done! Downloaded ${videosToDownload.length} new videos. Combine with your existing segments in CapCut.`;
+    showToast(`${videosToDownload.length} avatar video(s) downloaded!`, false);
 
     // Show segment manager for individual regeneration
     showSegmentManager(avatarVideos, config, avatarPublicUrl);
@@ -3220,28 +3270,33 @@ function showSegmentManager(avatarVideos, config, avatarPublicUrl) {
           padding: 10px;
           background: var(--bg-tertiary, #252540);
           border-radius: 6px;
+          ${seg.skipped ? 'opacity: 0.6;' : ''}
         ">
-          <span style="font-weight: bold; color: var(--accent, #6c5ce7);">#${i + 1}</span>
+          <span style="font-weight: bold; color: ${seg.skipped ? '#888' : 'var(--accent, #6c5ce7)'};">#${i + 1}</span>
           <span style="flex: 1; color: var(--text-secondary, #aaa); font-size: 13px;">
             ${Math.floor(seg.startTime)}s - ${Math.floor(seg.endTime)}s
-            ${seg.cached ? '(cached)' : '(new)'}
+            ${seg.skipped ? '(skipped - you have this)' : seg.cached ? '(cached)' : '(new)'}
           </span>
-          <button onclick="previewSegment('${seg.videoUrl}')" style="
-            padding: 5px 10px;
-            background: var(--bg-tertiary, #333);
-            border: 1px solid var(--border-color, #444);
-            border-radius: 4px;
-            color: var(--text-primary, #fff);
-            cursor: pointer;
-          ">▶ Preview</button>
-          <button onclick="downloadSegment('${seg.videoUrl}', ${i + 1})" style="
-            padding: 5px 10px;
-            background: var(--bg-tertiary, #333);
-            border: 1px solid var(--border-color, #444);
-            border-radius: 4px;
-            color: var(--text-primary, #fff);
-            cursor: pointer;
-          ">⬇ Download</button>
+          ${seg.skipped ? `
+            <span style="color: #888; font-size: 12px;">Use your existing video</span>
+          ` : `
+            <button onclick="previewSegment('${seg.videoUrl}')" style="
+              padding: 5px 10px;
+              background: var(--bg-tertiary, #333);
+              border: 1px solid var(--border-color, #444);
+              border-radius: 4px;
+              color: var(--text-primary, #fff);
+              cursor: pointer;
+            ">▶ Preview</button>
+            <button onclick="downloadSegment('${seg.videoUrl}', ${i + 1})" style="
+              padding: 5px 10px;
+              background: var(--bg-tertiary, #333);
+              border: 1px solid var(--border-color, #444);
+              border-radius: 4px;
+              color: var(--text-primary, #fff);
+              cursor: pointer;
+            ">⬇ Download</button>
+          `}
           <label style="
             padding: 5px 10px;
             background: var(--accent, #6c5ce7);
@@ -3250,7 +3305,7 @@ function showSegmentManager(avatarVideos, config, avatarPublicUrl) {
             color: white;
             cursor: pointer;
           ">
-            🔄 Replace Audio
+            🔄 ${seg.skipped ? 'Generate' : 'Replace'}
             <input type="file" accept="audio/*" style="display: none;"
               onchange="regenerateSegment(${i}, this.files[0], '${avatarPublicUrl}', ${JSON.stringify(config).replace(/"/g, '&quot;')})"
             >
