@@ -4098,28 +4098,45 @@ function showSegmentManager(avatarVideos, config, avatarPublicUrl) {
               cursor: pointer;
             ">⬇ Download</button>
           `}
-          <label style="
+          <button onclick="document.getElementById('replace-input-${i}').click()" style="
             padding: 5px 10px;
             background: var(--accent, #6c5ce7);
             border: none;
             border-radius: 4px;
             color: white;
             cursor: pointer;
-          ">
-            🔄 ${seg.skipped ? 'Generate' : 'Replace'}
-            <input type="file" accept="audio/*" style="display: none;"
-              onchange="regenerateSegment(${i}, this.files[0], '${avatarPublicUrl}', ${JSON.stringify(config).replace(/"/g, '&quot;')})"
-            >
-          </label>
+          ">🔄 ${seg.skipped ? 'Generate' : 'Replace'}</button>
+          <input type="file" id="replace-input-${i}" accept="audio/*" style="display: none;"
+            onchange="handleReplaceSegment(${i}, this, '${avatarPublicUrl}')"
+          >
         </div>
       `).join('')}
     </div>
   `;
 
+  // Store config globally for replace function
+  window._segmentReplaceConfig = config;
+  window._segmentReplaceAvatarUrl = avatarPublicUrl;
+
   // Insert after the generate button
   const btn = document.getElementById('generate-avatar-btn');
   btn.parentElement.appendChild(manager);
 }
+
+// Handle replace segment button click
+async function handleReplaceSegment(segmentIndex, inputEl, avatarUrl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+
+  const config = window._segmentReplaceConfig;
+  if (!config) {
+    showToast('Config not found. Please regenerate first.');
+    return;
+  }
+
+  await regenerateSegment(segmentIndex, file, avatarUrl, config);
+}
+window.handleReplaceSegment = handleReplaceSegment;
 
 // Preview a segment video
 function previewSegment(videoUrl) {
