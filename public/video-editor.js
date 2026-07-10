@@ -489,6 +489,18 @@ class VideoEditor {
     // Export
     this.exportVideoBtn.addEventListener('click', () => this.exportVideo());
 
+    // SRT Export for CapCut
+    const exportSrtBtn = document.getElementById('export-srt-btn');
+    if (exportSrtBtn) {
+      exportSrtBtn.addEventListener('click', () => this.downloadSRT());
+    }
+
+    // ZIP Export
+    const exportZipBtn = document.getElementById('export-zip-btn');
+    if (exportZipBtn) {
+      exportZipBtn.addEventListener('click', () => this.exportAsZip());
+    }
+
     // Talking Avatar
     if (this.enableAvatarToggle) {
       this.enableAvatarToggle.addEventListener('change', (e) => this.toggleAvatarOverlay(e.target.checked));
@@ -3250,6 +3262,24 @@ class VideoEditor {
     const s = Math.floor(seconds % 60);
     const ms = Math.floor((seconds % 1) * 1000);
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+  }
+
+  // Download SRT file directly (for CapCut/Premiere/etc)
+  downloadSRT() {
+    if (this.scenes.length === 0 || !this.scenes.some(s => s.caption)) {
+      showToast('No captions to export. Generate captions first.');
+      return;
+    }
+
+    const srt = this.generateSRT();
+    const blob = new Blob([srt], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'captions.srt';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('SRT file downloaded! Import into CapCut/Premiere.', 'success');
   }
 
   // Export Video
