@@ -986,45 +986,18 @@ app.post('/api/animate-avatar-url', async (req, res) => {
       return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
     }
 
-    // Download files and convert to base64 data URIs
-    // This bypasses any URL format validation issues with Replicate
-    console.log('Downloading avatar image...');
-    const avatarResponse = await fetch(avatarUrl);
-    if (!avatarResponse.ok) {
-      throw new Error(`Failed to download avatar: ${avatarResponse.status}`);
-    }
-    const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
-    const avatarBase64 = `data:image/png;base64,${avatarBuffer.toString('base64')}`;
-    console.log('Avatar downloaded, base64 length:', avatarBase64.length);
-
-    console.log('Downloading audio file...');
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
-      throw new Error(`Failed to download audio: ${audioResponse.status}`);
-    }
-    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-    // Detect audio mime type from URL
-    const audioExt = audioUrl.split('.').pop().toLowerCase().split('?')[0];
-    let audioMime = 'audio/wav';
-    if (audioExt === 'm4a' || audioExt === 'mp4') audioMime = 'audio/mp4';
-    else if (audioExt === 'mp3') audioMime = 'audio/mpeg';
-    const audioBase64 = `data:${audioMime};base64,${audioBuffer.toString('base64')}`;
-    console.log('Audio downloaded, base64 length:', audioBase64.length, 'mime:', audioMime);
-
-    // Use SadTalker with base64 data URIs
-    const SADTALKER_VERSION = '85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b';
+    // Use p-video-avatar - fastest lip sync model (accepts URLs directly)
+    const PVIDEO_VERSION = '8a54bb678ef43a7a40950731bad3f33f4ac904267fecebd2186c826a6da6f5a5';
 
     const requestBody = {
-      version: SADTALKER_VERSION,
+      version: PVIDEO_VERSION,
       input: {
-        source_image: avatarBase64,
-        driven_audio: audioBase64,
-        enhancer: "None",
-        preprocess: "full",
-        still: false
+        image: avatarUrl,      // Uses URL directly (not base64)
+        audio: audioUrl,       // Uses URL directly (not base64)
+        resolution: "720p"
       }
     };
-    console.log('Sending to Replicate with base64 data URIs...');
+    console.log('Sending to p-video-avatar...');
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
