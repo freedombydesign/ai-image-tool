@@ -3177,6 +3177,9 @@ async function generateAvatarOnly() {
     statusEl.textContent = `Done! ${avatarVideos.length} avatar video(s) downloaded. Import into CapCut.`;
     showToast(`${avatarVideos.length} avatar video(s) downloaded!`, false);
 
+    // Show segment manager for individual regeneration
+    showSegmentManager(avatarVideos, config, avatarPublicUrl);
+
   } catch (error) {
     console.error('Avatar generation error:', error);
     statusEl.textContent = 'Error: ' + error.message;
@@ -3186,3 +3189,198 @@ async function generateAvatarOnly() {
     btn.textContent = '🎬 Generate Avatar Video';
   }
 }
+
+// Show segment manager for regenerating individual segments
+function showSegmentManager(avatarVideos, config, avatarPublicUrl) {
+  // Remove existing manager if present
+  const existing = document.getElementById('segment-manager');
+  if (existing) existing.remove();
+
+  const manager = document.createElement('div');
+  manager.id = 'segment-manager';
+  manager.style.cssText = `
+    margin-top: 20px;
+    padding: 15px;
+    background: var(--bg-secondary, #1a1a2e);
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #333);
+  `;
+
+  manager.innerHTML = `
+    <h4 style="margin: 0 0 15px 0; color: var(--text-primary, #fff);">📹 Avatar Segments</h4>
+    <p style="margin: 0 0 15px 0; color: var(--text-secondary, #aaa); font-size: 14px;">
+      Click "Replace Audio" to fix a segment with cleaned audio.
+    </p>
+    <div id="segment-list" style="display: flex; flex-direction: column; gap: 10px;">
+      ${avatarVideos.map((seg, i) => `
+        <div class="segment-item" data-index="${i}" style="
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px;
+          background: var(--bg-tertiary, #252540);
+          border-radius: 6px;
+        ">
+          <span style="font-weight: bold; color: var(--accent, #6c5ce7);">#${i + 1}</span>
+          <span style="flex: 1; color: var(--text-secondary, #aaa); font-size: 13px;">
+            ${Math.floor(seg.startTime)}s - ${Math.floor(seg.endTime)}s
+            ${seg.cached ? '(cached)' : '(new)'}
+          </span>
+          <button onclick="previewSegment('${seg.videoUrl}')" style="
+            padding: 5px 10px;
+            background: var(--bg-tertiary, #333);
+            border: 1px solid var(--border-color, #444);
+            border-radius: 4px;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+          ">▶ Preview</button>
+          <button onclick="downloadSegment('${seg.videoUrl}', ${i + 1})" style="
+            padding: 5px 10px;
+            background: var(--bg-tertiary, #333);
+            border: 1px solid var(--border-color, #444);
+            border-radius: 4px;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+          ">⬇ Download</button>
+          <label style="
+            padding: 5px 10px;
+            background: var(--accent, #6c5ce7);
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+          ">
+            🔄 Replace Audio
+            <input type="file" accept="audio/*" style="display: none;"
+              onchange="regenerateSegment(${i}, this.files[0], '${avatarPublicUrl}', ${JSON.stringify(config).replace(/"/g, '&quot;')})"
+            >
+          </label>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  // Insert after the generate button
+  const btn = document.getElementById('generate-avatar-btn');
+  btn.parentElement.appendChild(manager);
+}
+
+// Preview a segment video
+function previewSegment(videoUrl) {
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+  modal.onclick = () => modal.remove();
+  modal.innerHTML = `
+    <video src="${videoUrl}" controls autoplay style="max-width: 90%; max-height: 90%; border-radius: 8px;">
+    </video>
+  `;
+  document.body.appendChild(modal);
+}
+
+// Download individual segment
+function downloadSegment(videoUrl, index) {
+  const a = document.createElement('a');
+  a.href = videoUrl;
+  a.download = `avatar_segment_${index}.mp4`;
+  a.click();
+}
+
+// Regenerate a single segment with new audio
+async function regenerateSegment(segmentIndex, audioFile, avatarUrl, config) {
+  if (!audioFile) return;
+
+  const statusEl = document.getElementById('avatar-gen-status');
+  const segmentItem = document.querySelector(`.segment-item[data-index="${segmentIndex}"]`);
+
+  statusEl.textContent = `Regenerating segment ${segmentIndex + 1}...`;
+  segmentItem.style.opacity = '0.5';
+
+  try {
+    // Upload the new audio file
+    const audioPath = `audio/avatar-replace-${Date.now()}.${audioFile.name.split('.').pop()}`;
+    const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
+
+    const audioUploadResponse = await fetch(audioUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': audioFile.type || 'audio/mpeg',
+        'x-upsert': 'true'
+      },
+      body: audioFile
+    });
+
+    if (!audioUploadResponse.ok) {
+      throw new Error('Failed to upload replacement audio');
+    }
+
+    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+
+    // Generate new avatar video
+    statusEl.textContent = `Generating new avatar for segment ${segmentIndex + 1}...`;
+
+    const response = await fetch('/api/animate-avatar-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        avatarUrl: avatarUrl,
+        audioUrl: audioPublicUrl
+      })
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+
+    // Poll for completion
+    const predictionId = result.predictionId;
+    let pollCount = 0;
+    let prediction = { status: result.status };
+
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && pollCount < 300) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      pollCount++;
+      statusEl.textContent = `Segment ${segmentIndex + 1}: ${prediction.status} (${pollCount * 2}s)...`;
+
+      const pollResponse = await fetch(`/api/prediction-status/${predictionId}`);
+      prediction = await pollResponse.json();
+    }
+
+    if (prediction.status !== 'succeeded') {
+      throw new Error(prediction.error || 'Generation failed');
+    }
+
+    // Update the segment item with new video
+    const newVideoUrl = prediction.output;
+    segmentItem.style.opacity = '1';
+    segmentItem.querySelector('button[onclick^="previewSegment"]').onclick = () => previewSegment(newVideoUrl);
+    segmentItem.querySelector('button[onclick^="downloadSegment"]').onclick = () => downloadSegment(newVideoUrl, segmentIndex + 1);
+
+    // Update cache with new video
+    const audioBlob = audioFile;
+    const audioHash = await videoEditor.generateAudioHash(audioBlob);
+    await videoEditor.cacheAvatarVideo(audioHash, newVideoUrl, 90);
+
+    statusEl.textContent = `Segment ${segmentIndex + 1} regenerated! Download the new version.`;
+    showToast(`Segment ${segmentIndex + 1} regenerated successfully!`, false);
+
+  } catch (error) {
+    console.error('Regeneration error:', error);
+    statusEl.textContent = `Error: ${error.message}`;
+    segmentItem.style.opacity = '1';
+    showToast(`Failed to regenerate: ${error.message}`);
+  }
+}
+
+// Make functions globally available
+window.previewSegment = previewSegment;
+window.downloadSegment = downloadSegment;
+window.regenerateSegment = regenerateSegment;
