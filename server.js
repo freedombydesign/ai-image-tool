@@ -889,13 +889,16 @@ app.post('/api/animate-avatar', upload.fields([
     console.log('Audio base64 length:', audioBase64.length);
 
     // Use SadTalker model on Replicate for audio-driven talking head
-    const response = await fetch('https://api.replicate.com/v1/models/cjwbw/sadtalker/predictions', {
+    const SADTALKER_VERSION = 'a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        version: SADTALKER_VERSION,
         input: {
           source_image: avatarBase64,
           driven_audio: audioBase64,
@@ -982,13 +985,16 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     console.log('Audio URL:', audioUrl);
 
     // Use SadTalker model on Replicate for audio-driven talking head
-    const response = await fetch('https://api.replicate.com/v1/models/cjwbw/sadtalker/predictions', {
+    const SADTALKER_VERSION = 'a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        version: SADTALKER_VERSION,
         input: {
           source_image: avatarUrl,
           driven_audio: audioUrl,
