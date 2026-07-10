@@ -1493,7 +1493,7 @@ async function convertScriptToVisualScenes() {
 
   // Gather brand rules if enabled
   let brandRules = null;
-  const brandEnabled = document.getElementById('brand-rules-enabled')?.checked;
+  const brandEnabled = document.getElementById('brand-enabled')?.checked;
   if (brandEnabled) {
     brandRules = {
       mood: document.getElementById('brand-mood')?.value || '',
@@ -1502,6 +1502,10 @@ async function convertScriptToVisualScenes() {
       avoid: document.getElementById('brand-avoid')?.value || ''
     };
   }
+
+  // Get avatar settings if avatar should be included in scenes
+  const includeAvatarInScenes = document.getElementById('include-avatar-in-scenes')?.checked;
+  const avatarDesc = avatarDescription || document.getElementById('avatar-description')?.value?.trim() || '';
 
   showLoading('Converting script to visual scenes...', 'AI is analyzing your script');
 
@@ -1512,7 +1516,9 @@ async function convertScriptToVisualScenes() {
       body: JSON.stringify({
         script,
         sceneCount,
-        brandRules
+        brandRules,
+        includeAvatarInScenes,
+        avatarDescription: includeAvatarInScenes ? avatarDesc : null
       })
     });
 
@@ -3707,7 +3713,7 @@ async function saveBrandRulesToDB() {
     lighting: document.getElementById('brand-lighting')?.value || '',
     colors: document.getElementById('brand-colors')?.value || '',
     avoid: document.getElementById('brand-avoid')?.value || '',
-    enabled: document.getElementById('brand-rules-enabled')?.checked || false
+    enabled: document.getElementById('brand-enabled')?.checked || false
   };
 
   try {
@@ -3742,7 +3748,7 @@ async function loadBrandRulesFromDB() {
       const lightingEl = document.getElementById('brand-lighting');
       const colorsEl = document.getElementById('brand-colors');
       const avoidEl = document.getElementById('brand-avoid');
-      const enabledEl = document.getElementById('brand-rules-enabled');
+      const enabledEl = document.getElementById('brand-enabled');
 
       if (moodEl) moodEl.value = rules.mood || '';
       if (lightingEl) lightingEl.value = rules.lighting || '';
@@ -3778,7 +3784,7 @@ function initBrandRulesAutoSave() {
     }
   });
 
-  const enabledEl = document.getElementById('brand-rules-enabled');
+  const enabledEl = document.getElementById('brand-enabled');
   if (enabledEl) {
     enabledEl.addEventListener('change', () => {
       brandBlockEnabled = enabledEl.checked;

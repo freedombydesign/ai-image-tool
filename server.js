@@ -1658,13 +1658,13 @@ function matchScenesToTranscription(scenes, transcription) {
 // Convert script text to visual scene descriptions using GPT
 app.post('/api/script-to-scenes', async (req, res) => {
   try {
-    const { script, sceneCount = 10, brandRules = null, style = 'professional' } = req.body;
+    const { script, sceneCount = 10, brandRules = null, style = 'professional', includeAvatarInScenes = false, avatarDescription = null } = req.body;
 
     if (!script) {
       return res.status(400).json({ error: 'Script text is required' });
     }
 
-    console.log(`Converting script to ${sceneCount} visual scenes...`);
+    console.log(`Converting script to ${sceneCount} visual scenes... (Avatar in scenes: ${includeAvatarInScenes})`);
 
     // Build the system prompt for scene conversion
     let systemPrompt = `You are a visual director converting video scripts into image generation prompts.
@@ -1679,6 +1679,31 @@ CRITICAL RULES:
 5. NO text in images - text will be added separately with overlays
 6. Make scenes visually distinct but thematically cohesive
 7. Focus on emotions, body language, and visual metaphors for abstract concepts`;
+
+    // Add avatar as main character if included
+    if (includeAvatarInScenes && avatarDescription) {
+      systemPrompt += `
+
+MAIN CHARACTER - FEATURE THIS PERSON IN EVERY SCENE:
+${avatarDescription}
+
+CRITICAL - CHARACTER INTEGRATION RULES:
+1. This character is the MAIN SUBJECT of every scene - they should be ACTING OUT the concepts
+2. Do NOT show static poses or portrait shots - show the character IN ACTION
+3. Match scenes to script content:
+   - If script mentions "sales conversation" → show character talking to a client, gesturing, presenting
+   - If script mentions "closing a deal" → show character shaking hands, celebrating, signing papers
+   - If script mentions "overcoming objections" → show character listening intently, nodding, responding
+   - If script mentions "building rapport" → show character laughing with someone, mirroring body language
+   - If script mentions "following up" → show character on phone, at computer, writing notes
+4. Use visual metaphors WITH the character:
+   - "Breaking through barriers" → character pushing through a door/wall
+   - "Building trust" → character building something, constructing
+   - "Climbing the ladder" → character actually climbing, ascending stairs
+5. Vary the character's position, pose, and action in each scene - no repetition
+6. Show the character from different angles: front, side, over-shoulder, medium shots, close-ups of hands/expressions
+7. The character should express emotions matching the script: confident, empathetic, excited, thoughtful`;
+    }
 
     // Add brand rules if provided
     if (brandRules) {
