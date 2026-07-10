@@ -2238,6 +2238,72 @@ app.delete('/api/db/avatar-segments/:userId', async (req, res) => {
 });
 
 // ============================================
+// BRAND RULES STORAGE (SUPABASE)
+// ============================================
+
+// Save brand rules to Supabase
+app.post('/api/db/brand-rules', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, mood, lighting, colors, avoid, enabled } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const { data, error } = await supabase
+      .from('brand_rules')
+      .upsert({
+        user_id: userId,
+        mood: mood || '',
+        lighting: lighting || '',
+        colors: colors || '',
+        avoid: avoid || '',
+        enabled: enabled || false,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, brandRules: data });
+  } catch (error) {
+    console.error('Save brand rules error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get brand rules for user
+app.get('/api/db/brand-rules/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('brand_rules')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    res.json({ success: true, brandRules: data || null });
+  } catch (error) {
+    console.error('Get brand rules error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // BATCH SCENES STORAGE (SUPABASE)
 // ============================================
 

@@ -3686,7 +3686,112 @@ async function initSupabaseSync() {
       updateThumbnailGallery();
       console.log(`Loaded ${dbThumbnails.length} thumbnails from Supabase`);
     }
+
+    // Load brand rules from Supabase
+    await loadBrandRulesFromDB();
   }
+}
+
+// ============================================
+// BRAND RULES PERSISTENCE
+// ============================================
+
+// Save brand rules to Supabase
+async function saveBrandRulesToDB() {
+  const userId = localStorage.getItem('ai_tool_user_id');
+  if (!userId) return;
+
+  const brandRules = {
+    userId,
+    mood: document.getElementById('brand-mood')?.value || '',
+    lighting: document.getElementById('brand-lighting')?.value || '',
+    colors: document.getElementById('brand-colors')?.value || '',
+    avoid: document.getElementById('brand-avoid')?.value || '',
+    enabled: document.getElementById('brand-rules-enabled')?.checked || false
+  };
+
+  try {
+    const response = await fetch('/api/db/brand-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(brandRules)
+    });
+
+    if (response.ok) {
+      console.log('Brand rules saved to Supabase');
+    }
+  } catch (error) {
+    console.error('Failed to save brand rules:', error);
+  }
+}
+
+// Load brand rules from Supabase
+async function loadBrandRulesFromDB() {
+  const userId = localStorage.getItem('ai_tool_user_id');
+  if (!userId) return;
+
+  try {
+    const response = await fetch(`/api/db/brand-rules/${userId}`);
+    const data = await response.json();
+
+    if (data.success && data.brandRules) {
+      const rules = data.brandRules;
+
+      // Update UI with loaded values
+      const moodEl = document.getElementById('brand-mood');
+      const lightingEl = document.getElementById('brand-lighting');
+      const colorsEl = document.getElementById('brand-colors');
+      const avoidEl = document.getElementById('brand-avoid');
+      const enabledEl = document.getElementById('brand-rules-enabled');
+
+      if (moodEl) moodEl.value = rules.mood || '';
+      if (lightingEl) lightingEl.value = rules.lighting || '';
+      if (colorsEl) colorsEl.value = rules.colors || '';
+      if (avoidEl) avoidEl.value = rules.avoid || '';
+      if (enabledEl) {
+        enabledEl.checked = rules.enabled || false;
+        // Update the global variable
+        brandBlockEnabled = rules.enabled || false;
+      }
+
+      console.log('Brand rules loaded from Supabase');
+    }
+  } catch (error) {
+    console.error('Failed to load brand rules:', error);
+  }
+}
+
+// Auto-save brand rules on change (debounced)
+let brandRulesSaveTimeout = null;
+function debouncedSaveBrandRules() {
+  if (brandRulesSaveTimeout) clearTimeout(brandRulesSaveTimeout);
+  brandRulesSaveTimeout = setTimeout(saveBrandRulesToDB, 1000);
+}
+
+// Initialize brand rules auto-save
+function initBrandRulesAutoSave() {
+  const fields = ['brand-mood', 'brand-lighting', 'brand-colors', 'brand-avoid'];
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', debouncedSaveBrandRules);
+    }
+  });
+
+  const enabledEl = document.getElementById('brand-rules-enabled');
+  if (enabledEl) {
+    enabledEl.addEventListener('change', () => {
+      brandBlockEnabled = enabledEl.checked;
+      saveBrandRulesToDB();
+    });
+  }
+}
+
+// Initialize on DOM ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initBrandRulesAutoSave);
+} else {
+  initBrandRulesAutoSave();
 }
 
 // Clear Anchor Button Handler
