@@ -3377,6 +3377,8 @@ class VideoEditor {
           if (av.videoUrl) {
             try {
               const videoEl = await this.loadVideoElement(av.videoUrl);
+              videoEl.muted = true; // Mute avatar video (we use main audio)
+              videoEl.loop = false;
               avatarVideoElements.push({ element: videoEl, ...av });
             } catch (e) {
               console.error('Failed to load avatar video:', e);
@@ -3400,9 +3402,16 @@ class VideoEditor {
 
       // Create audio element
       let audioElement = null;
+      let audioContext = null;
       if (this.audioBlob) {
         audioElement = new Audio(URL.createObjectURL(this.audioBlob));
         audioElement.muted = false;
+        audioElement.preload = 'auto';
+        // Wait for audio to be ready
+        await new Promise(resolve => {
+          audioElement.oncanplaythrough = resolve;
+          audioElement.load();
+        });
       }
 
       // Set up MediaRecorder
@@ -3411,11 +3420,11 @@ class VideoEditor {
       // Add audio track if available
       if (audioElement) {
         try {
-          const audioContext = new AudioContext();
+          audioContext = new AudioContext();
           const source = audioContext.createMediaElementSource(audioElement);
           const destination = audioContext.createMediaStreamDestination();
           source.connect(destination);
-          source.connect(audioContext.destination); // Also play through speakers (muted)
+          // Don't connect to speakers to avoid echo
           destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
         } catch (e) {
           console.log('Audio track not added:', e);
@@ -3424,6 +3433,8 @@ class VideoEditor {
 
       // Determine best codec
       const mimeTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
         'video/webm;codecs=vp9',
         'video/webm;codecs=vp8',
         'video/webm',
@@ -3434,7 +3445,8 @@ class VideoEditor {
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: selectedMimeType,
-        videoBitsPerSecond: 8000000 // 8 Mbps
+        videoBitsPerSecond: 8000000, // 8 Mbps
+        audioBitsPerSecond: 128000   // 128 kbps audio
       });
 
       const chunks = [];
@@ -3445,22 +3457,39 @@ class VideoEditor {
       // Start recording
       mediaRecorder.start(100); // Collect data every 100ms
 
-      // Start audio
+      // Start audio playback - this drives the timeline
       if (audioElement) {
         audioElement.currentTime = 0;
-        audioElement.play().catch(e => console.log('Audio play error:', e));
+        await audioElement.play();
       }
 
-      // Render frames
+      // Start all avatar videos (paused, we'll sync them)
+      for (const av of avatarVideoElements) {
+        if (av && av.element) {
+          av.element.currentTime = 0;
+          av.element.pause();
+        }
+      }
+
+      // Render frames synced to real time (driven by audio)
       this.exportStatus.textContent = 'Recording video...';
-      const startTime = performance.now();
-      let currentTime = 0;
+      const recordingStartTime = performance.now();
+      let lastActiveAvatar = null;
 
       const renderFrame = () => {
-        if (currentTime >= totalDuration) {
+        // Use audio time if available, otherwise calculate from elapsed time
+        const currentTime = audioElement
+          ? audioElement.currentTime
+          : (performance.now() - recordingStartTime) / 1000;
+
+        if (currentTime >= totalDuration || (audioElement && audioElement.ended)) {
           // Done rendering
           mediaRecorder.stop();
           if (audioElement) audioElement.pause();
+          // Stop all avatar videos
+          for (const av of avatarVideoElements) {
+            if (av && av.element) av.element.pause();
+          }
           return;
         }
 
@@ -3495,17 +3524,30 @@ class VideoEditor {
           ctx.drawImage(sceneImg, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
         }
 
-        // Draw avatar overlay
+        // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
           const avatarData = avatarVideoElements.find(av =>
             av && currentTime >= av.startTime && currentTime < av.endTime
           );
-          if (avatarData && avatarData.element) {
-            const localTime = currentTime - avatarData.startTime;
-            if (Math.abs(avatarData.element.currentTime - localTime) > 0.2) {
-              avatarData.element.currentTime = localTime;
-            }
 
+          // Handle avatar video switching
+          if (avatarData && avatarData !== lastActiveAvatar) {
+            // Pause previous avatar
+            if (lastActiveAvatar && lastActiveAvatar.element) {
+              lastActiveAvatar.element.pause();
+            }
+            // Start new avatar at correct position
+            const localTime = currentTime - avatarData.startTime;
+            avatarData.element.currentTime = localTime;
+            avatarData.element.play().catch(() => {});
+            lastActiveAvatar = avatarData;
+          } else if (!avatarData && lastActiveAvatar) {
+            // No avatar for this time, pause current
+            lastActiveAvatar.element.pause();
+            lastActiveAvatar = null;
+          }
+
+          if (avatarData && avatarData.element) {
             const rect = this.getAvatarOverlayRect(width, height);
             ctx.save();
             if (this.avatarShape === 'circle') {
@@ -3538,15 +3580,12 @@ class VideoEditor {
         this.exportProgressBar.style.width = `${percent}%`;
         this.exportStatus.textContent = `Recording: ${percent}%`;
 
-        // Advance time
-        currentTime += 1 / fps;
-
-        // Schedule next frame
-        setTimeout(renderFrame, 1000 / fps);
+        // Use requestAnimationFrame for smooth real-time rendering
+        requestAnimationFrame(renderFrame);
       };
 
       // Start rendering
-      renderFrame();
+      requestAnimationFrame(renderFrame);
 
       // Wait for recording to complete
       await new Promise(resolve => {
