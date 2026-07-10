@@ -2459,8 +2459,8 @@ app.get('/api/supabase-config', (req, res) => {
     return res.status(503).json({ error: 'Supabase not configured' });
   }
   res.json({
-    url: supabaseUrl,
-    anonKey: supabaseKey,
+    url: supabaseUrl.trim(),        // Remove any newlines/whitespace
+    anonKey: supabaseKey.trim(),    // Remove any newlines/whitespace
     bucket: 'ai-tool-images'
   });
 });
