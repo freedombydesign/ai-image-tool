@@ -1038,6 +1038,66 @@ app.post('/api/animate-avatar-url', async (req, res) => {
   }
 });
 
+// MuseTalk endpoint - MUCH CHEAPER alternative (~$0.05 vs $2.25 per segment)
+app.post('/api/animate-avatar-musetalk', async (req, res) => {
+  console.log('*** MUSETALK ENDPOINT - CHEAP MODE ***');
+  try {
+    let { avatarUrl, audioUrl } = req.body;
+
+    if (!avatarUrl || !audioUrl) {
+      return res.status(400).json({ error: 'Avatar URL and Audio URL are required' });
+    }
+
+    avatarUrl = String(avatarUrl).trim().replace(/[\n\r]/g, '');
+    audioUrl = String(audioUrl).trim().replace(/[\n\r]/g, '');
+
+    console.log('MuseTalk - Avatar URL:', avatarUrl);
+    console.log('MuseTalk - Audio URL:', audioUrl);
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    // MuseTalk model (tmappdev/lipsync) - much cheaper and real-time speed
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: 'ab4afd0ce992de82b862fa4a9132fba4dbe849f4a629f0e1f3638f81fa81bfe1', // tmappdev/lipsync (MuseTalk)
+        input: {
+          face: avatarUrl,
+          audio: audioUrl
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('MuseTalk error:', response.status, errorText);
+      throw new Error(`MuseTalk: ${errorText}`);
+    }
+
+    let prediction = await response.json();
+    console.log('MuseTalk prediction started:', prediction.id, 'status:', prediction.status);
+
+    res.json({
+      success: true,
+      predictionId: prediction.id,
+      status: prediction.status,
+      model: 'musetalk',
+      pollUrl: `/api/prediction-status/${prediction.id}`
+    });
+
+  } catch (error) {
+    console.error('MuseTalk error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Poll for prediction status (for avatar generation)
 app.get('/api/prediction-status/:predictionId', async (req, res) => {
   try {

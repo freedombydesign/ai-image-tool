@@ -4441,7 +4441,7 @@ function showUploadSegmentsPanel() {
     <!-- Generate with new audio section -->
     <div style="margin-bottom: 20px; padding: 15px; background: rgba(99, 102, 241, 0.1); border-radius: 8px; border: 1px solid var(--accent, #6c5ce7);">
       <h5 style="margin: 0 0 10px 0; color: var(--accent, #6c5ce7);">🎙️ Generate Segment with New Audio</h5>
-      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
         <select id="new-audio-segment-num" style="padding: 8px; background: var(--bg-tertiary, #333); border: 1px solid var(--border-color, #444); border-radius: 4px; color: white;">
           ${Array.from({length: totalSegments}, (_, i) => `<option value="${i + 1}">Segment ${i + 1}</option>`).join('')}
         </select>
@@ -4451,7 +4451,14 @@ function showUploadSegmentsPanel() {
         </button>
         <span id="new-audio-filename" style="color: var(--text-secondary, #aaa); font-size: 13px;">No file selected</span>
       </div>
-      <button id="generate-new-audio-btn" onclick="generateSegmentWithNewAudio()" style="margin-top: 10px; padding: 10px 20px; background: var(--success, #22c55e); border: none; border-radius: 4px; color: white; cursor: pointer; width: 100%;" disabled>
+      <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+        <label style="color: var(--text-secondary, #aaa); font-size: 13px;">Model:</label>
+        <select id="avatar-model-select" style="padding: 8px; background: var(--bg-tertiary, #333); border: 1px solid var(--border-color, #444); border-radius: 4px; color: white; flex: 1;">
+          <option value="musetalk" selected>💰 MuseTalk (CHEAP ~$0.05/segment, fast)</option>
+          <option value="p-video-avatar">💎 p-video-avatar ($2.25/segment, premium)</option>
+        </select>
+      </div>
+      <button id="generate-new-audio-btn" onclick="generateSegmentWithNewAudio()" style="padding: 10px 20px; background: var(--success, #22c55e); border: none; border-radius: 4px; color: white; cursor: pointer; width: 100%;" disabled>
         🎬 Generate Avatar for Selected Segment
       </button>
     </div>
@@ -4569,10 +4576,18 @@ async function generateSegmentWithNewAudio() {
 
     const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
 
-    btn.textContent = '⏳ Generating avatar...';
+    // Get selected model
+    const selectedModel = document.getElementById('avatar-model-select')?.value || 'musetalk';
+    const endpoint = selectedModel === 'musetalk' ? '/api/animate-avatar-musetalk' : '/api/animate-avatar-url';
+
+    btn.textContent = selectedModel === 'musetalk'
+      ? '⏳ Generating (MuseTalk - cheap mode)...'
+      : '⏳ Generating (p-video-avatar - premium)...';
+
+    console.log(`Using model: ${selectedModel}, endpoint: ${endpoint}`);
 
     // Generate avatar video
-    const response = await fetch('/api/animate-avatar-url', {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
