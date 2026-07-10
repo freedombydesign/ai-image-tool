@@ -888,27 +888,17 @@ app.post('/api/animate-avatar', upload.fields([
     console.log('Avatar base64 length:', avatarBase64.length);
     console.log('Audio base64 length:', audioBase64.length);
 
-    // Use LivePortrait model on Replicate
-    // Model: lucataco/live-portrait - high quality lip-sync animation
-    const LIVEPORTRAIT_VERSION = 'eaef9e673ab5c7e0e36f94be1c3e91321b0cf5820664c72c7c7dc48bbbb81add';
-
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
+    // Use LivePortrait model on Replicate (fofr/live-portrait)
+    const response = await fetch('https://api.replicate.com/v1/models/fofr/live-portrait/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: LIVEPORTRAIT_VERSION,
         input: {
-          face: avatarBase64,
-          driving_audio: audioBase64,
-          live_portrait_dsize: 512,
-          live_portrait_scale: 2.3,
-          video_frame_load_cap: 128,
-          aniportrait_ref_image: avatarBase64,
-          output_format: 'mp4',
-          output_quality: 80
+          face_image: avatarBase64,
+          driving_audio: audioBase64
         }
       })
     });
@@ -990,26 +980,17 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     console.log('Avatar URL:', avatarUrl);
     console.log('Audio URL:', audioUrl);
 
-    // Use LivePortrait model on Replicate
-    const LIVEPORTRAIT_VERSION = 'eaef9e673ab5c7e0e36f94be1c3e91321b0cf5820664c72c7c7dc48bbbb81add';
-
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
+    // Use LivePortrait model on Replicate (fofr/live-portrait is more reliable)
+    const response = await fetch('https://api.replicate.com/v1/models/fofr/live-portrait/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: LIVEPORTRAIT_VERSION,
         input: {
-          face: avatarUrl,
-          driving_audio: audioUrl,
-          live_portrait_dsize: 512,
-          live_portrait_scale: 2.3,
-          video_frame_load_cap: 128,
-          aniportrait_ref_image: avatarUrl,
-          output_format: 'mp4',
-          output_quality: 80
+          face_image: avatarUrl,
+          driving_audio: audioUrl
         }
       })
     });
