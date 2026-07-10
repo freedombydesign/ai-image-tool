@@ -2935,38 +2935,47 @@ class VideoEditor {
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
 
-    // Get word timings if available (from Whisper transcription)
-    const wordTimings = scene.wordTimings || [];
+    // Get timing info
     const sceneStartTime = scene.startTime || 0;
+    const sceneDuration = scene.duration || 6;
     const currentTime = this.playbackTime;
     const timeInScene = currentTime - sceneStartTime;
 
     // Split caption into words
-    const words = scene.caption.split(/\s+/);
+    const allWords = scene.caption.split(/\s+/).filter(w => w.length > 0);
 
-    // Group into lines
+    // Calculate current word index based on time
+    const wordDuration = sceneDuration / allWords.length;
+    const currentWordIndex = Math.floor(timeInScene / wordDuration);
+
+    // Only show a sliding window of words (2 lines worth)
+    const totalWordsToShow = wordsPerLine * 2; // Show 2 lines at a time
+    const windowStart = Math.max(0, Math.floor(currentWordIndex / wordsPerLine) * wordsPerLine);
+    const windowEnd = Math.min(allWords.length, windowStart + totalWordsToShow);
+    const visibleWords = allWords.slice(windowStart, windowEnd);
+
+    // Group visible words into lines
     const lines = [];
-    for (let i = 0; i < words.length; i += wordsPerLine) {
-      lines.push(words.slice(i, i + wordsPerLine));
+    for (let i = 0; i < visibleWords.length; i += wordsPerLine) {
+      lines.push(visibleWords.slice(i, i + wordsPerLine));
     }
 
     // Calculate position
-    const lineHeight = fontSize * 1.3;
+    const lineHeight = fontSize * 1.4;
     const totalHeight = lines.length * lineHeight;
     let startY;
 
     if (position === 'top-center') {
-      startY = 80 + totalHeight / 2;
+      startY = 80 + lineHeight;
     } else if (position === 'center') {
-      startY = canvasH / 2;
+      startY = canvasH / 2 - totalHeight / 2 + lineHeight / 2;
     } else {
-      startY = canvasH - 80 - totalHeight / 2;
+      startY = canvasH - 100 - totalHeight + lineHeight;
     }
 
     // Draw each line with word highlighting
-    let globalWordIndex = 0;
     lines.forEach((lineWords, lineIndex) => {
-      const y = startY + (lineIndex - (lines.length - 1) / 2) * lineHeight;
+      const y = startY + lineIndex * lineHeight;
 
       // Calculate line width for centering
       const lineText = lineWords.join(' ');
@@ -2974,62 +2983,54 @@ class VideoEditor {
       let x = (canvasW - lineWidth) / 2;
 
       lineWords.forEach((word, wordIdx) => {
+        const globalIdx = windowStart + (lineIndex * wordsPerLine) + wordIdx;
         const wordWidth = this.ctx.measureText(word + ' ').width;
 
         // Determine if this word should be highlighted
-        let isHighlighted = false;
-
-        if (animation === 'word-highlight' || animation === 'karaoke') {
-          if (wordTimings.length > 0 && wordTimings[globalWordIndex]) {
-            // Use actual word timing from Whisper
-            const wordTiming = wordTimings[globalWordIndex];
-            const wordStart = (wordTiming.start || 0) - sceneStartTime;
-            const wordEnd = (wordTiming.end || wordStart + 0.3) - sceneStartTime;
-            isHighlighted = timeInScene >= wordStart && timeInScene < wordEnd + 0.1;
-          } else {
-            // Estimate based on position (fallback)
-            const sceneDuration = scene.duration || 6;
-            const wordDuration = sceneDuration / words.length;
-            const wordStartTime = globalWordIndex * wordDuration;
-            const wordEndTime = wordStartTime + wordDuration;
-            isHighlighted = timeInScene >= wordStartTime && timeInScene < wordEndTime + 0.1;
-          }
-        }
+        const isCurrentWord = globalIdx === currentWordIndex;
+        const isPastWord = globalIdx < currentWordIndex;
 
         // Apply background style
         if (bgStyle === 'shadow') {
-          this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
-          this.ctx.shadowBlur = 8;
-          this.ctx.shadowOffsetX = 2;
-          this.ctx.shadowOffsetY = 2;
+          this.ctx.shadowColor = 'rgba(0,0,0,0.9)';
+          this.ctx.shadowBlur = 10;
+          this.ctx.shadowOffsetX = 3;
+          this.ctx.shadowOffsetY = 3;
         } else {
           this.ctx.shadowColor = 'transparent';
           this.ctx.shadowBlur = 0;
         }
 
         // Set color based on highlight state
-        if (isHighlighted) {
-          this.ctx.fillStyle = highlightColor;
-          // Add scale effect for highlighted word
-          this.ctx.save();
-          const wordCenterX = x + wordWidth / 2;
-          this.ctx.translate(wordCenterX, y);
-          this.ctx.scale(1.1, 1.1);
-          this.ctx.translate(-wordCenterX, -y);
-        } else {
-          this.ctx.fillStyle = textColor;
-        }
-
-        // Draw the word
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(word, x, y);
 
-        if (isHighlighted) {
-          this.ctx.restore();
+        if (animation === 'word-highlight' || animation === 'karaoke') {
+          if (isCurrentWord) {
+            // Current word - highlighted and scaled
+            this.ctx.save();
+            this.ctx.fillStyle = highlightColor;
+            const wordCenterX = x + (wordWidth - this.ctx.measureText(' ').width) / 2;
+            this.ctx.translate(wordCenterX, y);
+            this.ctx.scale(1.15, 1.15);
+            this.ctx.translate(-wordCenterX, -y);
+            this.ctx.fillText(word, x, y);
+            this.ctx.restore();
+          } else if (isPastWord && animation === 'karaoke') {
+            // Past words in karaoke mode stay highlighted
+            this.ctx.fillStyle = highlightColor;
+            this.ctx.fillText(word, x, y);
+          } else {
+            // Future words or past words in word-highlight mode
+            this.ctx.fillStyle = textColor;
+            this.ctx.fillText(word, x, y);
+          }
+        } else {
+          // No animation
+          this.ctx.fillStyle = textColor;
+          this.ctx.fillText(word, x, y);
         }
 
         x += wordWidth;
-        globalWordIndex++;
       });
     });
 
@@ -3472,25 +3473,29 @@ class VideoEditor {
     ctx.textAlign = textAlign;
 
     // Split caption into words
-    const words = scene.caption.split(' ');
-
-    // Group words into lines based on wordsPerLine setting
-    const lines = [];
-    for (let i = 0; i < words.length; i += wordsPerLine) {
-      lines.push(words.slice(i, i + wordsPerLine));
-    }
+    const allWords = scene.caption.split(/\s+/).filter(w => w.length > 0);
 
     // Calculate which word should be highlighted based on time within scene
     const sceneProgress = (currentTime - scene.startTime) / scene.duration;
-    const totalWords = words.length;
+    const totalWords = allWords.length;
     const currentWordIndex = Math.floor(sceneProgress * totalWords);
 
-    // Draw each line
-    const lineHeight = fontSize + 15;
-    const totalLinesHeight = lines.length * lineHeight;
-    const startY = y - (totalLinesHeight / 2) + (lineHeight / 2);
+    // Only show a sliding window of words (2 lines worth) - same as preview
+    const totalWordsToShow = wordsPerLine * 2;
+    const windowStart = Math.max(0, Math.floor(currentWordIndex / wordsPerLine) * wordsPerLine);
+    const windowEnd = Math.min(allWords.length, windowStart + totalWordsToShow);
+    const visibleWords = allWords.slice(windowStart, windowEnd);
 
-    let wordCounter = 0;
+    // Group visible words into lines
+    const lines = [];
+    for (let i = 0; i < visibleWords.length; i += wordsPerLine) {
+      lines.push(visibleWords.slice(i, i + wordsPerLine));
+    }
+
+    // Draw each line
+    const lineHeight = fontSize * 1.4;
+    const totalLinesHeight = lines.length * lineHeight;
+    const startY = y - totalLinesHeight + lineHeight;
 
     lines.forEach((lineWords, lineIndex) => {
       const lineY = startY + (lineIndex * lineHeight);
@@ -3507,7 +3512,6 @@ class VideoEditor {
 
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         if (bgStyle === 'pill') {
-          // Draw rounded rectangle
           const radius = bgH / 2;
           ctx.beginPath();
           ctx.roundRect(bgX, bgY, bgW, bgH, radius);
@@ -3519,7 +3523,6 @@ class VideoEditor {
 
       // Draw words with animation
       if (animation === 'none' || animation === 'typewriter') {
-        // Static or typewriter - draw whole line
         const displayText = animation === 'typewriter'
           ? lineText.substring(0, Math.floor(sceneProgress * lineText.length * 1.5))
           : lineText;
@@ -3532,22 +3535,23 @@ class VideoEditor {
         ctx.fillStyle = textColor;
         ctx.fillText(displayText, x, lineY);
       } else {
-        // Word-by-word animation - draw each word separately
+        // Word-by-word animation
         let wordX = textAlign === 'center'
           ? x - ctx.measureText(lineText).width / 2
           : x;
 
         lineWords.forEach((word, wordInLineIndex) => {
-          const isCurrentWord = wordCounter === currentWordIndex;
-          const isPastWord = wordCounter < currentWordIndex;
+          const globalIdx = windowStart + (lineIndex * wordsPerLine) + wordInLineIndex;
+          const isCurrentWord = globalIdx === currentWordIndex;
+          const isPastWord = globalIdx < currentWordIndex;
           const wordWidth = ctx.measureText(word + ' ').width;
 
-          // Determine word color based on animation type
           let wordColor = textColor;
           let scale = 1;
 
           if (animation === 'word-highlight') {
-            wordColor = isCurrentWord ? highlightColor : (isPastWord ? highlightColor : textColor);
+            wordColor = isCurrentWord ? highlightColor : textColor;
+            scale = isCurrentWord ? 1.15 : 1;
           } else if (animation === 'word-pop') {
             if (isCurrentWord) {
               scale = 1.2;
@@ -3557,7 +3561,6 @@ class VideoEditor {
             wordColor = isPastWord || isCurrentWord ? highlightColor : textColor;
           }
 
-          // Draw word
           ctx.save();
           if (scale !== 1) {
             ctx.translate(wordX + wordWidth / 2, lineY);
@@ -3566,9 +3569,10 @@ class VideoEditor {
           }
 
           if (bgStyle === 'shadow') {
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = fontSize / 8;
-            ctx.strokeText(word, wordX, lineY);
+            ctx.shadowColor = 'rgba(0,0,0,0.9)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
           }
           ctx.fillStyle = wordColor;
           ctx.textAlign = 'left';
@@ -3576,12 +3580,10 @@ class VideoEditor {
           ctx.restore();
 
           wordX += wordWidth;
-          wordCounter++;
         });
       }
     });
 
-    // Reset text align
     ctx.textAlign = textAlign;
   }
 
