@@ -796,7 +796,7 @@ app.post('/api/face-swap', upload.fields([
         input: {
           local_target: sourceBase64,  // The image to modify (scene)
           local_source: faceBase64,    // The face to swap IN (user's avatar)
-          weight: 0.9,                 // Higher = more of YOUR face (was 0.5)
+          weight: 1.0,                 // Full face replacement to preserve unique features
           det_thresh: 0.1              // Face detection threshold
         }
       })
