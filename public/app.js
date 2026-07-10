@@ -4047,6 +4047,13 @@ async function loadBrandRulesFromDB() {
         enabledEl.checked = rules.enabled === true;
         // Update the global variable
         brandBlockEnabled = rules.enabled === true;
+
+        // Update the status label in header
+        const statusEl = document.getElementById('brand-status');
+        if (statusEl) {
+          statusEl.textContent = brandBlockEnabled ? 'Active' : 'Off';
+          statusEl.classList.toggle('active', brandBlockEnabled);
+        }
         console.log('Brand enabled set to:', rules.enabled);
       }
 
