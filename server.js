@@ -1316,6 +1316,21 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
     // Convert reference image to base64 data URI
     const refBase64 = fileToBase64DataUri(req.file);
 
+    // Cap dimensions to 1536 max (IP-Adapter/PULID limit)
+    let finalWidth = parseInt(width) || 1024;
+    let finalHeight = parseInt(height) || 1024;
+    if (finalWidth > 1536) {
+      const ratio = 1536 / finalWidth;
+      finalWidth = 1536;
+      finalHeight = Math.round(finalHeight * ratio);
+    }
+    if (finalHeight > 1536) {
+      const ratio = 1536 / finalHeight;
+      finalHeight = 1536;
+      finalWidth = Math.round(finalWidth * ratio);
+    }
+    console.log(`IP-Adapter dimensions: ${finalWidth}x${finalHeight} (requested: ${width}x${height})`);
+
     // Using flux-pulid which combines Flux quality with face/character preservation
     const PULID_VERSION = '8baa7ef2255075b46f4d91cd238c21d31181b3e6a864463f967960bb0112525b';
 
@@ -1331,8 +1346,8 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
           main_face_image: refBase64,
           prompt: prompt,
           negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, different person, wrong hair color',
-          width: parseInt(width) || 1024,
-          height: parseInt(height) || 1024,
+          width: finalWidth,
+          height: finalHeight,
           num_steps: 20,
           start_step: 0,
           guidance_scale: 4,
