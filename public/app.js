@@ -1599,19 +1599,24 @@ let parsedSceneDescriptor = null;
 function loadSavedSceneDescriptor() {
   try {
     const saved = localStorage.getItem('parsedSceneDescriptor');
-    if (saved) {
-      parsedSceneDescriptor = JSON.parse(saved);
-      console.log(`Loaded ${parsedSceneDescriptor.length} saved scene descriptions`);
-      // Show in preview
-      setTimeout(() => {
-        if (parsedSceneDescriptor && parsedSceneDescriptor.length > 0) {
-          showConvertedScenesPreview(parsedSceneDescriptor);
-          // Enable the toggle
-          const toggle = document.getElementById('use-scene-descriptor');
-          if (toggle) toggle.checked = true;
-          toggleSceneDescriptor();
-        }
-      }, 500);
+    console.log('Checking for saved scene descriptor...', saved ? 'Found!' : 'None');
+    if (saved && saved !== 'null' && saved !== 'undefined') {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        parsedSceneDescriptor = parsed;
+        console.log(`Loaded ${parsedSceneDescriptor.length} saved scene descriptions`);
+        // Show in preview after DOM is ready
+        setTimeout(() => {
+          if (parsedSceneDescriptor && parsedSceneDescriptor.length > 0) {
+            showConvertedScenesPreview(parsedSceneDescriptor);
+            // Enable the toggle and show container
+            const toggle = document.getElementById('use-scene-descriptor');
+            const container = document.getElementById('scene-descriptor-container');
+            if (toggle) toggle.checked = true;
+            if (container) container.hidden = false;
+          }
+        }, 1000);
+      }
     }
   } catch (e) {
     console.error('Failed to load scene descriptor:', e);
@@ -4037,12 +4042,13 @@ async function loadBrandRulesFromDB() {
       if (colorsEl) colorsEl.value = rules.colors || '';
       if (avoidEl) avoidEl.value = rules.avoid || '';
       if (enabledEl) {
-        enabledEl.checked = rules.enabled || false;
+        enabledEl.checked = rules.enabled === true;
         // Update the global variable
-        brandBlockEnabled = rules.enabled || false;
+        brandBlockEnabled = rules.enabled === true;
+        console.log('Brand enabled set to:', rules.enabled);
       }
 
-      console.log('Brand rules loaded from Supabase');
+      console.log('Brand rules loaded from Supabase:', rules);
     }
   } catch (error) {
     console.error('Failed to load brand rules:', error);
