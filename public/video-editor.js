@@ -4219,8 +4219,28 @@ function showUploadSegmentsPanel() {
   panel.innerHTML = `
     <h4 style="margin: 0 0 10px 0; color: var(--text-primary, #fff);">📤 Upload Existing Avatar Segments</h4>
     <p style="margin: 0 0 15px 0; color: var(--text-secondary, #aaa); font-size: 14px;">
-      Upload your previously downloaded avatar video files. Name them with segment number (e.g., segment_1.mp4).
+      Upload your previously downloaded avatar video files OR generate a segment with new audio.
     </p>
+
+    <!-- Generate with new audio section -->
+    <div style="margin-bottom: 20px; padding: 15px; background: rgba(99, 102, 241, 0.1); border-radius: 8px; border: 1px solid var(--accent, #6c5ce7);">
+      <h5 style="margin: 0 0 10px 0; color: var(--accent, #6c5ce7);">🎙️ Generate Segment with New Audio</h5>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select id="new-audio-segment-num" style="padding: 8px; background: var(--bg-tertiary, #333); border: 1px solid var(--border-color, #444); border-radius: 4px; color: white;">
+          ${Array.from({length: totalSegments}, (_, i) => `<option value="${i + 1}">Segment ${i + 1}</option>`).join('')}
+        </select>
+        <input type="file" id="new-audio-file-input" accept="audio/*" style="display: none;">
+        <button onclick="document.getElementById('new-audio-file-input').click()" style="padding: 8px 16px; background: var(--accent, #6c5ce7); border: none; border-radius: 4px; color: white; cursor: pointer;">
+          📁 Choose Audio File
+        </button>
+        <span id="new-audio-filename" style="color: var(--text-secondary, #aaa); font-size: 13px;">No file selected</span>
+      </div>
+      <button id="generate-new-audio-btn" onclick="generateSegmentWithNewAudio()" style="margin-top: 10px; padding: 10px 20px; background: var(--success, #22c55e); border: none; border-radius: 4px; color: white; cursor: pointer; width: 100%;" disabled>
+        🎬 Generate Avatar for Selected Segment
+      </button>
+    </div>
+
+    <h5 style="margin: 0 0 10px 0; color: var(--text-primary, #fff);">📹 Upload Existing Video Files</h5>
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
       ${Array.from({length: totalSegments}, (_, i) => `
         <div class="upload-segment-slot" data-segment="${i + 1}" style="
@@ -4262,7 +4282,141 @@ function showUploadSegmentsPanel() {
 
   const avatarSection = document.getElementById('avatar-section');
   avatarSection.appendChild(panel);
+
+  // Setup new audio file input listener
+  const newAudioInput = document.getElementById('new-audio-file-input');
+  newAudioInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      window._newAudioFile = file;
+      document.getElementById('new-audio-filename').textContent = file.name;
+      document.getElementById('generate-new-audio-btn').disabled = false;
+    }
+  });
 }
+
+// Generate a single segment with new audio file
+async function generateSegmentWithNewAudio() {
+  const segmentNum = parseInt(document.getElementById('new-audio-segment-num').value);
+  const audioFile = window._newAudioFile;
+
+  if (!audioFile) {
+    showToast('Please select an audio file first');
+    return;
+  }
+
+  if (!videoEditor.avatarPhotoBlob) {
+    showToast('Please upload an avatar photo first');
+    return;
+  }
+
+  const btn = document.getElementById('generate-new-audio-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating...';
+
+  try {
+    // Get Supabase config
+    const configResponse = await fetch('/api/supabase-config');
+    const config = await configResponse.json();
+
+    // Upload avatar image
+    const avatarPath = `avatars/avatar-${Date.now()}.png`;
+    const avatarUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${avatarPath}`;
+
+    await fetch(avatarUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': 'image/png',
+        'x-upsert': 'true'
+      },
+      body: videoEditor.avatarPhotoBlob
+    });
+
+    const avatarPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${avatarPath}`;
+
+    // Upload audio file
+    const audioPath = `audio/segment-${segmentNum}-${Date.now()}.${audioFile.name.split('.').pop()}`;
+    const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
+
+    await fetch(audioUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': audioFile.type || 'audio/mpeg',
+        'x-upsert': 'true'
+      },
+      body: audioFile
+    });
+
+    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+
+    btn.textContent = '⏳ Generating avatar...';
+
+    // Generate avatar video
+    const response = await fetch('/api/animate-avatar-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        avatarUrl: avatarPublicUrl,
+        audioUrl: audioPublicUrl
+      })
+    });
+
+    const result = await response.json();
+    if (!result.predictionId) throw new Error('No prediction ID');
+
+    // Poll for completion
+    let prediction;
+    while (true) {
+      await new Promise(r => setTimeout(r, 3000));
+      const pollRes = await fetch(`/api/prediction-status/${result.predictionId}`);
+      prediction = await pollRes.json();
+
+      if (prediction.status === 'succeeded') break;
+      if (prediction.status === 'failed') throw new Error(prediction.error || 'Generation failed');
+
+      btn.textContent = `⏳ ${prediction.status}...`;
+    }
+
+    // Store the video
+    const videoUrl = prediction.output;
+    window.uploadedAvatarSegments[segmentNum] = {
+      url: videoUrl,
+      generated: true
+    };
+
+    // Cache it permanently
+    const audioHash = await videoEditor.generateAudioHash(audioFile);
+    await videoEditor.cacheAvatarVideo(audioHash, videoUrl, 90);
+
+    // Auto-download
+    const a = document.createElement('a');
+    a.href = videoUrl;
+    a.download = `avatar_segment_${segmentNum}.mp4`;
+    a.click();
+
+    btn.textContent = '✅ Done! Video downloaded.';
+    btn.disabled = false;
+    showToast(`Segment ${segmentNum} generated and downloaded!`, 'success');
+
+    // Update the slot in the grid
+    const slot = document.querySelector(`.upload-segment-slot[data-segment="${segmentNum}"]`);
+    if (slot) {
+      slot.style.background = 'rgba(34, 197, 94, 0.2)';
+      slot.style.borderColor = '#22c55e';
+    }
+
+  } catch (error) {
+    console.error('Generation error:', error);
+    btn.textContent = '❌ Failed - Try again';
+    btn.disabled = false;
+    showToast(`Failed: ${error.message}`);
+  }
+}
+window.generateSegmentWithNewAudio = generateSegmentWithNewAudio;
 
 // Handle individual segment video upload
 async function handleSegmentUpload(segmentNum, file) {
