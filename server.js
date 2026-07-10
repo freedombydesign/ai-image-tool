@@ -978,8 +978,10 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     avatarUrl = String(avatarUrl).trim();
     audioUrl = String(audioUrl).trim();
 
-    console.log('Avatar URL:', avatarUrl);
-    console.log('Audio URL:', audioUrl);
+    console.log('Avatar URL:', JSON.stringify(avatarUrl));
+    console.log('Audio URL:', JSON.stringify(audioUrl));
+    console.log('Avatar URL valid:', /^https?:\/\//.test(avatarUrl));
+    console.log('Audio URL valid:', /^https?:\/\//.test(audioUrl));
 
     const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
     if (!apiKey) {
@@ -987,6 +989,9 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     }
 
     // Use p-video-avatar - fastest lip sync model (accepts URLs directly)
+    // Make sure URLs are clean
+    avatarUrl = avatarUrl.replace(/[\n\r]/g, '').trim();
+    audioUrl = audioUrl.replace(/[\n\r]/g, '').trim();
     const PVIDEO_VERSION = '8a54bb678ef43a7a40950731bad3f33f4ac904267fecebd2186c826a6da6f5a5';
 
     const requestBody = {
