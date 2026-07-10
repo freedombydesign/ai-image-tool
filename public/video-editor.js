@@ -28,6 +28,9 @@ class VideoEditor {
     this.avatarPhotoBlob = null;
     this.avatarPosition = 'bottom-right';
     this.avatarSize = 'medium';
+
+    // Replaced audio segments (for stitching in export)
+    this.replacedAudioSegments = {};
     this.avatarShape = 'circle';
     this.avatarVideos = []; // Generated avatar videos per scene
 
@@ -1795,6 +1798,81 @@ class VideoEditor {
     }
   }
 
+  // Stitch audio segments together (using replaced segments where available)
+  async stitchAudioForExport() {
+    if (!this.audioBlob) return null;
+
+    // Check if we have any replaced segments
+    const replacedKeys = Object.keys(this.replacedAudioSegments);
+    if (replacedKeys.length === 0) {
+      console.log('No replaced audio segments, using original audio');
+      return this.audioBlob;
+    }
+
+    console.log(`Stitching audio with ${replacedKeys.length} replaced segments:`, replacedKeys);
+
+    // Get original audio segments
+    const originalSegments = await this.splitAudioForAvatar();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Load all segment audio buffers
+    const segmentBuffers = [];
+    for (let i = 0; i < originalSegments.length; i++) {
+      const segmentNum = i + 1; // Segments are 1-indexed
+
+      let audioBlob;
+      if (this.replacedAudioSegments[segmentNum]) {
+        // Use replaced audio
+        audioBlob = this.replacedAudioSegments[segmentNum].blob;
+        console.log(`Segment ${segmentNum}: using REPLACED audio`);
+      } else {
+        // Use original segment
+        audioBlob = originalSegments[i].blob;
+        console.log(`Segment ${segmentNum}: using original audio`);
+      }
+
+      // Decode audio blob to buffer
+      try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        segmentBuffers.push(audioBuffer);
+      } catch (e) {
+        console.error(`Failed to decode segment ${segmentNum}:`, e);
+        // Fall back to original if decode fails
+        const arrayBuffer = await originalSegments[i].blob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        segmentBuffers.push(audioBuffer);
+      }
+    }
+
+    // Calculate total length
+    const sampleRate = segmentBuffers[0].sampleRate;
+    const numChannels = segmentBuffers[0].numberOfChannels;
+    let totalSamples = 0;
+    for (const buf of segmentBuffers) {
+      totalSamples += buf.length;
+    }
+
+    // Create combined buffer
+    const combinedBuffer = audioContext.createBuffer(numChannels, totalSamples, sampleRate);
+
+    let offset = 0;
+    for (const buf of segmentBuffers) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const destData = combinedBuffer.getChannelData(channel);
+        const srcData = buf.getChannelData(channel);
+        destData.set(srcData, offset);
+      }
+      offset += buf.length;
+    }
+
+    // Convert to WAV blob
+    const stitchedBlob = this.audioBufferToWav(combinedBuffer);
+    console.log('Stitched audio created:', stitchedBlob.size, 'bytes');
+
+    return stitchedBlob;
+  }
+
   // Generate talking avatar videos for all scenes (with caching)
   async generateAvatarVideos() {
     if (!this.avatarEnabled || !this.avatarPhotoBlob || !this.audioBlob) {
@@ -2950,21 +3028,56 @@ class VideoEditor {
       videoEl = document.createElement('video');
       videoEl.crossOrigin = 'anonymous';
       videoEl.muted = true;
+      videoEl.playsInline = true;
+      videoEl.preload = 'auto';
       videoEl.src = avatarVideo.videoUrl;
       videoEl.load();
       this.previewAvatarVideos[avatarVideo.videoUrl] = videoEl;
 
-      // Wait for video to be ready
+      // Wait for video to be ready to play
       await new Promise(resolve => {
-        videoEl.onloadeddata = resolve;
+        videoEl.oncanplaythrough = resolve;
+        videoEl.onloadeddata = () => {
+          if (videoEl.readyState >= 3) resolve();
+        };
         videoEl.onerror = resolve;
+        // Timeout fallback
+        setTimeout(resolve, 3000);
       });
     }
 
-    // Seek to correct time
-    const localTime = this.playbackTime - avatarVideo.startTime;
-    if (Math.abs(videoEl.currentTime - localTime) > 0.15) {
+    // Check if we switched to a different segment
+    if (this.currentAvatarSegment !== avatarVideo.videoUrl) {
+      // Pause previous segment
+      if (this.currentAvatarSegment && this.previewAvatarVideos[this.currentAvatarSegment]) {
+        this.previewAvatarVideos[this.currentAvatarSegment].pause();
+      }
+      // Start playing new segment
+      this.currentAvatarSegment = avatarVideo.videoUrl;
+      const localTime = this.playbackTime - avatarVideo.startTime;
       videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+      if (this.isPlaying) {
+        videoEl.play().catch(() => {});
+      }
+    }
+
+    // If playing, make sure video is playing and synced
+    if (this.isPlaying) {
+      if (videoEl.paused) {
+        videoEl.play().catch(() => {});
+      }
+      // Check sync - if drifted more than 0.3s, resync
+      const localTime = this.playbackTime - avatarVideo.startTime;
+      if (Math.abs(videoEl.currentTime - localTime) > 0.3) {
+        videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+      }
+    } else {
+      // Paused - seek to exact frame
+      videoEl.pause();
+      const localTime = this.playbackTime - avatarVideo.startTime;
+      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
+        videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+      }
     }
 
     // Get overlay position and size
@@ -3400,11 +3513,13 @@ class VideoEditor {
         });
       }));
 
-      // Create audio element
+      // Create audio element with stitched audio (using replaced segments)
       let audioElement = null;
       let audioContext = null;
       if (this.audioBlob) {
-        audioElement = new Audio(URL.createObjectURL(this.audioBlob));
+        this.exportStatus.textContent = 'Preparing audio (stitching segments)...';
+        const audioToUse = await this.stitchAudioForExport();
+        audioElement = new Audio(URL.createObjectURL(audioToUse));
         audioElement.muted = false;
         audioElement.preload = 'auto';
         // Wait for audio to be ready
@@ -4073,16 +4188,34 @@ class VideoEditor {
       video.crossOrigin = 'anonymous';
       video.muted = true; // Mute to allow auto-play
       video.preload = 'auto';
+      video.playsInline = true;
+
+      // Wait for video to be fully ready to play
+      video.oncanplaythrough = () => {
+        console.log('Video ready:', url, 'duration:', video.duration);
+        resolve(video);
+      };
 
       video.onloadeddata = () => {
-        console.log('Video loaded:', url, 'duration:', video.duration);
-        resolve(video);
+        // Fallback if canplaythrough doesn't fire
+        if (video.readyState >= 3) {
+          console.log('Video loaded (fallback):', url, 'duration:', video.duration);
+          resolve(video);
+        }
       };
 
       video.onerror = (e) => {
         console.error('Failed to load video:', url, e);
         reject(new Error(`Failed to load video: ${url}`));
       };
+
+      // Timeout fallback
+      setTimeout(() => {
+        if (video.readyState >= 2) {
+          console.log('Video loaded (timeout):', url);
+          resolve(video);
+        }
+      }, 5000);
 
       video.src = url;
       video.load();
@@ -4985,6 +5118,15 @@ async function generateSegmentWithNewAudio() {
       url: videoUrl,
       generated: true
     };
+
+    // Store the replaced audio for stitching in export
+    if (typeof videoEditor !== 'undefined') {
+      videoEditor.replacedAudioSegments[segmentNum] = {
+        blob: audioFile,
+        url: audioPublicUrl
+      };
+      console.log(`Stored replaced audio for segment ${segmentNum}`);
+    }
 
     // Cache it permanently
     const audioHash = await videoEditor.generateAudioHash(audioFile);
