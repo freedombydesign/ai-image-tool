@@ -424,6 +424,14 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 <span class="toggle-label">Full Character Match (face + hair + body)</span>
                 <small class="instantid-note">Uses your photo to match your exact look (~20-30s per scene)</small>
               </div>
+              <div class="avatar-toggle-row" id="style-priority-row" style="display: none; margin-left: 24px;">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="style-priority" checked onchange="toggleStylePriority()">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Style Priority</span>
+                <small class="style-priority-note">Preserve art style over face accuracy (for illustrated avatars)</small>
+              </div>
             </div>
           </div>
         </div>

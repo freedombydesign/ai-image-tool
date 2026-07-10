@@ -693,17 +693,55 @@ function toggleCharacterRef() {
   useCharacterRef = checkbox?.checked || false;
   saveAvatarState();
 
+  // Show/hide Style Priority option based on Character Match state
+  const stylePriorityRow = document.getElementById('style-priority-row');
+  if (stylePriorityRow) {
+    stylePriorityRow.style.display = useCharacterRef ? 'flex' : 'none';
+  }
+
   if (useCharacterRef && !avatarImageData) {
     showToast('Please upload an avatar photo first');
     checkbox.checked = false;
     useCharacterRef = false;
+    if (stylePriorityRow) stylePriorityRow.style.display = 'none';
   } else if (useCharacterRef) {
     showToast('Character Reference enabled - scenes will match your full appearance!', false);
   }
 }
 
+// Style priority setting (true = prioritize style, false = prioritize identity)
+let stylePriority = true;
+
+// Toggle Style Priority mode
+function toggleStylePriority() {
+  const checkbox = document.getElementById('style-priority');
+  stylePriority = checkbox?.checked || false;
+  localStorage.setItem('stylePriority', JSON.stringify(stylePriority));
+
+  if (stylePriority) {
+    showToast('Style Priority ON - art style preserved, face may vary slightly', false);
+  } else {
+    showToast('Style Priority OFF - face accuracy prioritized over art style', false);
+  }
+}
+
+// Load style priority setting on page load
+function loadStylePriority() {
+  try {
+    const saved = localStorage.getItem('stylePriority');
+    if (saved !== null) {
+      stylePriority = JSON.parse(saved);
+      const checkbox = document.getElementById('style-priority');
+      if (checkbox) checkbox.checked = stylePriority;
+    }
+  } catch (e) {
+    console.error('Failed to load style priority:', e);
+  }
+}
+
 // Make toggleCharacterRef available globally
 window.toggleCharacterRef = toggleCharacterRef;
+window.toggleStylePriority = toggleStylePriority;
 
 // Load from Supabase (async, called on page load)
 async function loadAvatarStateFromDB() {
@@ -2362,6 +2400,7 @@ async function generatePreviewScenes() {
         formData.append('prompt', styledPrompt);
         formData.append('width', width);
         formData.append('height', height);
+        formData.append('styleStrength', stylePriority ? 'low' : 'high');
 
         const response = await fetch('/api/generate-with-reference', {
           method: 'POST',
@@ -2525,6 +2564,7 @@ async function generateBatchScenes() {
         formData.append('prompt', styledPrompt);
         formData.append('width', width);
         formData.append('height', height);
+        formData.append('styleStrength', stylePriority ? 'low' : 'high');
 
         const response = await fetch('/api/generate-with-reference', {
           method: 'POST',
@@ -3954,6 +3994,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Initialize avatar upload functionality
   initAvatarUpload();
 
+  // Load style priority setting
+  loadStylePriority();
+
   // Initialize thumbnail gallery from localStorage on page load
   if (thumbnailHistory && thumbnailHistory.length > 0) {
     updateThumbnailGallery();
@@ -4837,6 +4880,7 @@ async function generateThumbnailWithFace() {
     formData.append('prompt', prompt);
     formData.append('width', '1792');
     formData.append('height', '1024');
+    formData.append('styleStrength', stylePriority ? 'low' : 'high');
 
     const response = await fetch('/api/generate-with-reference', {
       method: 'POST',
@@ -4921,6 +4965,7 @@ async function generateBannerWithFace() {
     formData.append('prompt', prompt);
     formData.append('width', '1536');
     formData.append('height', '1024');
+    formData.append('styleStrength', stylePriority ? 'low' : 'high');
 
     const response = await fetch('/api/generate-with-reference', {
       method: 'POST',
