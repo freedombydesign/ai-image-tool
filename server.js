@@ -964,31 +964,67 @@ app.post('/api/animate-avatar', upload.fields([
 });
 
 // Animate avatar with lip-sync using URLs (bypasses Vercel payload limit)
-// VERSION: lucataco-v3 - using 85c698db
+// VERSION: v4 - Download files and convert to base64 data URIs
 app.post('/api/animate-avatar-url', async (req, res) => {
-  console.log('*** AVATAR ENDPOINT VERSION: lucataco-v3 ***');
+  console.log('*** AVATAR ENDPOINT VERSION: v4-base64 ***');
   try {
-    const { avatarUrl, audioUrl } = req.body;
+    let { avatarUrl, audioUrl } = req.body;
 
-    if (!avatarUrl) {
-      return res.status(400).json({ error: 'Avatar URL is required' });
+    if (!avatarUrl || !audioUrl) {
+      return res.status(400).json({ error: 'Avatar URL and Audio URL are required' });
     }
-    if (!audioUrl) {
-      return res.status(400).json({ error: 'Audio URL is required' });
-    }
+
+    // Trim whitespace
+    avatarUrl = String(avatarUrl).trim();
+    audioUrl = String(audioUrl).trim();
+
+    console.log('Avatar URL:', avatarUrl);
+    console.log('Audio URL:', audioUrl);
 
     const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
     if (!apiKey) {
       return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
     }
 
-    console.log('=== Avatar Animation v2 ===');
-    console.log('Avatar URL:', avatarUrl);
-    console.log('Audio URL:', audioUrl);
+    // Download files and convert to base64 data URIs
+    // This bypasses any URL format validation issues with Replicate
+    console.log('Downloading avatar image...');
+    const avatarResponse = await fetch(avatarUrl);
+    if (!avatarResponse.ok) {
+      throw new Error(`Failed to download avatar: ${avatarResponse.status}`);
+    }
+    const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
+    const avatarBase64 = `data:image/png;base64,${avatarBuffer.toString('base64')}`;
+    console.log('Avatar downloaded, base64 length:', avatarBase64.length);
 
-    // Use lucataco/sadtalker model which accepts direct URLs
-    // Version: 85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b
+    console.log('Downloading audio file...');
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to download audio: ${audioResponse.status}`);
+    }
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+    // Detect audio mime type from URL
+    const audioExt = audioUrl.split('.').pop().toLowerCase().split('?')[0];
+    let audioMime = 'audio/wav';
+    if (audioExt === 'm4a' || audioExt === 'mp4') audioMime = 'audio/mp4';
+    else if (audioExt === 'mp3') audioMime = 'audio/mpeg';
+    const audioBase64 = `data:${audioMime};base64,${audioBuffer.toString('base64')}`;
+    console.log('Audio downloaded, base64 length:', audioBase64.length, 'mime:', audioMime);
+
+    // Use SadTalker with base64 data URIs
     const SADTALKER_VERSION = '85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b';
+
+    const requestBody = {
+      version: SADTALKER_VERSION,
+      input: {
+        source_image: avatarBase64,
+        driven_audio: audioBase64,
+        enhancer: "gfpgan",
+        preprocess: "full",
+        still: false
+      }
+    };
+    console.log('Sending to Replicate with base64 data URIs...');
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -996,22 +1032,13 @@ app.post('/api/animate-avatar-url', async (req, res) => {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        version: SADTALKER_VERSION,
-        input: {
-          source_image: avatarUrl,
-          driven_audio: audioUrl,
-          enhancer: "gfpgan",
-          preprocess: "full",
-          still: false
-        }
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Replicate error (v3-lucataco):', response.status, errorText);
-      throw new Error(`[v3] ${errorText}`);
+      console.error('Replicate error (v4-base64):', response.status, errorText);
+      throw new Error(`[v4] ${errorText}`);
     }
 
     let prediction = await response.json();
