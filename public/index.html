@@ -742,11 +742,17 @@
               </div>
               <div class="form-group">
                 <label for="caption-text-color">Text Color</label>
-                <input type="color" id="caption-text-color" value="#FFFFFF" style="height: 35px; width: 100%;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="color" id="caption-text-color" value="#FFFFFF" style="height: 35px; width: 50px; cursor: pointer;">
+                  <input type="text" id="caption-text-color-hex" value="#FFFFFF" maxlength="7" style="flex: 1; height: 35px; font-family: monospace; text-transform: uppercase;" placeholder="#FFFFFF">
+                </div>
               </div>
               <div class="form-group">
                 <label for="caption-highlight-color">Highlight Color</label>
-                <input type="color" id="caption-highlight-color" value="#FFFF00" style="height: 35px; width: 100%;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="color" id="caption-highlight-color" value="#FFFF00" style="height: 35px; width: 50px; cursor: pointer;">
+                  <input type="text" id="caption-highlight-color-hex" value="#FFFF00" maxlength="7" style="flex: 1; height: 35px; font-family: monospace; text-transform: uppercase;" placeholder="#FFFF00">
+                </div>
               </div>
               <div class="form-group">
                 <label for="caption-bg-color">Background</label>

@@ -482,6 +482,10 @@ class VideoEditor {
       this.previewCaptionBtn.addEventListener('click', () => this.previewCaptionStyle());
     }
 
+    // Color picker + hex input sync
+    this.setupColorSync('caption-text-color', 'caption-text-color-hex');
+    this.setupColorSync('caption-highlight-color', 'caption-highlight-color-hex');
+
     // Export
     this.exportVideoBtn.addEventListener('click', () => this.exportVideo());
 
@@ -522,6 +526,43 @@ class VideoEditor {
     // Preview Modal
     this.closePreviewBtn.addEventListener('click', () => this.closePreview());
     this.previewPlayPauseBtn.addEventListener('click', () => this.togglePlayback());
+  }
+
+  // Sync color picker with hex text input
+  setupColorSync(colorId, hexId) {
+    const colorInput = document.getElementById(colorId);
+    const hexInput = document.getElementById(hexId);
+    if (!colorInput || !hexInput) return;
+
+    // Color picker changes -> update hex input
+    colorInput.addEventListener('input', () => {
+      hexInput.value = colorInput.value.toUpperCase();
+    });
+
+    // Hex input changes -> update color picker
+    hexInput.addEventListener('input', () => {
+      let hex = hexInput.value.trim();
+      // Add # if missing
+      if (hex && !hex.startsWith('#')) hex = '#' + hex;
+      // Validate hex format
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+        colorInput.value = hex;
+        hexInput.style.borderColor = '';
+      } else if (hex.length > 0) {
+        hexInput.style.borderColor = 'red';
+      }
+    });
+
+    // On blur, format properly
+    hexInput.addEventListener('blur', () => {
+      let hex = hexInput.value.trim().toUpperCase();
+      if (hex && !hex.startsWith('#')) hex = '#' + hex;
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+        hexInput.value = hex;
+        colorInput.value = hex;
+        hexInput.style.borderColor = '';
+      }
+    });
   }
 
   async initFFmpeg() {
