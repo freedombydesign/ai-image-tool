@@ -782,7 +782,21 @@ function toggleAvatarUsage() {
 
   updateAvatarStatusIndicators(); // Update status across all tabs
   saveAvatarState(); // Auto-save to localStorage
-  showToast(avatarEnabled ? 'Avatar will be used in generation' : 'Avatar disabled');
+  showToast(avatarEnabled ? 'Avatar enabled for video overlay' : 'Avatar disabled');
+}
+
+function toggleAvatarInScenes() {
+  const checkbox = document.getElementById('include-avatar-in-scenes');
+  const includeInScenes = checkbox?.checked || false;
+
+  // Save preference to localStorage
+  localStorage.setItem('include_avatar_in_scenes', includeInScenes);
+
+  if (includeInScenes) {
+    showToast('Avatar will appear IN your scenes');
+  } else {
+    showToast('Scenes will be faceless (avatar as video overlay only)');
+  }
 }
 
 async function handleAvatarUpload(file) {
@@ -908,19 +922,29 @@ function removeAvatar() {
 function getAvatarInstructions() {
   if (!avatarEnabled || !avatarImageData) return '';
 
+  // Check if user wants avatar IN scenes or just as video overlay
+  const includeAvatarInScenes = document.getElementById('include-avatar-in-scenes')?.checked;
+
+  // If not checked (default for faceless channels), don't add avatar to scene prompts
+  // The avatar will be added as a video overlay separately
+  if (!includeAvatarInScenes) {
+    console.log('Avatar enabled for video overlay only, not adding to scene prompts');
+    return '';
+  }
+
   // Use stored variable first, fallback to DOM input
   const descInput = document.getElementById('avatar-description');
   const description = avatarDescription || descInput?.value.trim() || '';
 
-  console.log('Avatar description being used:', description);
+  console.log('Avatar description being used in scenes:', description);
 
   if (!description) {
     // Basic instruction if no description provided
-    return `. MAIN CHARACTER: Include a person as the main focus of the scene, maintaining consistent appearance throughout all scenes`;
+    return `. Include a person in the scene with consistent appearance`;
   }
 
-  // Detailed instruction with user's description - emphasize hair/appearance consistency
-  return `. MAIN CHARACTER APPEARANCE (EXACT MATCH REQUIRED): ${description}. CRITICAL: This exact character with these EXACT physical features (especially hair color, hair style, skin tone) MUST appear consistently in every single scene. Do not vary the hair color or style.`;
+  // Add character to scene but don't override the scene content
+  return `. If a person appears in scene: ${description}. Maintain consistent appearance.`;
 }
 
 // Initialize avatar upload area
@@ -1858,11 +1882,15 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
     basePrompt += '. Create with a polished, professional YouTube video aesthetic, eye-catching visuals optimized for video content';
   }
 
-  // Only add faceless instructions if avatar is NOT enabled
-  if (avatarEnabled && avatarImageData) {
+  // Check if user wants avatar IN scenes or faceless scenes
+  const includeAvatarInScenes = document.getElementById('include-avatar-in-scenes')?.checked;
+
+  if (avatarEnabled && avatarImageData && includeAvatarInScenes) {
+    // Avatar should appear in scenes
     return `${basePrompt}. No text or watermarks.`;
   } else {
-    return `${basePrompt}. No text, no faces visible, faceless characters suitable for faceless YouTube videos.`;
+    // Faceless scenes - avatar will be added as video overlay separately
+    return `${basePrompt}. No text, no faces visible, faceless characters suitable for faceless YouTube videos. Focus on illustrating the concept described, not on people.`;
   }
 }
 

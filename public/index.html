@@ -369,7 +369,15 @@
                   <input type="checkbox" id="avatar-enabled" checked onchange="toggleAvatarUsage()">
                   <span class="toggle-slider"></span>
                 </label>
-                <span class="toggle-label">Use avatar in scene generation</span>
+                <span class="toggle-label">Use avatar for video overlay</span>
+              </div>
+              <div class="avatar-toggle-row">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="include-avatar-in-scenes" onchange="toggleAvatarInScenes()">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Include avatar IN scenes (uncheck for faceless)</span>
+                <small class="help-text" style="display: block; margin-top: 4px; color: var(--text-muted);">For faceless channels: keep unchecked. Your avatar will appear as video overlay only.</small>
               </div>
               <div class="avatar-toggle-row" id="character-ref-row">
                 <label class="toggle-switch">
