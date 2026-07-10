@@ -49,6 +49,7 @@ class VideoEditor {
     this.initFFmpeg();
     this.loadAvatarSettings(); // Restore saved avatar state
     this.loadSavedAudioFromPreview(); // Load audio from Batch Scenes if available
+    this.loadScenesFromSupabase(); // Restore saved scenes
   }
 
   // Get or create a unique user ID for persistence
@@ -127,6 +128,35 @@ class VideoEditor {
       }
     } catch (e) {
       console.error('Failed to save scenes to Supabase:', e);
+    }
+  }
+
+  // Load scenes from Supabase on page load
+  async loadScenesFromSupabase() {
+    const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
+    if (!userId) return;
+
+    try {
+      const response = await fetch(`/api/db/batch-scenes/${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.scenes && data.scenes.length > 0) {
+          this.scenes = data.scenes.map((scene, index) => ({
+            id: `scene-${Date.now()}-${index}`,
+            imageUrl: scene.imageUrl || scene.image_url,
+            text: scene.text || '',
+            caption: scene.text || '',
+            duration: scene.duration || 6,
+            startTime: scene.startTime || scene.start_time || 0
+          }));
+          this.renderScenes();
+          this.updateTotalDuration();
+          console.log(`Loaded ${this.scenes.length} scenes from Supabase`);
+          showToast(`Restored ${this.scenes.length} scenes`, 'success');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load scenes from Supabase:', e);
     }
   }
 
