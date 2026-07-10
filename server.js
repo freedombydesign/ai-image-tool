@@ -2151,6 +2151,93 @@ app.get('/api/db/avatar-video-cache/:userId', async (req, res) => {
 });
 
 // ============================================
+// AVATAR SEGMENTS STORAGE (SUPABASE)
+// ============================================
+
+// Save avatar segment to Supabase
+app.post('/api/db/avatar-segments', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId, segmentNum, videoUrl, fileName } = req.body;
+
+    if (!userId || segmentNum === undefined || !videoUrl) {
+      return res.status(400).json({ error: 'userId, segmentNum, and videoUrl are required' });
+    }
+
+    const { data, error } = await supabase
+      .from('avatar_segments')
+      .upsert({
+        user_id: userId,
+        segment_num: segmentNum,
+        video_url: videoUrl,
+        file_name: fileName || `segment-${segmentNum}.mp4`,
+        created_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,segment_num'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, segment: data });
+  } catch (error) {
+    console.error('Save avatar segment error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all avatar segments for user
+app.get('/api/db/avatar-segments/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+      .from('avatar_segments')
+      .select('*')
+      .eq('user_id', userId)
+      .order('segment_num', { ascending: true });
+
+    if (error) throw error;
+
+    res.json({ success: true, segments: data || [] });
+  } catch (error) {
+    console.error('Get avatar segments error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete all avatar segments for user (for cleanup)
+app.delete('/api/db/avatar-segments/:userId', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+
+    const { error } = await supabase
+      .from('avatar_segments')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete avatar segments error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // BATCH SCENES STORAGE (SUPABASE)
 // ============================================
 

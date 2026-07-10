@@ -50,6 +50,7 @@ class VideoEditor {
     this.loadAvatarSettings(); // Restore saved avatar state
     this.loadSavedAudioFromPreview(); // Load audio from Batch Scenes if available
     this.loadScenesFromSupabase(); // Restore saved scenes
+    this.loadAvatarSegmentsFromSupabase(); // Restore saved avatar segments
   }
 
   // Get or create a unique user ID for persistence
@@ -163,6 +164,72 @@ class VideoEditor {
     } catch (e) {
       console.error('Failed to load scenes from Supabase:', e);
     }
+  }
+
+  // Load avatar segments from Supabase on page load
+  async loadAvatarSegmentsFromSupabase() {
+    const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
+    if (!userId) return;
+
+    try {
+      const response = await fetch(`/api/db/avatar-segments/${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.segments && data.segments.length > 0) {
+          // Initialize the global storage
+          window.uploadedAvatarSegments = window.uploadedAvatarSegments || {};
+
+          // Populate from database
+          data.segments.forEach(seg => {
+            window.uploadedAvatarSegments[seg.segment_num] = {
+              url: seg.video_url,
+              fileName: seg.file_name
+            };
+          });
+
+          // Sync to video editor
+          this.syncUploadedAvatarSegments();
+          this.avatarEnabled = true;
+
+          console.log(`Loaded ${data.segments.length} avatar segments from Supabase`);
+
+          // Update the UI slots if they exist
+          this.updateAvatarSegmentSlots();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load avatar segments from Supabase:', e);
+    }
+  }
+
+  // Update avatar segment UI slots to show loaded segments
+  updateAvatarSegmentSlots() {
+    const segments = window.uploadedAvatarSegments || {};
+    Object.keys(segments).forEach(segNum => {
+      const seg = segments[segNum];
+      const slot = document.querySelector(`.upload-segment-slot[data-segment="${segNum}"]`);
+      if (slot && seg.url) {
+        slot.style.background = 'rgba(34, 197, 94, 0.2)';
+        slot.style.borderColor = '#22c55e';
+        slot.innerHTML = `
+          <input type="file" id="segment-upload-${segNum}" accept="video/*" hidden
+            onchange="handleSegmentUpload(${segNum}, this.files[0])">
+          <div style="font-size: 24px; margin-bottom: 5px;">✅</div>
+          <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segNum}</div>
+          <div style="font-size: 12px; color: #22c55e; margin-top: 5px;">${seg.fileName || 'Loaded'}</div>
+          <button onclick="previewSegment('${seg.url}')" style="
+            margin-top: 8px;
+            padding: 4px 8px;
+            background: var(--bg-tertiary, #333);
+            border: 1px solid var(--border-color, #444);
+            border-radius: 4px;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+            font-size: 12px;
+          ">▶ Preview</button>
+        `;
+      }
+    });
   }
 
   // Load avatar settings from localStorage (fast) then Supabase
@@ -4919,19 +4986,54 @@ async function handleSegmentUpload(segmentNum, file) {
   slot.innerHTML = `
     <div style="font-size: 24px; margin-bottom: 5px;">⏳</div>
     <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segmentNum}</div>
-    <div style="font-size: 12px; color: var(--text-secondary, #aaa); margin-top: 5px;">Processing...</div>
+    <div style="font-size: 12px; color: var(--text-secondary, #aaa); margin-top: 5px;">Uploading to cloud...</div>
   `;
 
   try {
-    // Create blob URL for the video
-    const videoUrl = URL.createObjectURL(file);
+    // Upload to Supabase for persistence
+    const configResponse = await fetch('/api/supabase-config');
+    const config = await configResponse.json();
+    const userId = localStorage.getItem('ai_tool_user_id') || 'default';
 
-    // Store in memory for export
+    const videoPath = `avatar-segments/${userId}/segment-${segmentNum}-${Date.now()}.mp4`;
+    const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${videoPath}`;
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': file.type || 'video/mp4',
+        'x-upsert': 'true'
+      },
+      body: file
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Failed to upload video to cloud');
+    }
+
+    // Permanent URL that persists
+    const permanentUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${videoPath}`;
+    console.log(`Segment ${segmentNum} uploaded to:`, permanentUrl);
+
+    // Store in memory for export (with permanent URL)
     window.uploadedAvatarSegments[segmentNum] = {
-      url: videoUrl,
-      blob: file,
+      url: permanentUrl,
       fileName: file.name
     };
+
+    // Save to database for persistence across refreshes
+    await fetch('/api/db/avatar-segments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        segmentNum,
+        videoUrl: permanentUrl,
+        fileName: file.name
+      })
+    });
 
     // Update slot UI
     slot.style.background = 'rgba(34, 197, 94, 0.2)';
@@ -4942,7 +5044,7 @@ async function handleSegmentUpload(segmentNum, file) {
       <div style="font-size: 24px; margin-bottom: 5px;">✅</div>
       <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segmentNum}</div>
       <div style="font-size: 12px; color: #22c55e; margin-top: 5px;">${file.name}</div>
-      <button onclick="previewSegment('${videoUrl}')" style="
+      <button onclick="previewSegment('${permanentUrl}')" style="
         margin-top: 8px;
         padding: 4px 8px;
         background: var(--bg-tertiary, #333);
