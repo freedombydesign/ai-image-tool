@@ -1580,6 +1580,7 @@ function showConvertedScenesPreview(scenes) {
 function clearConvertedScenes() {
   convertedVisualScenes = null;
   parsedSceneDescriptor = null;
+  localStorage.removeItem('parsedSceneDescriptor');
   const previewContainer = document.getElementById('converted-scenes-preview');
   if (previewContainer) {
     previewContainer.innerHTML = '';
@@ -1591,8 +1592,47 @@ function clearConvertedScenes() {
 // SCENE DESCRIPTOR - Custom scene descriptions with [AVATAR] placeholders
 // ============================================================================
 
-// Store parsed scene descriptor scenes
+// Store parsed scene descriptor scenes (with localStorage persistence)
 let parsedSceneDescriptor = null;
+
+// Load saved scene descriptor on startup
+function loadSavedSceneDescriptor() {
+  try {
+    const saved = localStorage.getItem('parsedSceneDescriptor');
+    if (saved) {
+      parsedSceneDescriptor = JSON.parse(saved);
+      console.log(`Loaded ${parsedSceneDescriptor.length} saved scene descriptions`);
+      // Show in preview
+      setTimeout(() => {
+        if (parsedSceneDescriptor && parsedSceneDescriptor.length > 0) {
+          showConvertedScenesPreview(parsedSceneDescriptor);
+          // Enable the toggle
+          const toggle = document.getElementById('use-scene-descriptor');
+          if (toggle) toggle.checked = true;
+          toggleSceneDescriptor();
+        }
+      }, 500);
+    }
+  } catch (e) {
+    console.error('Failed to load scene descriptor:', e);
+  }
+}
+
+// Save scene descriptor to localStorage
+function saveSceneDescriptor(scenes) {
+  try {
+    localStorage.setItem('parsedSceneDescriptor', JSON.stringify(scenes));
+  } catch (e) {
+    console.error('Failed to save scene descriptor:', e);
+  }
+}
+
+// Initialize on load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', loadSavedSceneDescriptor);
+} else {
+  loadSavedSceneDescriptor();
+}
 
 // Toggle scene descriptor visibility
 function toggleSceneDescriptor() {
@@ -1693,8 +1733,9 @@ function parseSceneDescriptor() {
   // Distribute images across beats
   const scenes = distributeImagesAcrossBeats(beats, targetSceneCount);
 
-  // Store and show preview
+  // Store, save, and show preview
   parsedSceneDescriptor = scenes;
+  saveSceneDescriptor(scenes);
   showToast(`Created ${scenes.length} scenes from ${beats.length} concept beats`);
   showConvertedScenesPreview(scenes);
 
@@ -1782,8 +1823,9 @@ async function parseAndExpandWithAI() {
       throw new Error(data.error);
     }
 
-    // Store and show preview
+    // Store, save, and show preview
     parsedSceneDescriptor = data.scenes;
+    saveSceneDescriptor(data.scenes);
     hideLoading();
     showToast(`AI created ${data.scenes.length} scenes from ${data.beatsCount} concept beats`);
     showConvertedScenesPreview(data.scenes);
