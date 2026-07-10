@@ -984,6 +984,25 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     console.log('Avatar URL:', avatarUrl);
     console.log('Audio URL:', audioUrl);
 
+    // Download files and convert to base64 data URIs for Replicate
+    console.log('Downloading avatar image...');
+    const avatarResponse = await fetch(avatarUrl);
+    const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
+    const avatarBase64 = `data:image/png;base64,${avatarBuffer.toString('base64')}`;
+
+    console.log('Downloading audio file...');
+    const audioResponse = await fetch(audioUrl);
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+    // Determine audio mime type from URL
+    const audioExt = audioUrl.split('.').pop().toLowerCase();
+    let audioMime = 'audio/wav';
+    if (audioExt === 'm4a' || audioExt === 'mp4') audioMime = 'audio/mp4';
+    else if (audioExt === 'mp3') audioMime = 'audio/mpeg';
+    const audioBase64 = `data:${audioMime};base64,${audioBuffer.toString('base64')}`;
+
+    console.log('Avatar base64 length:', avatarBase64.length);
+    console.log('Audio base64 length:', audioBase64.length);
+
     // Use SadTalker model on Replicate for audio-driven talking head
     const SADTALKER_VERSION = 'a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3';
 
@@ -996,8 +1015,8 @@ app.post('/api/animate-avatar-url', async (req, res) => {
       body: JSON.stringify({
         version: SADTALKER_VERSION,
         input: {
-          source_image: avatarUrl,
-          driven_audio: audioUrl,
+          source_image: avatarBase64,
+          driven_audio: audioBase64,
           enhancer: "gfpgan"
         }
       })
