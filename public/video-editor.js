@@ -3015,7 +3015,7 @@ async function generateAvatarOnly() {
       const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
 
       // Generate avatar for this segment
-      statusEl.textContent = `Generating avatar ${i + 1}/${audioSegments.length} (may take 1-2 min)...`;
+      statusEl.textContent = `Starting avatar ${i + 1}/${audioSegments.length}...`;
 
       const response = await fetch('/api/animate-avatar-url', {
         method: 'POST',
@@ -3032,9 +3032,35 @@ async function generateAvatarOnly() {
         throw new Error(result.error || `Avatar segment ${i + 1} failed`);
       }
 
+      // Poll for completion (SadTalker can take 5+ minutes)
+      const predictionId = result.predictionId;
+      let pollCount = 0;
+      const maxPolls = 600; // 10 minutes max per segment
+      let prediction = { status: result.status };
+
+      while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && pollCount < maxPolls) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+        pollCount++;
+
+        const elapsed = Math.floor(pollCount * 2);
+        statusEl.textContent = `Avatar ${i + 1}/${audioSegments.length}: ${prediction.status} (${elapsed}s)...`;
+        btn.textContent = `⏳ ${i + 1}/${audioSegments.length}`;
+
+        const pollResponse = await fetch(`/api/prediction-status/${predictionId}`);
+        prediction = await pollResponse.json();
+      }
+
+      if (prediction.status === 'failed') {
+        throw new Error(prediction.error || `Avatar segment ${i + 1} failed`);
+      }
+
+      if (prediction.status !== 'succeeded') {
+        throw new Error(`Avatar segment ${i + 1} timed out`);
+      }
+
       avatarVideos.push({
         index: i,
-        videoUrl: result.videoUrl,
+        videoUrl: prediction.output,
         startTime: segment.startTime,
         endTime: segment.endTime
       });

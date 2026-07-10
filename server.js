@@ -1044,40 +1044,45 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     let prediction = await response.json();
     console.log('Animation prediction started:', prediction.id, 'status:', prediction.status);
 
-    // Poll for completion
-    let pollCount = 0;
-    const maxPolls = 300; // 5 minutes max
-    while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && pollCount < maxPolls) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const pollResponse = await fetch(prediction.urls.get, {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      prediction = await pollResponse.json();
-      pollCount++;
-      if (pollCount % 10 === 0) {
-        console.log(`Animation poll ${pollCount}: ${prediction.status}`);
-      }
-    }
-
-    if (prediction.status === 'failed') {
-      console.error('Animation failed:', prediction.error);
-      throw new Error(prediction.error || 'Animation failed');
-    }
-
-    if (pollCount >= maxPolls) {
-      throw new Error('Animation timed out after 5 minutes');
-    }
-
-    console.log('Animation succeeded, output:', prediction.output);
-
+    // Return prediction ID immediately - frontend will poll for completion
+    // This avoids Vercel timeout issues (SadTalker can take 5+ minutes)
     res.json({
       success: true,
-      videoUrl: prediction.output,
-      predictionId: prediction.id
+      predictionId: prediction.id,
+      status: prediction.status,
+      pollUrl: `/api/prediction-status/${prediction.id}`
     });
 
   } catch (error) {
     console.error('Animation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Poll for prediction status (for long-running jobs like SadTalker)
+app.get('/api/prediction-status/:predictionId', async (req, res) => {
+  try {
+    const { predictionId } = req.params;
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+
+    const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get prediction status: ${response.status}`);
+    }
+
+    const prediction = await response.json();
+
+    res.json({
+      status: prediction.status,
+      output: prediction.output,
+      error: prediction.error,
+      logs: prediction.logs ? prediction.logs.slice(-500) : null
+    });
+  } catch (error) {
+    console.error('Prediction status error:', error);
     res.status(500).json({ error: error.message });
   }
 });
