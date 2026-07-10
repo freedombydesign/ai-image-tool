@@ -3980,8 +3980,10 @@ async function initSupabaseSync() {
       console.log(`Loaded ${dbThumbnails.length} thumbnails from Supabase`);
     }
 
-    // Load brand rules from Supabase
-    await loadBrandRulesFromDB();
+    // Load brand rules from Supabase (with delay to ensure DOM ready)
+    setTimeout(async () => {
+      await loadBrandRulesFromDB();
+    }, 500);
   }
 }
 
