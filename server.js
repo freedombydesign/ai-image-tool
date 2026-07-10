@@ -1293,10 +1293,10 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
   }
 });
 
-// Generate image with IP-Adapter (character reference) - maintains full appearance
+// Generate image with InstantID (character reference) - maintains identity while preserving art style
 app.post('/api/generate-with-reference', upload.single('referenceImage'), async (req, res) => {
   try {
-    const { prompt, negativePrompt, width, height } = req.body;
+    const { prompt, negativePrompt, width, height, styleStrength } = req.body;
 
     if (!req.file) {
       return res.status(400).json({ error: 'Reference image is required' });
@@ -1311,28 +1311,37 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
       return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
     }
 
-    console.log('Generating with IP-Adapter reference, prompt:', prompt);
+    console.log('Generating with InstantID reference, prompt:', prompt);
 
     // Convert reference image to base64 data URI
     const refBase64 = fileToBase64DataUri(req.file);
 
-    // Cap dimensions to 1536 max (IP-Adapter/PULID limit)
+    // InstantID works best at 1024x1024 or similar SDXL dimensions
     let finalWidth = parseInt(width) || 1024;
     let finalHeight = parseInt(height) || 1024;
-    if (finalWidth > 1536) {
-      const ratio = 1536 / finalWidth;
-      finalWidth = 1536;
+    // Cap to 1280 max for InstantID (SDXL-based)
+    if (finalWidth > 1280) {
+      const ratio = 1280 / finalWidth;
+      finalWidth = 1280;
       finalHeight = Math.round(finalHeight * ratio);
     }
-    if (finalHeight > 1536) {
-      const ratio = 1536 / finalHeight;
-      finalHeight = 1536;
+    if (finalHeight > 1280) {
+      const ratio = 1280 / finalHeight;
+      finalHeight = 1280;
       finalWidth = Math.round(finalWidth * ratio);
     }
-    console.log(`IP-Adapter dimensions: ${finalWidth}x${finalHeight} (requested: ${width}x${height})`);
+    // Ensure dimensions are multiples of 8
+    finalWidth = Math.round(finalWidth / 8) * 8;
+    finalHeight = Math.round(finalHeight / 8) * 8;
+    console.log(`InstantID dimensions: ${finalWidth}x${finalHeight} (requested: ${width}x${height})`);
 
-    // Using flux-pulid which combines Flux quality with face/character preservation
-    const PULID_VERSION = '8baa7ef2255075b46f4d91cd238c21d31181b3e6a864463f967960bb0112525b';
+    // Using InstantID which better preserves artistic style while maintaining identity
+    // Lower ip_adapter_scale and controlnet_conditioning_scale = more style preservation
+    const INSTANTID_VERSION = '491ddf5be6b827f8931f088ef10c6d015f6d99685e6454e6f04c8ac298979686';
+
+    // Style strength: 'high' = prioritize identity, 'low' = prioritize style
+    // Default to balanced settings that preserve style
+    const identityStrength = styleStrength === 'high' ? 0.8 : 0.5;
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -1341,31 +1350,35 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: PULID_VERSION,
+        version: INSTANTID_VERSION,
         input: {
-          main_face_image: refBase64,
+          image: refBase64,
           prompt: prompt,
-          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, different person, wrong hair color',
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, deformed',
           width: finalWidth,
           height: finalHeight,
-          num_steps: 20,
-          start_step: 0,
-          guidance_scale: 4,
-          id_weight: 1.0,
-          true_cfg: 1.0,
-          max_sequence_length: 128
+          num_inference_steps: 30,
+          guidance_scale: 5,
+          ip_adapter_scale: identityStrength,  // Lower = more style preservation
+          controlnet_conditioning_scale: identityStrength,  // Lower = more artistic freedom
+          enhance_nonface_region: true,  // Keep artistic style in body/background
+          enable_pose_controlnet: false,  // Don't force pose from reference
+          num_outputs: 1,
+          output_format: 'png',
+          output_quality: 90,
+          disable_safety_checker: true
         }
       })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('IP-Adapter API error:', response.status, errorText);
+      console.error('InstantID API error:', response.status, errorText);
       throw new Error(`Replicate API error (${response.status}): ${errorText}`);
     }
 
     let prediction = await response.json();
-    console.log('IP-Adapter prediction started:', prediction.id);
+    console.log('InstantID prediction started:', prediction.id);
 
     // Poll for completion
     while (prediction.status !== 'succeeded' && prediction.status !== 'failed') {
@@ -1374,17 +1387,17 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       prediction = await pollResponse.json();
-      console.log('IP-Adapter status:', prediction.status);
+      console.log('InstantID status:', prediction.status);
     }
 
     cleanupFile(req.file);
 
     if (prediction.status === 'failed') {
-      console.error('IP-Adapter failed:', prediction.error);
-      throw new Error(prediction.error || 'IP-Adapter generation failed');
+      console.error('InstantID failed:', prediction.error);
+      throw new Error(prediction.error || 'InstantID generation failed');
     }
 
-    console.log('IP-Adapter succeeded');
+    console.log('InstantID succeeded');
 
     res.json({
       success: true,
@@ -1393,7 +1406,7 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
     });
 
   } catch (error) {
-    console.error('IP-Adapter generation error:', error);
+    console.error('InstantID generation error:', error);
     cleanupFile(req.file);
     res.status(500).json({ error: error.message });
   }
