@@ -1770,18 +1770,26 @@ class VideoEditor {
     this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
 
     try {
-      // Determine file extension based on mime type
-      let extension = 'mp3';
-      const mimeType = this.audioBlob.type || 'audio/mpeg';
-      if (mimeType.includes('wav')) {
+      // Determine file extension based on mime type or filename
+      let extension = 'm4a'; // Default to m4a since that's the user's file
+      const mimeType = this.audioBlob.type || '';
+      console.log('Audio blob MIME type:', mimeType, 'size:', this.audioBlob.size);
+
+      if (mimeType.includes('wav') || mimeType.includes('wave')) {
         extension = 'wav';
-      } else if (mimeType.includes('m4a') || mimeType.includes('mp4')) {
+      } else if (mimeType.includes('m4a') || mimeType.includes('mp4') || mimeType.includes('x-m4a') || mimeType === 'audio/mp4') {
         extension = 'm4a';
-      } else if (mimeType.includes('ogg')) {
+      } else if (mimeType.includes('ogg') || mimeType.includes('oga')) {
         extension = 'ogg';
       } else if (mimeType.includes('webm')) {
         extension = 'webm';
+      } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+        extension = 'mp3';
+      } else if (mimeType.includes('flac')) {
+        extension = 'flac';
       }
+      // If MIME type is empty or generic, keep m4a default
+      console.log('Using extension:', extension);
 
       // Step 1: Get Supabase config for direct upload (bypasses Vercel 4.5MB limit)
       const configResponse = await fetch('/api/supabase-config');

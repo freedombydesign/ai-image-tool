@@ -1290,24 +1290,34 @@ app.post('/api/transcribe-url', async (req, res) => {
     const buffer = Buffer.from(arrayBuffer);
 
     // Detect file extension from URL or content-type
-    let ext = 'mp3';
+    let ext = 'm4a'; // Default to m4a
     const urlPath = new URL(audioUrl).pathname;
-    const urlExt = urlPath.split('.').pop()?.toLowerCase();
-    if (['m4a', 'mp3', 'wav', 'ogg', 'flac', 'webm', 'mp4', 'mpeg', 'mpga', 'oga'].includes(urlExt)) {
+    console.log('Audio URL path:', urlPath);
+
+    // Try to get extension from URL path
+    const urlParts = urlPath.split('.');
+    const urlExt = urlParts.length > 1 ? urlParts.pop()?.toLowerCase() : null;
+    console.log('Detected URL extension:', urlExt);
+
+    if (urlExt && ['m4a', 'mp3', 'wav', 'ogg', 'flac', 'webm', 'mp4', 'mpeg', 'mpga', 'oga'].includes(urlExt)) {
       ext = urlExt;
     } else {
       // Try content-type header
       const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('m4a') || contentType.includes('mp4')) ext = 'm4a';
-      else if (contentType.includes('wav')) ext = 'wav';
-      else if (contentType.includes('ogg')) ext = 'ogg';
+      console.log('Content-Type header:', contentType);
+      if (contentType.includes('m4a') || contentType.includes('mp4') || contentType.includes('x-m4a')) ext = 'm4a';
+      else if (contentType.includes('wav') || contentType.includes('wave')) ext = 'wav';
+      else if (contentType.includes('ogg') || contentType.includes('oga')) ext = 'ogg';
       else if (contentType.includes('webm')) ext = 'webm';
+      else if (contentType.includes('mpeg') || contentType.includes('mp3')) ext = 'mp3';
+      else if (contentType.includes('flac')) ext = 'flac';
+      // Otherwise keep m4a default
     }
 
     // Save to temp file with correct extension
     const tempPath = `/tmp/audio_${Date.now()}.${ext}`;
     fs.writeFileSync(tempPath, buffer);
-    console.log('Saved audio to temp file:', tempPath);
+    console.log('Saved audio to temp file:', tempPath, 'extension:', ext, 'size:', buffer.length);
 
     // Transcribe with Whisper
     const transcription = await openai.audio.transcriptions.create({
