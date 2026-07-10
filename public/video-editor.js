@@ -2966,6 +2966,78 @@ function generateCaptionsFromScript() {
   showToast(`Generated captions for ${numScenes} scenes from script!`, false);
 }
 
+// Preview audio segments before generating
+async function previewAudioSegments() {
+  const statusEl = document.getElementById('avatar-status');
+
+  if (!videoEditor || !videoEditor.audioBlob) {
+    showToast('Please upload audio first');
+    return;
+  }
+
+  statusEl.textContent = 'Analyzing audio segments...';
+
+  try {
+    const audioSegments = await videoEditor.splitAudioForAvatar();
+    const audioDuration = videoEditor.audioDuration || 0;
+
+    // Create preview panel
+    const existing = document.getElementById('segment-preview');
+    if (existing) existing.remove();
+
+    const preview = document.createElement('div');
+    preview.id = 'segment-preview';
+    preview.style.cssText = `
+      margin-top: 15px;
+      padding: 15px;
+      background: var(--bg-secondary, #1a1a2e);
+      border-radius: 8px;
+      border: 1px solid var(--border-color, #333);
+    `;
+
+    preview.innerHTML = `
+      <h4 style="margin: 0 0 10px 0; color: var(--text-primary, #fff);">🎵 Audio Segments Preview</h4>
+      <p style="margin: 0 0 15px 0; color: var(--text-secondary, #aaa); font-size: 13px;">
+        Total: ${Math.round(audioDuration)}s → ${audioSegments.length} segments (~90s each)<br>
+        <strong>Cost estimate:</strong> ~$${(audioSegments.length * 0.15).toFixed(2)} for all segments
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${audioSegments.map((seg, i) => `
+          <div style="
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: var(--bg-tertiary, #252540);
+            border-radius: 4px;
+          ">
+            <span style="font-weight: bold; color: var(--accent, #6c5ce7); min-width: 30px;">#${i + 1}</span>
+            <span style="color: var(--text-secondary, #aaa); font-size: 13px;">
+              ${Math.floor(seg.startTime)}s - ${Math.floor(seg.endTime)}s
+              (${Math.round(seg.endTime - seg.startTime)}s)
+            </span>
+          </div>
+        `).join('')}
+      </div>
+      <p style="margin: 15px 0 0 0; color: var(--text-secondary, #888); font-size: 12px;">
+        💡 When you generate, you can enter which segment # to start from to skip ones you already have.
+      </p>
+    `;
+
+    const btn = document.getElementById('generate-avatar-btn');
+    btn.parentElement.insertBefore(preview, btn.nextSibling);
+
+    statusEl.textContent = `Audio will be split into ${audioSegments.length} segments.`;
+
+  } catch (error) {
+    console.error('Preview error:', error);
+    statusEl.textContent = 'Error: ' + error.message;
+  }
+}
+
+// Make preview function global
+window.previewAudioSegments = previewAudioSegments;
+
 // Generate avatar video separately and download it
 async function generateAvatarOnly() {
   const statusEl = document.getElementById('avatar-status');
