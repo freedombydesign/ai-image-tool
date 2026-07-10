@@ -984,9 +984,8 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     console.log('Avatar URL:', avatarUrl);
     console.log('Audio URL:', audioUrl);
 
-    // Use SadTalker model on Replicate for audio-driven talking head
-    // SadTalker accepts direct URLs - no need to convert to base64
-    const SADTALKER_VERSION = 'a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3';
+    // Use lucataco/sadtalker model which accepts direct URLs
+    const SADTALKER_VERSION = '85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -999,7 +998,9 @@ app.post('/api/animate-avatar-url', async (req, res) => {
         input: {
           source_image: avatarUrl,
           driven_audio: audioUrl,
-          enhancer: "gfpgan"
+          enhancer: "gfpgan",
+          preprocess: "full",
+          still: false
         }
       })
     });
