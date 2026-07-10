@@ -2690,6 +2690,8 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
         ${isAnchor ? 'Style Anchor' : 'Set as Anchor'}
       </button>
       <button class="btn secondary" onclick="regenerateScene(${index})">Regenerate</button>
+      <button class="btn secondary undo-btn" onclick="undoSceneRegeneration(${index})" title="Revert to previous image">↩ Undo</button>
+      <button class="btn secondary swap-btn" onclick="startSceneSwap(${index})" title="Swap with another scene">⇄ Swap</button>
       <button class="btn secondary" onclick="downloadScene(${index})">Download</button>
       <button class="btn secondary text-overlay-btn" onclick="openTextOverlay(${index})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
@@ -2821,6 +2823,9 @@ async function regenerateScene(index) {
   card.classList.add('loading');
   card.classList.remove('error');
 
+  // Save previous image for undo
+  const previousImageUrl = scene.imageUrl;
+
   // Add loading spinner
   const img = card.querySelector('img');
   img.hidden = true;
@@ -2847,11 +2852,13 @@ async function regenerateScene(index) {
       throw new Error(data.error);
     }
 
+    // Store previous image for undo
+    generatedScenes[index].previousImageUrl = previousImageUrl;
     generatedScenes[index].imageUrl = data.image;
     generatedScenes[index].revisedPrompt = data.revised_prompt;
 
     updateSceneCard(index, data.image);
-    showToast('Scene regenerated!', false);
+    showToast('Scene regenerated! Click Undo to revert.', false);
 
     // Save to history
     if (typeof generationHistory !== 'undefined') {
@@ -2865,10 +2872,77 @@ async function regenerateScene(index) {
       });
     }
 
+    saveSceneHistory();
+
   } catch (error) {
     markSceneError(index);
     showToast(error.message);
   }
+}
+
+// Undo scene regeneration - revert to previous image
+function undoSceneRegeneration(index) {
+  const scene = generatedScenes[index];
+  if (!scene || !scene.previousImageUrl) {
+    showToast('No previous image to revert to');
+    return;
+  }
+
+  // Swap current and previous
+  const currentImage = scene.imageUrl;
+  generatedScenes[index].imageUrl = scene.previousImageUrl;
+  generatedScenes[index].previousImageUrl = currentImage;
+
+  updateSceneCard(index, generatedScenes[index].imageUrl);
+  showToast('Reverted to previous image!', false);
+  saveSceneHistory();
+}
+
+// Swap two scenes
+let swapSourceIndex = null;
+
+function startSceneSwap(index) {
+  if (swapSourceIndex === null) {
+    // First click - select source
+    swapSourceIndex = index;
+    const card = document.getElementById(`scene-card-${index}`);
+    card.classList.add('swap-selected');
+    showToast(`Scene ${index + 1} selected. Click another scene to swap.`, 'info');
+  } else if (swapSourceIndex === index) {
+    // Clicked same scene - cancel
+    cancelSceneSwap();
+  } else {
+    // Second click - perform swap
+    performSceneSwap(swapSourceIndex, index);
+  }
+}
+
+function cancelSceneSwap() {
+  if (swapSourceIndex !== null) {
+    const card = document.getElementById(`scene-card-${swapSourceIndex}`);
+    if (card) card.classList.remove('swap-selected');
+    swapSourceIndex = null;
+    showToast('Swap cancelled', 'info');
+  }
+}
+
+function performSceneSwap(indexA, indexB) {
+  // Swap the scene data
+  const tempScene = { ...generatedScenes[indexA] };
+  generatedScenes[indexA] = { ...generatedScenes[indexB], index: indexA };
+  generatedScenes[indexB] = { ...tempScene, index: indexB };
+
+  // Update both cards
+  updateSceneCard(indexA, generatedScenes[indexA].imageUrl);
+  updateSceneCard(indexB, generatedScenes[indexB].imageUrl);
+
+  // Clear selection
+  const card = document.getElementById(`scene-card-${swapSourceIndex}`);
+  if (card) card.classList.remove('swap-selected');
+  swapSourceIndex = null;
+
+  showToast(`Swapped scenes ${indexA + 1} and ${indexB + 1}!`, false);
+  saveSceneHistory();
 }
 
 // Download single scene
@@ -3946,6 +4020,9 @@ if (convertScriptBtn) {
 
 // Make functions globally available for onclick handlers
 window.regenerateScene = regenerateScene;
+window.undoSceneRegeneration = undoSceneRegeneration;
+window.startSceneSwap = startSceneSwap;
+window.cancelSceneSwap = cancelSceneSwap;
 window.downloadScene = downloadScene;
 window.setStyleAnchor = setStyleAnchor;
 window.clearStyleAnchor = clearStyleAnchor;
