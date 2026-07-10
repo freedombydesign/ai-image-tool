@@ -2243,10 +2243,23 @@ async function generateImage() {
 // Preview Mode - Generate test scenes based on selected count
 async function generatePreviewScenes() {
   const script = scriptInput.value.trim();
-  let allScenes = getScenesForGeneration();
+
+  // Use visual scenes (from Scene Descriptor) if available, otherwise fall back to raw script
+  const visualScenes = getVisualScenesForGeneration();
+  let allScenes;
+
+  if (visualScenes && visualScenes.length > 0 && visualScenes[0].visualDescription) {
+    // Use parsed scene descriptor descriptions
+    allScenes = visualScenes.map(s => s.visualDescription);
+    console.log('Preview using Scene Descriptor:', allScenes.length, 'scenes');
+  } else {
+    // Fall back to raw script
+    allScenes = getScenesForGeneration();
+    console.log('Preview using raw script:', allScenes.length, 'scenes');
+  }
 
   if (allScenes.length === 0) {
-    showToast('Please enter a script with at least one scene');
+    showToast('Please enter a script or scene descriptor with at least one scene');
     return;
   }
 
