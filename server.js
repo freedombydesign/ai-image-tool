@@ -888,8 +888,9 @@ app.post('/api/animate-avatar', upload.fields([
     console.log('Avatar base64 length:', avatarBase64.length);
     console.log('Audio base64 length:', audioBase64.length);
 
-    // Use SadTalker model on Replicate for audio-driven talking head
-    const SADTALKER_VERSION = 'a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3';
+    // Use p-video-avatar - ONLY model allowed (fast & cheap)
+    // SadTalker REMOVED - cost $18+ in failed runs
+    const PVIDEO_VERSION = '8a54bb678ef43a7a40950731bad3f33f4ac904267fecebd2186c826a6da6f5a5';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -898,11 +899,11 @@ app.post('/api/animate-avatar', upload.fields([
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: SADTALKER_VERSION,
+        version: PVIDEO_VERSION,
         input: {
-          source_image: avatarBase64,
-          driven_audio: audioBase64,
-          enhancer: "gfpgan"
+          image: avatarBase64,
+          audio: audioBase64,
+          resolution: "720p"
         }
       })
     });
@@ -1023,7 +1024,7 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     console.log('Animation prediction started:', prediction.id, 'status:', prediction.status);
 
     // Return prediction ID immediately - frontend will poll for completion
-    // This avoids Vercel timeout issues (SadTalker can take 5+ minutes)
+    // p-video-avatar is fast (~2-3 min) but we still poll to avoid timeout
     res.json({
       success: true,
       predictionId: prediction.id,
@@ -1037,7 +1038,7 @@ app.post('/api/animate-avatar-url', async (req, res) => {
   }
 });
 
-// Poll for prediction status (for long-running jobs like SadTalker)
+// Poll for prediction status (for avatar generation)
 app.get('/api/prediction-status/:predictionId', async (req, res) => {
   try {
     const { predictionId } = req.params;
