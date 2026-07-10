@@ -1988,13 +1988,42 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
       return res.status(400).json({ error: 'userId, audioHash, and videoUrl are required' });
     }
 
+    // DOWNLOAD VIDEO AND STORE IN SUPABASE STORAGE (permanent URL)
+    let permanentUrl = videoUrl;
+    try {
+      console.log('Downloading video from Replicate:', videoUrl);
+      const videoResponse = await fetch(videoUrl);
+      if (videoResponse.ok) {
+        const videoBuffer = await videoResponse.arrayBuffer();
+        const videoPath = `avatar-videos/${userId}/${audioHash}.mp4`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('ai-tool-images')
+          .upload(videoPath, Buffer.from(videoBuffer), {
+            contentType: 'video/mp4',
+            upsert: true
+          });
+
+        if (!uploadError) {
+          permanentUrl = `${supabaseUrl}/storage/v1/object/public/ai-tool-images/${videoPath}`;
+          console.log('Video stored permanently:', permanentUrl);
+        } else {
+          console.error('Storage upload error:', uploadError);
+        }
+      }
+    } catch (downloadErr) {
+      console.error('Video download error:', downloadErr);
+      // Fall back to storing original URL
+    }
+
     const { data, error } = await supabase
       .from('avatar_video_cache')
       .upsert({
         user_id: userId,
         audio_hash: audioHash,
         avatar_photo_hash: avatarPhotoHash,
-        video_url: videoUrl,
+        video_url: permanentUrl,
+        original_url: videoUrl,
         duration: duration || 0,
         created_at: new Date().toISOString()
       }, {
@@ -2005,7 +2034,7 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ success: true, cache: data });
+    res.json({ success: true, cache: data, permanentUrl });
   } catch (error) {
     console.error('Save avatar video cache error:', error);
     res.status(500).json({ error: error.message });
@@ -2461,7 +2490,7 @@ app.get('/api/recover-videos', async (req, res) => {
     }
 
     // Get recent predictions
-    const response = await fetch('https://api.replicate.com/v1/predictions?limit=20', {
+    const response = await fetch('https://api.replicate.com/v1/predictions?limit=50', {
       headers: { 'Authorization': `Bearer ${apiKey}` }
     });
 
