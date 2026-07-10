@@ -284,6 +284,17 @@ class VideoEditor {
     this.audioPreview = document.getElementById('audio-preview');
     this.audioPlayer = document.getElementById('audio-player');
     this.removeAudioBtn = document.getElementById('remove-audio-btn');
+    this.trimAudioBtn = document.getElementById('trim-audio-btn');
+    this.audioTrimSection = document.getElementById('audio-trim-section');
+    this.trimStartInput = document.getElementById('trim-start');
+    this.trimEndInput = document.getElementById('trim-end');
+    this.trimDuration = document.getElementById('trim-duration');
+    this.trimStartSlider = document.getElementById('trim-start-slider');
+    this.trimEndSlider = document.getElementById('trim-end-slider');
+    this.trimSelectedRegion = document.getElementById('trim-selected-region');
+    this.previewTrimBtn = document.getElementById('preview-trim-btn');
+    this.applyTrimBtn = document.getElementById('apply-trim-btn');
+    this.cancelTrimBtn = document.getElementById('cancel-trim-btn');
 
     // Background Music
     this.bgMusicFileInput = document.getElementById('bg-music-file');
@@ -368,6 +379,32 @@ class VideoEditor {
     this.uploadAudioBtn.addEventListener('click', () => this.audioFileInput.click());
     this.audioFileInput.addEventListener('change', (e) => this.handleAudioUpload(e));
     this.removeAudioBtn.addEventListener('click', () => this.removeAudio());
+
+    // Audio Trim Controls
+    if (this.trimAudioBtn) {
+      this.trimAudioBtn.addEventListener('click', () => this.showTrimControls());
+    }
+    if (this.cancelTrimBtn) {
+      this.cancelTrimBtn.addEventListener('click', () => this.hideTrimControls());
+    }
+    if (this.applyTrimBtn) {
+      this.applyTrimBtn.addEventListener('click', () => this.applyTrim());
+    }
+    if (this.previewTrimBtn) {
+      this.previewTrimBtn.addEventListener('click', () => this.previewTrim());
+    }
+    if (this.trimStartSlider) {
+      this.trimStartSlider.addEventListener('input', () => this.updateTrimFromSliders());
+    }
+    if (this.trimEndSlider) {
+      this.trimEndSlider.addEventListener('input', () => this.updateTrimFromSliders());
+    }
+    if (this.trimStartInput) {
+      this.trimStartInput.addEventListener('change', () => this.updateTrimFromInputs());
+    }
+    if (this.trimEndInput) {
+      this.trimEndInput.addEventListener('change', () => this.updateTrimFromInputs());
+    }
 
     // Background Music
     if (this.uploadBgMusicBtn) {
@@ -1047,6 +1084,221 @@ class VideoEditor {
     this.waveformContainer.innerHTML = '';
     this.updateTotalDuration();
     showToast('Audio removed.', false);
+  }
+
+  // Audio Trim Methods
+  formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  parseTime(timeStr) {
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    }
+    return parseFloat(timeStr) || 0;
+  }
+
+  showTrimControls() {
+    if (!this.audioBlob || !this.audioDuration) {
+      showToast('No audio to trim');
+      return;
+    }
+
+    this.audioTrimSection.hidden = false;
+    this.trimStartTime = 0;
+    this.trimEndTime = this.audioDuration;
+
+    // Set initial values
+    this.trimStartInput.value = this.formatTime(0);
+    this.trimEndInput.value = this.formatTime(this.audioDuration);
+    this.trimDuration.textContent = this.formatTime(this.audioDuration);
+
+    this.trimStartSlider.value = 0;
+    this.trimEndSlider.value = 100;
+    this.updateTrimRegion();
+  }
+
+  hideTrimControls() {
+    this.audioTrimSection.hidden = true;
+  }
+
+  updateTrimFromSliders() {
+    const startPercent = parseFloat(this.trimStartSlider.value);
+    const endPercent = parseFloat(this.trimEndSlider.value);
+
+    // Ensure start is always before end
+    if (startPercent >= endPercent) {
+      if (this.trimStartSlider === document.activeElement) {
+        this.trimStartSlider.value = endPercent - 1;
+      } else {
+        this.trimEndSlider.value = startPercent + 1;
+      }
+      return;
+    }
+
+    this.trimStartTime = (startPercent / 100) * this.audioDuration;
+    this.trimEndTime = (endPercent / 100) * this.audioDuration;
+
+    this.trimStartInput.value = this.formatTime(this.trimStartTime);
+    this.trimEndInput.value = this.formatTime(this.trimEndTime);
+    this.trimDuration.textContent = this.formatTime(this.trimEndTime - this.trimStartTime);
+
+    this.updateTrimRegion();
+  }
+
+  updateTrimFromInputs() {
+    this.trimStartTime = this.parseTime(this.trimStartInput.value);
+    this.trimEndTime = this.parseTime(this.trimEndInput.value);
+
+    // Clamp values
+    this.trimStartTime = Math.max(0, Math.min(this.trimStartTime, this.audioDuration));
+    this.trimEndTime = Math.max(0, Math.min(this.trimEndTime, this.audioDuration));
+
+    if (this.trimStartTime >= this.trimEndTime) {
+      this.trimEndTime = Math.min(this.trimStartTime + 1, this.audioDuration);
+    }
+
+    this.trimStartSlider.value = (this.trimStartTime / this.audioDuration) * 100;
+    this.trimEndSlider.value = (this.trimEndTime / this.audioDuration) * 100;
+    this.trimDuration.textContent = this.formatTime(this.trimEndTime - this.trimStartTime);
+
+    this.updateTrimRegion();
+  }
+
+  updateTrimRegion() {
+    const startPercent = (this.trimStartTime / this.audioDuration) * 100;
+    const endPercent = (this.trimEndTime / this.audioDuration) * 100;
+
+    this.trimSelectedRegion.style.left = `${startPercent}%`;
+    this.trimSelectedRegion.style.width = `${endPercent - startPercent}%`;
+  }
+
+  previewTrim() {
+    if (!this.audioPlayer) return;
+
+    this.audioPlayer.currentTime = this.trimStartTime;
+    this.audioPlayer.play();
+
+    // Stop at end time
+    const checkEnd = () => {
+      if (this.audioPlayer.currentTime >= this.trimEndTime) {
+        this.audioPlayer.pause();
+        this.audioPlayer.removeEventListener('timeupdate', checkEnd);
+      }
+    };
+    this.audioPlayer.addEventListener('timeupdate', checkEnd);
+
+    showToast(`Playing ${this.formatTime(this.trimStartTime)} to ${this.formatTime(this.trimEndTime)}`);
+  }
+
+  async applyTrim() {
+    if (!this.audioBlob || !this.audioDuration) {
+      showToast('No audio to trim');
+      return;
+    }
+
+    const duration = this.trimEndTime - this.trimStartTime;
+    if (duration < 1) {
+      showToast('Selection must be at least 1 second');
+      return;
+    }
+
+    showToast('Trimming audio...');
+
+    try {
+      // Use AudioContext to trim
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const arrayBuffer = await this.audioBlob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Calculate sample positions
+      const sampleRate = audioBuffer.sampleRate;
+      const startSample = Math.floor(this.trimStartTime * sampleRate);
+      const endSample = Math.floor(this.trimEndTime * sampleRate);
+      const newLength = endSample - startSample;
+
+      // Create new buffer with trimmed audio
+      const newBuffer = audioContext.createBuffer(
+        audioBuffer.numberOfChannels,
+        newLength,
+        sampleRate
+      );
+
+      // Copy trimmed data for each channel
+      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+        const oldData = audioBuffer.getChannelData(channel);
+        const newData = newBuffer.getChannelData(channel);
+        for (let i = 0; i < newLength; i++) {
+          newData[i] = oldData[startSample + i];
+        }
+      }
+
+      // Convert to WAV blob
+      const wavBlob = await this.audioBufferToWav(newBuffer);
+
+      // Update audio
+      this.audioBlob = wavBlob;
+      this.audioDuration = duration;
+      await this.loadAudioBlob(wavBlob);
+
+      this.hideTrimControls();
+      showToast(`Trimmed to ${this.formatTime(duration)}`, 'success');
+
+    } catch (error) {
+      console.error('Trim error:', error);
+      showToast('Failed to trim audio');
+    }
+  }
+
+  audioBufferToWav(audioBuffer) {
+    const numChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+
+    const dataLength = audioBuffer.length * blockAlign;
+    const buffer = new ArrayBuffer(44 + dataLength);
+    const view = new DataView(buffer);
+
+    // WAV header
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataLength, true);
+
+    // Audio data
+    let offset = 44;
+    for (let i = 0; i < audioBuffer.length; i++) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const sample = audioBuffer.getChannelData(channel)[i];
+        const clampedSample = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, clampedSample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
   }
 
   // Background Music Methods
@@ -2490,8 +2742,8 @@ class VideoEditor {
           await this.drawAvatarOverlay(ctx, time, width, height, avatarVideoElements);
         }
 
-        // Draw caption (on top of everything)
-        this.drawCaptionOnCanvas(ctx, scene, width, height);
+        // Draw caption (on top of everything) - pass time for animations
+        this.drawCaptionOnCanvas(ctx, scene, width, height, time);
 
         // Convert to image data
         const frameData = await this.canvasToUint8Array(canvas);
@@ -2671,56 +2923,156 @@ class VideoEditor {
     ctx.drawImage(img, x, y, drawW, drawH);
   }
 
-  drawCaptionOnCanvas(ctx, scene, width, height) {
+  drawCaptionOnCanvas(ctx, scene, width, height, currentTime = 0) {
     if (!scene.caption) return;
 
-    const fontSize = parseInt(this.captionFontSize.value);
-    const style = this.captionStyle.value;
+    // Get caption settings
+    const fontSize = parseInt(document.getElementById('caption-font-size')?.value || 48);
+    const fontFamily = document.getElementById('caption-font')?.value || 'Impact, sans-serif';
+    const position = document.getElementById('caption-style')?.value || 'bottom-center';
+    const animation = document.getElementById('caption-animation')?.value || 'word-highlight';
+    const wordsPerLine = parseInt(document.getElementById('caption-words-per-line')?.value || 4);
+    const textColor = document.getElementById('caption-text-color')?.value || '#FFFFFF';
+    const highlightColor = document.getElementById('caption-highlight-color')?.value || '#FFFF00';
+    const bgStyle = document.getElementById('caption-bg-color')?.value || 'shadow';
 
-    ctx.font = `bold ${fontSize}px Inter, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'white';
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 3;
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    ctx.textBaseline = 'middle';
 
+    // Calculate position
     let x = width / 2;
     let y;
+    let textAlign = 'center';
 
-    switch (style) {
+    switch (position) {
       case 'top-center':
-        y = fontSize + 40;
+        y = fontSize + 60;
         break;
       case 'bottom-left':
-        x = 40;
-        y = height - 40;
-        ctx.textAlign = 'left';
+        x = 60;
+        y = height - 80;
+        textAlign = 'left';
         break;
-      default:
-        y = height - 40;
+      case 'center':
+        y = height / 2;
+        break;
+      default: // bottom-center
+        y = height - 80;
+    }
+    ctx.textAlign = textAlign;
+
+    // Split caption into words
+    const words = scene.caption.split(' ');
+
+    // Group words into lines based on wordsPerLine setting
+    const lines = [];
+    for (let i = 0; i < words.length; i += wordsPerLine) {
+      lines.push(words.slice(i, i + wordsPerLine));
     }
 
-    const words = scene.caption.split(' ');
-    const lines = [];
-    let currentLine = '';
-    const maxWidth = width - 80;
+    // Calculate which word should be highlighted based on time within scene
+    const sceneProgress = (currentTime - scene.startTime) / scene.duration;
+    const totalWords = words.length;
+    const currentWordIndex = Math.floor(sceneProgress * totalWords);
 
-    words.forEach(word => {
-      const testLine = currentLine + word + ' ';
-      const metrics = ctx.measureText(testLine);
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine.trim());
-        currentLine = word + ' ';
+    // Draw each line
+    const lineHeight = fontSize + 15;
+    const totalLinesHeight = lines.length * lineHeight;
+    const startY = y - (totalLinesHeight / 2) + (lineHeight / 2);
+
+    let wordCounter = 0;
+
+    lines.forEach((lineWords, lineIndex) => {
+      const lineY = startY + (lineIndex * lineHeight);
+      const lineText = lineWords.join(' ');
+
+      // Draw background if needed
+      if (bgStyle === 'box' || bgStyle === 'pill') {
+        const metrics = ctx.measureText(lineText);
+        const padding = 15;
+        const bgX = textAlign === 'center' ? x - metrics.width / 2 - padding : x - padding;
+        const bgW = metrics.width + padding * 2;
+        const bgH = fontSize + padding;
+        const bgY = lineY - bgH / 2;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        if (bgStyle === 'pill') {
+          // Draw rounded rectangle
+          const radius = bgH / 2;
+          ctx.beginPath();
+          ctx.roundRect(bgX, bgY, bgW, bgH, radius);
+          ctx.fill();
+        } else {
+          ctx.fillRect(bgX, bgY, bgW, bgH);
+        }
+      }
+
+      // Draw words with animation
+      if (animation === 'none' || animation === 'typewriter') {
+        // Static or typewriter - draw whole line
+        const displayText = animation === 'typewriter'
+          ? lineText.substring(0, Math.floor(sceneProgress * lineText.length * 1.5))
+          : lineText;
+
+        if (bgStyle === 'shadow') {
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = fontSize / 8;
+          ctx.strokeText(displayText, x, lineY);
+        }
+        ctx.fillStyle = textColor;
+        ctx.fillText(displayText, x, lineY);
       } else {
-        currentLine = testLine;
+        // Word-by-word animation - draw each word separately
+        let wordX = textAlign === 'center'
+          ? x - ctx.measureText(lineText).width / 2
+          : x;
+
+        lineWords.forEach((word, wordInLineIndex) => {
+          const isCurrentWord = wordCounter === currentWordIndex;
+          const isPastWord = wordCounter < currentWordIndex;
+          const wordWidth = ctx.measureText(word + ' ').width;
+
+          // Determine word color based on animation type
+          let wordColor = textColor;
+          let scale = 1;
+
+          if (animation === 'word-highlight') {
+            wordColor = isCurrentWord ? highlightColor : (isPastWord ? highlightColor : textColor);
+          } else if (animation === 'word-pop') {
+            if (isCurrentWord) {
+              scale = 1.2;
+              wordColor = highlightColor;
+            }
+          } else if (animation === 'karaoke') {
+            wordColor = isPastWord || isCurrentWord ? highlightColor : textColor;
+          }
+
+          // Draw word
+          ctx.save();
+          if (scale !== 1) {
+            ctx.translate(wordX + wordWidth / 2, lineY);
+            ctx.scale(scale, scale);
+            ctx.translate(-(wordX + wordWidth / 2), -lineY);
+          }
+
+          if (bgStyle === 'shadow') {
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = fontSize / 8;
+            ctx.strokeText(word, wordX, lineY);
+          }
+          ctx.fillStyle = wordColor;
+          ctx.textAlign = 'left';
+          ctx.fillText(word, wordX, lineY);
+          ctx.restore();
+
+          wordX += wordWidth;
+          wordCounter++;
+        });
       }
     });
-    lines.push(currentLine.trim());
 
-    lines.forEach((line, index) => {
-      const lineY = y - ((lines.length - 1 - index) * (fontSize + 10));
-      ctx.strokeText(line, x, lineY);
-      ctx.fillText(line, x, lineY);
-    });
+    // Reset text align
+    ctx.textAlign = textAlign;
   }
 
   async canvasToUint8Array(canvas) {

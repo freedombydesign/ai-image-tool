@@ -516,6 +516,40 @@
             <div id="audio-preview" class="audio-preview" hidden>
               <audio id="audio-player" controls></audio>
               <button class="btn secondary small" id="remove-audio-btn">Remove</button>
+              <button class="btn secondary small" id="trim-audio-btn">✂️ Trim Audio</button>
+            </div>
+
+            <!-- Audio Trim/Splice Controls -->
+            <div id="audio-trim-section" class="audio-trim-section" hidden>
+              <h4>✂️ Trim Audio</h4>
+              <div class="trim-controls">
+                <div class="trim-input-row">
+                  <div class="trim-input">
+                    <label for="trim-start">Start Time</label>
+                    <input type="text" id="trim-start" value="0:00" placeholder="0:00">
+                  </div>
+                  <div class="trim-input">
+                    <label for="trim-end">End Time</label>
+                    <input type="text" id="trim-end" value="0:00" placeholder="10:51">
+                  </div>
+                  <div class="trim-input">
+                    <label>Duration</label>
+                    <span id="trim-duration" class="trim-duration">0:00</span>
+                  </div>
+                </div>
+                <div class="trim-waveform" id="trim-waveform">
+                  <div class="trim-range">
+                    <input type="range" id="trim-start-slider" min="0" max="100" value="0" step="0.1">
+                    <input type="range" id="trim-end-slider" min="0" max="100" value="100" step="0.1">
+                    <div class="trim-selected-region" id="trim-selected-region"></div>
+                  </div>
+                </div>
+                <div class="trim-buttons">
+                  <button class="btn secondary small" id="preview-trim-btn">▶️ Preview Selection</button>
+                  <button class="btn primary" id="apply-trim-btn">✂️ Apply Trim</button>
+                  <button class="btn secondary small" id="cancel-trim-btn">Cancel</button>
+                </div>
+              </div>
             </div>
 
             <!-- Background Music -->
@@ -654,23 +688,72 @@
             <div class="form-group" style="margin-top: 0.5rem;">
               <textarea id="caption-script-input" rows="3" placeholder="Paste your script here to auto-generate captions for each scene..."></textarea>
             </div>
-            <div class="caption-controls">
+            <div class="caption-controls" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
               <div class="form-group">
-                <label for="caption-style">Caption Style</label>
+                <label for="caption-style">Position</label>
                 <select id="caption-style">
                   <option value="bottom-center">Bottom Center</option>
                   <option value="top-center">Top Center</option>
                   <option value="bottom-left">Bottom Left</option>
-                  <option value="custom">Custom Position</option>
+                  <option value="center">Center</option>
                 </select>
               </div>
               <div class="form-group">
                 <label for="caption-font-size">Font Size</label>
                 <select id="caption-font-size">
                   <option value="24">Small (24px)</option>
-                  <option value="32" selected>Medium (32px)</option>
-                  <option value="48">Large (48px)</option>
-                  <option value="64">Extra Large (64px)</option>
+                  <option value="32">Medium (32px)</option>
+                  <option value="48" selected>Large (48px)</option>
+                  <option value="64">XL (64px)</option>
+                  <option value="80">XXL (80px)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="caption-font">Font</label>
+                <select id="caption-font">
+                  <option value="Inter, sans-serif">Inter (Clean)</option>
+                  <option value="Arial Black, sans-serif">Arial Black (Bold)</option>
+                  <option value="Georgia, serif">Georgia (Elegant)</option>
+                  <option value="Comic Sans MS, cursive">Comic Sans (Fun)</option>
+                  <option value="Impact, sans-serif" selected>Impact (YouTube)</option>
+                  <option value="Courier New, monospace">Courier (Mono)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="caption-animation">Animation</label>
+                <select id="caption-animation">
+                  <option value="none">Static (No Animation)</option>
+                  <option value="word-highlight" selected>Word Highlight (CapCut Style)</option>
+                  <option value="word-pop">Word Pop-In</option>
+                  <option value="karaoke">Karaoke (Fill)</option>
+                  <option value="typewriter">Typewriter</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="caption-words-per-line">Words Per Line</label>
+                <select id="caption-words-per-line">
+                  <option value="3">3 words</option>
+                  <option value="4" selected>4 words</option>
+                  <option value="5">5 words</option>
+                  <option value="6">6 words</option>
+                  <option value="8">8 words</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="caption-text-color">Text Color</label>
+                <input type="color" id="caption-text-color" value="#FFFFFF" style="height: 35px; width: 100%;">
+              </div>
+              <div class="form-group">
+                <label for="caption-highlight-color">Highlight Color</label>
+                <input type="color" id="caption-highlight-color" value="#FFFF00" style="height: 35px; width: 100%;">
+              </div>
+              <div class="form-group">
+                <label for="caption-bg-color">Background</label>
+                <select id="caption-bg-color">
+                  <option value="none">None</option>
+                  <option value="shadow" selected>Text Shadow</option>
+                  <option value="box">Box Background</option>
+                  <option value="pill">Pill Background</option>
                 </select>
               </div>
             </div>
