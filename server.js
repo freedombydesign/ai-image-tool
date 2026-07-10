@@ -1836,6 +1836,18 @@ Only output the JSON, no other text.`;
       throw new Error('Failed to parse scene expansions from AI response');
     }
 
+    // Post-process: Ensure [AVATAR] is replaced in all scene descriptions
+    const avatarReplacement = avatarDescription || 'the main character';
+    if (result.scenes && Array.isArray(result.scenes)) {
+      result.scenes = result.scenes.map(scene => ({
+        ...scene,
+        visualDescription: scene.visualDescription
+          ? scene.visualDescription.replace(/\[AVATAR\]/gi, avatarReplacement)
+          : scene.visualDescription
+      }));
+      console.log(`Post-processed ${result.scenes.length} scenes, replaced [AVATAR] with avatar description`);
+    }
+
     res.json({
       success: true,
       scenes: result.scenes,
