@@ -3031,11 +3031,35 @@ async function generateAvatarOnly() {
     // Split audio into segments if needed
     const audioSegments = await videoEditor.splitAudioForAvatar();
     const avatarVideos = [];
+    let cachedCount = 0;
+    let generatedCount = 0;
 
     for (let i = 0; i < audioSegments.length; i++) {
       const segment = audioSegments[i];
-      statusEl.textContent = `Processing segment ${i + 1}/${audioSegments.length}...`;
+      statusEl.textContent = `Checking segment ${i + 1}/${audioSegments.length}...`;
       btn.textContent = `⏳ ${i + 1}/${audioSegments.length}`;
+
+      // Check cache first to avoid re-processing
+      const audioHash = await videoEditor.generateAudioHash(segment.blob);
+      const cachedVideoUrl = await videoEditor.getCachedAvatarVideo(audioHash);
+
+      if (cachedVideoUrl) {
+        // Use cached video - skip generation
+        avatarVideos.push({
+          index: i,
+          videoUrl: cachedVideoUrl,
+          startTime: segment.startTime,
+          endTime: segment.endTime,
+          cached: true
+        });
+        cachedCount++;
+        console.log(`Segment ${i + 1} loaded from cache`);
+        continue;
+      }
+
+      // Not cached - need to generate
+      generatedCount++;
+      statusEl.textContent = `Generating segment ${i + 1}/${audioSegments.length} (${cachedCount} cached)...`;
 
       // Upload this audio segment
       const mimeType = 'audio/wav';
@@ -3103,13 +3127,21 @@ async function generateAvatarOnly() {
         throw new Error(`Avatar segment ${i + 1} timed out`);
       }
 
+      // Cache the generated video for future use
+      const duration = segment.endTime - segment.startTime;
+      await videoEditor.cacheAvatarVideo(audioHash, prediction.output, duration);
+
       avatarVideos.push({
         index: i,
         videoUrl: prediction.output,
         startTime: segment.startTime,
-        endTime: segment.endTime
+        endTime: segment.endTime,
+        cached: false
       });
     }
+
+    // Show summary
+    statusEl.textContent = `Done! ${cachedCount} from cache, ${generatedCount} newly generated.`;
 
     // Download all avatar videos
     statusEl.textContent = `Downloading ${avatarVideos.length} avatar video(s)...`;
