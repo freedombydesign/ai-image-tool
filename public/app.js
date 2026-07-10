@@ -3539,6 +3539,42 @@ window.toggleAvatarPanel = toggleAvatarPanel;
 window.toggleAvatarUsage = toggleAvatarUsage;
 window.switchToTabAndOpenAvatar = switchToTabAndOpenAvatar;
 window.openTextOverlay = openTextOverlay;
+
+// Debug function to test Character Lock and Brand Rules
+window.testPromptBuilding = function(sceneText = "Sarah walks through the park on a sunny day") {
+  console.log("=== PROMPT BUILDING TEST ===");
+  console.log("Input scene:", sceneText);
+  console.log("");
+
+  // Test Character Lock
+  console.log("--- Character Lock ---");
+  console.log("Locked characters:", lockedCharacters);
+  const charInstructions = getCharacterInstructions(sceneText);
+  console.log("Character instructions added:", charInstructions || "(none - no matching characters)");
+  console.log("");
+
+  // Test Brand Rules
+  console.log("--- Brand Rules ---");
+  console.log("Brand block enabled:", brandBlockEnabled);
+  const brandInstructions = getBrandInstructions();
+  console.log("Brand instructions added:", brandInstructions || "(none - brand rules disabled or empty)");
+  console.log("");
+
+  // Build full prompt
+  console.log("--- Full Styled Prompt ---");
+  const fullPrompt = buildStyledPrompt(sceneText, selectedStyle);
+  console.log(fullPrompt);
+  console.log("");
+  console.log("=== END TEST ===");
+
+  return {
+    characters: lockedCharacters,
+    charInstructions,
+    brandEnabled: brandBlockEnabled,
+    brandInstructions,
+    fullPrompt
+  };
+};
 window.closeTextOverlay = closeTextOverlay;
 window.updateTextOverlay = updateTextOverlay;
 window.downloadWithTextOverlay = downloadWithTextOverlay;
