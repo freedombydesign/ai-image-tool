@@ -853,6 +853,11 @@ class VideoEditor {
 
         this.loadAudioBlob(this.audioBlob);
         this.recordingStream.getTracks().forEach(track => track.stop());
+
+        // Save recorded audio to IndexedDB for persistence
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        this.saveAudioToIndexedDB(`recording-${timestamp}.webm`, this.audioBlob);
+
         showToast('Recording saved!', false);
         this.resetRecordingUI();
       };
@@ -957,11 +962,38 @@ class VideoEditor {
       const arrayBuffer = await file.arrayBuffer();
       this.audioBlob = new Blob([arrayBuffer], { type: file.type || 'audio/mpeg' });
       this.loadAudioBlob(this.audioBlob);
+
+      // Save to IndexedDB for persistence across refreshes
+      this.saveAudioToIndexedDB(file.name, this.audioBlob);
     } catch (error) {
       console.error('Error reading audio file:', error);
       // Fallback to using file directly
       this.audioBlob = file;
       this.loadAudioBlob(file);
+    }
+  }
+
+  // Save audio to IndexedDB for persistence
+  async saveAudioToIndexedDB(fileName, blob) {
+    try {
+      // Convert blob to base64 data URL
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const audioData = reader.result;
+
+        // Use the saveAudioToDB function from app.js if available
+        if (typeof saveAudioToDB === 'function') {
+          await saveAudioToDB('previewAudio', {
+            audioData: audioData,
+            fileName: fileName,
+            timestamp: Date.now()
+          });
+          console.log('Audio saved to IndexedDB:', fileName);
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      console.warn('Could not save audio to IndexedDB:', error);
     }
   }
 
