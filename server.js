@@ -1019,7 +1019,7 @@ app.post('/api/animate-avatar-url', async (req, res) => {
       input: {
         source_image: avatarBase64,
         driven_audio: audioBase64,
-        enhancer: "gfpgan",
+        enhancer: "None",
         preprocess: "full",
         still: false
       }
