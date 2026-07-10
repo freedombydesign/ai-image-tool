@@ -3030,19 +3030,53 @@ class VideoEditor {
       const totalDuration = this.getTotalDuration();
       const totalFrames = Math.ceil(totalDuration * fps);
 
-      // Step 1: Generate avatar videos if enabled
+      // Step 1: Load avatar videos (from generated + uploaded segments)
       let avatarVideoElements = [];
-      if (this.avatarEnabled && this.avatarPhotoBlob && this.audioBlob) {
-        this.exportStatus.textContent = 'Generating talking avatar...';
-        await this.generateAvatarVideos();
+      if (this.avatarEnabled && this.audioBlob) {
+        const numSegments = Math.ceil(this.audioDuration / 90);
 
-        // Load avatar videos as video elements for frame extraction
-        if (this.avatarVideos.length > 0) {
-          this.exportStatus.textContent = 'Loading avatar videos...';
+        // Check if we have uploaded segments
+        const uploadedSegments = window.uploadedAvatarSegments || {};
+        const hasUploaded = Object.keys(uploadedSegments).length > 0;
+
+        // Generate any missing segments if we have avatar photo
+        if (this.avatarPhotoBlob) {
+          this.exportStatus.textContent = 'Generating talking avatar...';
+          await this.generateAvatarVideos();
+        }
+
+        // Merge uploaded segments with generated ones
+        this.exportStatus.textContent = 'Loading avatar videos...';
+        const segmentSources = [];
+
+        for (let i = 1; i <= numSegments; i++) {
+          if (uploadedSegments[i]) {
+            // Use uploaded segment
+            segmentSources.push({
+              videoUrl: uploadedSegments[i].url,
+              startTime: (i - 1) * 90,
+              source: 'uploaded'
+            });
+            console.log(`Using uploaded segment ${i}`);
+          } else if (this.avatarVideos && this.avatarVideos[i - 1]) {
+            // Use generated segment
+            segmentSources.push({
+              videoUrl: this.avatarVideos[i - 1].videoUrl,
+              startTime: (i - 1) * 90,
+              source: 'generated'
+            });
+            console.log(`Using generated segment ${i}`);
+          } else {
+            console.warn(`Missing segment ${i} - no uploaded or generated video`);
+          }
+        }
+
+        // Load all video elements
+        if (segmentSources.length > 0) {
           avatarVideoElements = await Promise.all(
-            this.avatarVideos.map(av => this.loadVideoElement(av.videoUrl))
+            segmentSources.map(seg => this.loadVideoElement(seg.videoUrl))
           );
-          console.log(`Loaded ${avatarVideoElements.length} avatar video elements`);
+          console.log(`Loaded ${avatarVideoElements.length} avatar video elements (uploaded + generated)`);
         }
       }
 
@@ -4106,6 +4140,145 @@ function downloadSegment(videoUrl, index) {
   a.download = `avatar_segment_${index}.mp4`;
   a.click();
 }
+
+// Store for uploaded avatar segments
+window.uploadedAvatarSegments = window.uploadedAvatarSegments || {};
+
+// Show upload panel for existing avatar segments
+function showUploadSegmentsPanel() {
+  const existing = document.getElementById('upload-segments-panel');
+  if (existing) existing.remove();
+
+  const totalSegments = videoEditor.audioDuration ? Math.ceil(videoEditor.audioDuration / 90) : 8;
+
+  const panel = document.createElement('div');
+  panel.id = 'upload-segments-panel';
+  panel.style.cssText = `
+    margin-top: 20px;
+    padding: 15px;
+    background: var(--bg-secondary, #1a1a2e);
+    border-radius: 8px;
+    border: 2px solid var(--accent, #6c5ce7);
+  `;
+
+  panel.innerHTML = `
+    <h4 style="margin: 0 0 10px 0; color: var(--text-primary, #fff);">📤 Upload Existing Avatar Segments</h4>
+    <p style="margin: 0 0 15px 0; color: var(--text-secondary, #aaa); font-size: 14px;">
+      Upload your previously downloaded avatar video files. Name them with segment number (e.g., segment_1.mp4).
+    </p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
+      ${Array.from({length: totalSegments}, (_, i) => `
+        <div class="upload-segment-slot" data-segment="${i + 1}" style="
+          padding: 15px;
+          background: ${window.uploadedAvatarSegments[i + 1] ? 'rgba(34, 197, 94, 0.2)' : 'var(--bg-tertiary, #252540)'};
+          border: 2px dashed ${window.uploadedAvatarSegments[i + 1] ? '#22c55e' : 'var(--border-color, #444)'};
+          border-radius: 8px;
+          text-align: center;
+          cursor: pointer;
+        " onclick="document.getElementById('segment-upload-${i + 1}').click()">
+          <input type="file" id="segment-upload-${i + 1}" accept="video/*" hidden
+            onchange="handleSegmentUpload(${i + 1}, this.files[0])">
+          <div style="font-size: 24px; margin-bottom: 5px;">
+            ${window.uploadedAvatarSegments[i + 1] ? '✅' : '📹'}
+          </div>
+          <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${i + 1}</div>
+          <div style="font-size: 12px; color: var(--text-secondary, #aaa); margin-top: 5px;">
+            ${window.uploadedAvatarSegments[i + 1] ? 'Uploaded!' : 'Click to upload'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+      <button onclick="document.getElementById('upload-segments-panel').remove()" style="
+        padding: 8px 16px;
+        background: var(--bg-tertiary, #333);
+        border: 1px solid var(--border-color, #444);
+        border-radius: 6px;
+        color: var(--text-primary, #fff);
+        cursor: pointer;
+      ">Close</button>
+      <span id="segments-upload-status" style="
+        padding: 8px 16px;
+        color: var(--text-secondary, #aaa);
+        font-size: 14px;
+      ">${Object.keys(window.uploadedAvatarSegments).length}/${totalSegments} segments uploaded</span>
+    </div>
+  `;
+
+  const avatarSection = document.getElementById('avatar-section');
+  avatarSection.appendChild(panel);
+}
+
+// Handle individual segment video upload
+async function handleSegmentUpload(segmentNum, file) {
+  if (!file) return;
+
+  const slot = document.querySelector(`.upload-segment-slot[data-segment="${segmentNum}"]`);
+  slot.style.background = 'rgba(99, 102, 241, 0.2)';
+  slot.innerHTML = `
+    <div style="font-size: 24px; margin-bottom: 5px;">⏳</div>
+    <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segmentNum}</div>
+    <div style="font-size: 12px; color: var(--text-secondary, #aaa); margin-top: 5px;">Processing...</div>
+  `;
+
+  try {
+    // Create blob URL for the video
+    const videoUrl = URL.createObjectURL(file);
+
+    // Store in memory for export
+    window.uploadedAvatarSegments[segmentNum] = {
+      url: videoUrl,
+      blob: file,
+      fileName: file.name
+    };
+
+    // Update slot UI
+    slot.style.background = 'rgba(34, 197, 94, 0.2)';
+    slot.style.borderColor = '#22c55e';
+    slot.innerHTML = `
+      <input type="file" id="segment-upload-${segmentNum}" accept="video/*" hidden
+        onchange="handleSegmentUpload(${segmentNum}, this.files[0])">
+      <div style="font-size: 24px; margin-bottom: 5px;">✅</div>
+      <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segmentNum}</div>
+      <div style="font-size: 12px; color: #22c55e; margin-top: 5px;">${file.name}</div>
+      <button onclick="previewSegment('${videoUrl}')" style="
+        margin-top: 8px;
+        padding: 4px 8px;
+        background: var(--bg-tertiary, #333);
+        border: 1px solid var(--border-color, #444);
+        border-radius: 4px;
+        color: var(--text-primary, #fff);
+        cursor: pointer;
+        font-size: 12px;
+      ">▶ Preview</button>
+    `;
+
+    // Update status
+    const totalSegments = videoEditor.audioDuration ? Math.ceil(videoEditor.audioDuration / 90) : 8;
+    const statusEl = document.getElementById('segments-upload-status');
+    if (statusEl) {
+      statusEl.textContent = `${Object.keys(window.uploadedAvatarSegments).length}/${totalSegments} segments uploaded`;
+    }
+
+    showToast(`Segment ${segmentNum} uploaded!`, 'success');
+
+  } catch (error) {
+    console.error('Segment upload error:', error);
+    slot.style.background = 'rgba(239, 68, 68, 0.2)';
+    slot.innerHTML = `
+      <input type="file" id="segment-upload-${segmentNum}" accept="video/*" hidden
+        onchange="handleSegmentUpload(${segmentNum}, this.files[0])">
+      <div style="font-size: 24px; margin-bottom: 5px;">❌</div>
+      <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segmentNum}</div>
+      <div style="font-size: 12px; color: #ef4444; margin-top: 5px;">Failed - click to retry</div>
+    `;
+    showToast(`Failed to upload segment ${segmentNum}`);
+  }
+}
+
+// Make functions globally available
+window.showUploadSegmentsPanel = showUploadSegmentsPanel;
+window.handleSegmentUpload = handleSegmentUpload;
 
 // Regenerate a single segment with new audio
 async function regenerateSegment(segmentIndex, audioFile, avatarUrl, config) {

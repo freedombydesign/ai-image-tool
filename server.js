@@ -2452,6 +2452,37 @@ app.get('/api/db/status', (req, res) => {
 });
 
 // Health check
+// RECOVER VIDEO URLS FROM REPLICATE HISTORY
+app.get('/api/recover-videos', async (req, res) => {
+  try {
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'No Replicate API key' });
+    }
+
+    // Get recent predictions
+    const response = await fetch('https://api.replicate.com/v1/predictions?limit=20', {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    const data = await response.json();
+
+    // Filter for p-video-avatar predictions with output
+    const videos = data.results
+      .filter(p => p.status === 'succeeded' && p.output)
+      .map(p => ({
+        id: p.id,
+        created: p.created_at,
+        url: p.output,
+        model: p.version?.substring(0, 20)
+      }));
+
+    res.json({ success: true, videos });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', hasApiKey: !!process.env.OPENAI_API_KEY, hasSupabase: !!supabase });
 });
