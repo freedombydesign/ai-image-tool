@@ -980,11 +980,12 @@ app.post('/api/animate-avatar-url', async (req, res) => {
       return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
     }
 
-    console.log('Starting avatar animation from URLs...');
+    console.log('=== Avatar Animation v2 ===');
     console.log('Avatar URL:', avatarUrl);
     console.log('Audio URL:', audioUrl);
 
     // Use lucataco/sadtalker model which accepts direct URLs
+    // Version: 85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b
     const SADTALKER_VERSION = '85c698db7c0a66d5011435d0191db323034e1da04b912a6d365833141b6a285b';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
