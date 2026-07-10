@@ -1369,8 +1369,17 @@ if (sceneDurationSlider) {
 }
 
 // Helper to get current scene duration setting
+// Check both sliders (Script section and Video Studio section) and use the higher value
 function getSceneDuration() {
-  return sceneDurationSlider ? parseInt(sceneDurationSlider.value) || 6 : 6;
+  const scriptSlider = document.getElementById('scene-duration');
+  const videoSlider = document.getElementById('video-scene-duration');
+
+  const scriptValue = scriptSlider ? parseInt(scriptSlider.value) || 6 : 6;
+  const videoValue = videoSlider ? parseInt(videoSlider.value) || 6 : 6;
+
+  // Use the video studio slider if it's been changed (higher than default)
+  // Otherwise use script slider
+  return videoValue > 6 ? videoValue : scriptValue;
 }
 
 // Scene Mode Toggle Handler
@@ -3522,6 +3531,28 @@ if (slideshowPrevBtn) {
 const slideshowNextBtn = document.getElementById('slideshow-next-btn');
 if (slideshowNextBtn) {
   slideshowNextBtn.addEventListener('click', slideshowNext);
+}
+
+// Make progress bar clickable to skip to scenes
+const slideshowProgressBar = document.querySelector('.slideshow-progress-bar');
+if (slideshowProgressBar) {
+  slideshowProgressBar.style.cursor = 'pointer';
+  slideshowProgressBar.addEventListener('click', (e) => {
+    const rect = slideshowProgressBar.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = clickX / rect.width;
+    const targetIndex = Math.floor(percentage * slideshowState.scenes.length);
+
+    // Clamp to valid range
+    slideshowState.currentIndex = Math.max(0, Math.min(targetIndex, slideshowState.scenes.length - 1));
+    updateSlideshowDisplay();
+
+    // Sync audio if playing
+    const audio = document.getElementById('slideshow-audio');
+    if (audio && previewAudioData) {
+      audio.currentTime = slideshowState.currentIndex * getSceneDuration();
+    }
+  });
 }
 
 const slideshowPlayPauseBtn = document.getElementById('slideshow-play-pause-btn');
