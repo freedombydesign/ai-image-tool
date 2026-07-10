@@ -322,6 +322,7 @@ class VideoEditor {
     this.captionsList = document.getElementById('captions-list');
     this.generateCaptionsBtn = document.getElementById('generate-captions-btn');
     this.clearCaptionsBtn = document.getElementById('clear-captions-btn');
+    this.previewCaptionBtn = document.getElementById('preview-caption-btn');
 
     // Effects
     this.transitionType = document.getElementById('transition-type');
@@ -441,6 +442,9 @@ class VideoEditor {
     }
     if (this.clearCaptionsBtn) {
       this.clearCaptionsBtn.addEventListener('click', () => this.clearCaptions());
+    }
+    if (this.previewCaptionBtn) {
+      this.previewCaptionBtn.addEventListener('click', () => this.previewCaptionStyle());
     }
 
     // Export
@@ -2257,6 +2261,305 @@ class VideoEditor {
     });
     this.renderCaptions();
     showToast('Captions cleared.', false);
+  }
+
+  // Preview caption style in a modal
+  previewCaptionStyle() {
+    // Get sample text
+    let sampleText = "This is how your captions will look";
+
+    // Try to get actual caption from first scene with one
+    const sceneWithCaption = this.scenes.find(s => s.caption);
+    if (sceneWithCaption) {
+      sampleText = sceneWithCaption.caption;
+    }
+
+    // Get sample image (first scene or placeholder)
+    let sampleImageUrl = this.scenes[0]?.imageUrl || null;
+
+    // Create preview canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1280;
+    canvas.height = 720;
+
+    // Create modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      padding: 20px;
+    `;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕ Close Preview';
+    closeBtn.style.cssText = `
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background: var(--primary, #6366f1);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+    `;
+    closeBtn.onclick = () => modal.remove();
+
+    const previewCanvas = document.createElement('canvas');
+    previewCanvas.width = 1280;
+    previewCanvas.height = 720;
+    previewCanvas.style.cssText = `
+      max-width: 90%;
+      max-height: 70vh;
+      border-radius: 8px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    `;
+
+    const info = document.createElement('p');
+    info.style.cssText = `
+      color: #888;
+      margin-top: 20px;
+      font-size: 14px;
+    `;
+    info.textContent = 'Change settings above and click Preview again to see updates';
+
+    modal.appendChild(closeBtn);
+    modal.appendChild(previewCanvas);
+    modal.appendChild(info);
+    document.body.appendChild(modal);
+
+    const previewCtx = previewCanvas.getContext('2d');
+
+    // Draw preview
+    const drawPreview = () => {
+      // Background
+      previewCtx.fillStyle = '#1a1a2e';
+      previewCtx.fillRect(0, 0, 1280, 720);
+
+      // Draw scene image if available
+      if (sampleImageUrl) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          // Cover fit
+          const scale = Math.max(1280 / img.width, 720 / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const x = (1280 - w) / 2;
+          const y = (720 - h) / 2;
+          previewCtx.drawImage(img, x, y, w, h);
+
+          // Draw caption on top
+          this.drawCaptionPreview(previewCtx, sampleText, 1280, 720);
+        };
+        img.onerror = () => {
+          // Just draw caption on dark background
+          this.drawCaptionPreview(previewCtx, sampleText, 1280, 720);
+        };
+        img.src = sampleImageUrl;
+      } else {
+        // No image, just draw gradient background
+        const gradient = previewCtx.createLinearGradient(0, 0, 1280, 720);
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(1, '#16213e');
+        previewCtx.fillStyle = gradient;
+        previewCtx.fillRect(0, 0, 1280, 720);
+
+        this.drawCaptionPreview(previewCtx, sampleText, 1280, 720);
+      }
+    };
+
+    drawPreview();
+
+    // Add animation preview for word-highlight
+    const animation = document.getElementById('caption-animation')?.value || 'none';
+    if (animation !== 'none') {
+      let frame = 0;
+      const words = sampleText.split(/\s+/);
+      const totalFrames = words.length * 30; // 30 frames per word at 30fps
+
+      const animate = () => {
+        if (!document.body.contains(modal)) return;
+
+        // Redraw background
+        if (sampleImageUrl) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const scale = Math.max(1280 / img.width, 720 / img.height);
+            const w = img.width * scale;
+            const h = img.height * scale;
+            const x = (1280 - w) / 2;
+            const y = (720 - h) / 2;
+            previewCtx.drawImage(img, x, y, w, h);
+            this.drawCaptionPreview(previewCtx, sampleText, 1280, 720, frame / totalFrames);
+          };
+          img.src = sampleImageUrl;
+        } else {
+          const gradient = previewCtx.createLinearGradient(0, 0, 1280, 720);
+          gradient.addColorStop(0, '#1a1a2e');
+          gradient.addColorStop(1, '#16213e');
+          previewCtx.fillStyle = gradient;
+          previewCtx.fillRect(0, 0, 1280, 720);
+          this.drawCaptionPreview(previewCtx, sampleText, 1280, 720, frame / totalFrames);
+        }
+
+        frame = (frame + 1) % totalFrames;
+        requestAnimationFrame(animate);
+      };
+
+      animate();
+    }
+  }
+
+  // Draw caption preview with current settings
+  drawCaptionPreview(ctx, text, width, height, progress = 0.5) {
+    if (!text) return;
+
+    // Get all settings
+    const position = document.getElementById('caption-style')?.value || 'bottom-center';
+    const fontSize = parseInt(document.getElementById('caption-font-size')?.value || 48);
+    const fontFamily = document.getElementById('caption-font')?.value || 'Impact';
+    const textColor = document.getElementById('caption-text-color')?.value || '#FFFFFF';
+    const highlightColor = document.getElementById('caption-highlight-color')?.value || '#FFFF00';
+    const bgStyle = document.getElementById('caption-bg-color')?.value || 'shadow';
+    const animation = document.getElementById('caption-animation')?.value || 'none';
+    const wordsPerLine = parseInt(document.getElementById('caption-words-per-line')?.value || 4);
+
+    ctx.save();
+
+    // Set font
+    ctx.font = `bold ${fontSize}px ${fontFamily}, Impact, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Split into lines based on words per line
+    const words = text.split(/\s+/);
+    const lines = [];
+    for (let i = 0; i < words.length; i += wordsPerLine) {
+      lines.push(words.slice(i, i + wordsPerLine).join(' '));
+    }
+
+    // Calculate position
+    const lineHeight = fontSize * 1.3;
+    const totalHeight = lines.length * lineHeight;
+    let startY;
+
+    if (position === 'top-center') {
+      startY = 80 + totalHeight / 2;
+    } else if (position === 'center') {
+      startY = height / 2;
+    } else {
+      startY = height - 80 - totalHeight / 2;
+    }
+
+    // Calculate current word index for animation
+    const totalWords = words.length;
+    const currentWordIndex = Math.floor(progress * totalWords);
+
+    // Draw each line
+    let wordIndex = 0;
+    lines.forEach((line, lineIndex) => {
+      const y = startY + (lineIndex - (lines.length - 1) / 2) * lineHeight;
+      const lineWords = line.split(/\s+/);
+
+      if (animation === 'none' || animation === 'typewriter') {
+        // Simple draw
+        if (bgStyle === 'shadow') {
+          ctx.shadowColor = 'rgba(0,0,0,0.8)';
+          ctx.shadowBlur = 8;
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+        } else if (bgStyle === 'box' || bgStyle === 'pill') {
+          const metrics = ctx.measureText(line);
+          const padding = bgStyle === 'pill' ? 20 : 10;
+          const boxWidth = metrics.width + padding * 2;
+          const boxHeight = fontSize + padding;
+          const radius = bgStyle === 'pill' ? boxHeight / 2 : 8;
+
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          this.roundRect(ctx, width / 2 - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight, radius);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = textColor;
+        ctx.fillText(line, width / 2, y);
+        ctx.shadowColor = 'transparent';
+      } else {
+        // Word-by-word animation
+        const lineWordsWidths = lineWords.map(w => ctx.measureText(w + ' ').width);
+        const totalLineWidth = lineWordsWidths.reduce((a, b) => a + b, 0) - ctx.measureText(' ').width;
+        let x = width / 2 - totalLineWidth / 2;
+
+        lineWords.forEach((word, wi) => {
+          const globalWordIndex = wordIndex + wi;
+          const isCurrentWord = globalWordIndex === currentWordIndex;
+          const isPastWord = globalWordIndex < currentWordIndex;
+
+          let wordColor = textColor;
+          let scale = 1;
+
+          if (animation === 'word-highlight') {
+            wordColor = isCurrentWord ? highlightColor : (isPastWord ? highlightColor : textColor);
+          } else if (animation === 'word-pop') {
+            if (isCurrentWord) {
+              scale = 1.2;
+              wordColor = highlightColor;
+            }
+          } else if (animation === 'karaoke') {
+            wordColor = (isPastWord || isCurrentWord) ? highlightColor : textColor;
+          }
+
+          // Draw background for current word if needed
+          if (bgStyle === 'shadow') {
+            ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            ctx.shadowBlur = 8;
+          }
+
+          ctx.save();
+          if (scale !== 1) {
+            ctx.translate(x + ctx.measureText(word).width / 2, y);
+            ctx.scale(scale, scale);
+            ctx.translate(-(x + ctx.measureText(word).width / 2), -y);
+          }
+
+          ctx.fillStyle = wordColor;
+          ctx.textAlign = 'left';
+          ctx.fillText(word, x, y);
+          ctx.restore();
+
+          ctx.shadowColor = 'transparent';
+          x += lineWordsWidths[wi];
+        });
+
+        wordIndex += lineWords.length;
+      }
+    });
+
+    ctx.restore();
+  }
+
+  // Helper for rounded rectangles
+  roundRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
   }
 
   getTotalDuration() {
