@@ -964,7 +964,9 @@ app.post('/api/animate-avatar', upload.fields([
 });
 
 // Animate avatar with lip-sync using URLs (bypasses Vercel payload limit)
+// VERSION: lucataco-v3 - using 85c698db
 app.post('/api/animate-avatar-url', async (req, res) => {
+  console.log('*** AVATAR ENDPOINT VERSION: lucataco-v3 ***');
   try {
     const { avatarUrl, audioUrl } = req.body;
 
@@ -1008,8 +1010,8 @@ app.post('/api/animate-avatar-url', async (req, res) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Replicate API error:', response.status, errorText);
-      throw new Error(`Replicate API error: ${errorText}`);
+      console.error('Replicate error (v3-lucataco):', response.status, errorText);
+      throw new Error(`[v3] ${errorText}`);
     }
 
     let prediction = await response.json();
