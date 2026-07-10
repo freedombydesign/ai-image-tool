@@ -3282,17 +3282,248 @@ class VideoEditor {
     showToast('SRT file downloaded! Import into CapCut/Premiere.', 'success');
   }
 
-  // Export Video
-  async exportVideo() {
-    // If FFmpeg not loaded, fall back to ZIP export
-    if (!this.ffmpegLoaded) {
-      showToast('FFmpeg unavailable. Exporting as ZIP instead...');
-      return this.exportAsZip();
-    }
+  // Export using MediaRecorder (works in all browsers without FFmpeg)
+  async exportWithMediaRecorder() {
+    this.exportProgress.hidden = false;
+    this.exportVideoBtn.disabled = true;
+    this.exportStatus.textContent = 'Preparing MediaRecorder export...';
 
+    try {
+      const [width, height] = this.exportResolution.value.split('x').map(Number);
+      const fps = parseInt(this.exportFps.value) || 30;
+      const totalDuration = this.getTotalDuration();
+
+      // Create export canvas
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const ctx = exportCanvas.getContext('2d');
+
+      // Sync uploaded avatar segments
+      this.syncUploadedAvatarSegments();
+
+      // Load avatar video elements
+      this.exportStatus.textContent = 'Loading avatar videos...';
+      const avatarVideoElements = [];
+      if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
+        for (const av of this.avatarVideos) {
+          if (av.videoUrl) {
+            try {
+              const videoEl = await this.loadVideoElement(av.videoUrl);
+              avatarVideoElements.push({ element: videoEl, ...av });
+            } catch (e) {
+              console.error('Failed to load avatar video:', e);
+              avatarVideoElements.push(null);
+            }
+          }
+        }
+      }
+
+      // Preload scene images
+      this.exportStatus.textContent = 'Loading scene images...';
+      const sceneImages = await Promise.all(this.scenes.map(scene => {
+        return new Promise(resolve => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = scene.imageUrl;
+        });
+      }));
+
+      // Create audio element
+      let audioElement = null;
+      if (this.audioBlob) {
+        audioElement = new Audio(URL.createObjectURL(this.audioBlob));
+        audioElement.muted = false;
+      }
+
+      // Set up MediaRecorder
+      const stream = exportCanvas.captureStream(fps);
+
+      // Add audio track if available
+      if (audioElement) {
+        try {
+          const audioContext = new AudioContext();
+          const source = audioContext.createMediaElementSource(audioElement);
+          const destination = audioContext.createMediaStreamDestination();
+          source.connect(destination);
+          source.connect(audioContext.destination); // Also play through speakers (muted)
+          destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+        } catch (e) {
+          console.log('Audio track not added:', e);
+        }
+      }
+
+      // Determine best codec
+      const mimeTypes = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+        'video/mp4'
+      ];
+      let selectedMimeType = mimeTypes.find(mt => MediaRecorder.isTypeSupported(mt)) || 'video/webm';
+      console.log('Using MediaRecorder with:', selectedMimeType);
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: selectedMimeType,
+        videoBitsPerSecond: 8000000 // 8 Mbps
+      });
+
+      const chunks = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      // Start recording
+      mediaRecorder.start(100); // Collect data every 100ms
+
+      // Start audio
+      if (audioElement) {
+        audioElement.currentTime = 0;
+        audioElement.play().catch(e => console.log('Audio play error:', e));
+      }
+
+      // Render frames
+      this.exportStatus.textContent = 'Recording video...';
+      const startTime = performance.now();
+      let currentTime = 0;
+
+      const renderFrame = () => {
+        if (currentTime >= totalDuration) {
+          // Done rendering
+          mediaRecorder.stop();
+          if (audioElement) audioElement.pause();
+          return;
+        }
+
+        // Find current scene
+        const scene = this.scenes.find(s =>
+          currentTime >= s.startTime && currentTime < s.startTime + s.duration
+        ) || this.scenes[this.scenes.length - 1];
+
+        const sceneIndex = this.scenes.indexOf(scene);
+        const sceneImg = sceneImages[sceneIndex];
+
+        // Clear canvas
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+
+        // Draw scene image with Ken Burns
+        if (sceneImg) {
+          const progress = (currentTime - scene.startTime) / scene.duration;
+          const scale = 1 + progress * 0.1;
+          const imgRatio = sceneImg.width / sceneImg.height;
+          const canvasRatio = width / height;
+
+          let drawW, drawH;
+          if (imgRatio > canvasRatio) {
+            drawH = height * scale;
+            drawW = drawH * imgRatio;
+          } else {
+            drawW = width * scale;
+            drawH = drawW / imgRatio;
+          }
+
+          ctx.drawImage(sceneImg, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+        }
+
+        // Draw avatar overlay
+        if (avatarVideoElements.length > 0) {
+          const avatarData = avatarVideoElements.find(av =>
+            av && currentTime >= av.startTime && currentTime < av.endTime
+          );
+          if (avatarData && avatarData.element) {
+            const localTime = currentTime - avatarData.startTime;
+            if (Math.abs(avatarData.element.currentTime - localTime) > 0.2) {
+              avatarData.element.currentTime = localTime;
+            }
+
+            const rect = this.getAvatarOverlayRect(width, height);
+            ctx.save();
+            if (this.avatarShape === 'circle') {
+              const centerX = rect.x + rect.width / 2;
+              const centerY = rect.y + rect.height / 2;
+              const radius = Math.min(rect.width, rect.height) / 2;
+              ctx.beginPath();
+              ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+              ctx.clip();
+              ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+            } else {
+              ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+            }
+            ctx.restore();
+          }
+        }
+
+        // Draw caption (temporarily swap context)
+        const originalCtx = this.ctx;
+        const originalCanvas = this.previewCanvas;
+        this.ctx = ctx;
+        this.previewCanvas = exportCanvas;
+        this.playbackTime = currentTime;
+        this.drawCaption(scene);
+        this.ctx = originalCtx;
+        this.previewCanvas = originalCanvas;
+
+        // Update progress
+        const percent = Math.round((currentTime / totalDuration) * 100);
+        this.exportProgressBar.style.width = `${percent}%`;
+        this.exportStatus.textContent = `Recording: ${percent}%`;
+
+        // Advance time
+        currentTime += 1 / fps;
+
+        // Schedule next frame
+        setTimeout(renderFrame, 1000 / fps);
+      };
+
+      // Start rendering
+      renderFrame();
+
+      // Wait for recording to complete
+      await new Promise(resolve => {
+        mediaRecorder.onstop = resolve;
+      });
+
+      // Create video blob
+      const videoBlob = new Blob(chunks, { type: selectedMimeType });
+      const extension = selectedMimeType.includes('mp4') ? 'mp4' : 'webm';
+
+      // Download
+      const url = URL.createObjectURL(videoBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `video_export_${Date.now()}.${extension}`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      this.exportStatus.textContent = 'Export complete!';
+      showToast(`Video exported as ${extension.toUpperCase()}!`, 'success');
+
+    } catch (error) {
+      console.error('MediaRecorder export error:', error);
+      showToast(`Export failed: ${error.message}. Try ZIP export.`);
+      this.exportStatus.textContent = 'Export failed';
+    } finally {
+      this.exportVideoBtn.disabled = false;
+      setTimeout(() => {
+        this.exportProgress.hidden = true;
+      }, 3000);
+    }
+  }
+
+  // Export Video (FFmpeg version)
+  async exportVideo() {
     if (this.scenes.length === 0) {
       showToast('Add scenes first to export.');
       return;
+    }
+
+    // Try MediaRecorder first (works in all browsers)
+    if (!this.ffmpegLoaded) {
+      console.log('FFmpeg not available, using MediaRecorder export');
+      return this.exportWithMediaRecorder();
     }
 
     this.exportProgress.hidden = false;
