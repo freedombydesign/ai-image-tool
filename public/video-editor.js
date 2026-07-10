@@ -2868,21 +2868,28 @@ class VideoEditor {
 
     if (segmentKeys.length === 0) return;
 
-    // Calculate segment duration based on audio
+    // Each segment is 90 seconds (the length used during avatar generation)
+    const SEGMENT_LENGTH = 90;
     const totalDuration = this.audioDuration || this.getTotalDuration();
-    const segmentDuration = totalDuration / segmentKeys.length;
 
     // Build avatarVideos array from uploaded segments
+    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
     this.avatarVideos = [];
-    segmentKeys.forEach((segNum, index) => {
+    segmentKeys.forEach((segNum) => {
       const seg = uploadedSegments[segNum];
       if (seg && seg.url) {
+        const segmentIndex = segNum - 1; // Convert to 0-indexed
+        const startTime = segmentIndex * SEGMENT_LENGTH;
+        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
+
         this.avatarVideos.push({
           videoUrl: seg.url,
-          startTime: index * segmentDuration,
-          endTime: (index + 1) * segmentDuration,
+          startTime: startTime,
+          endTime: endTime,
           segmentIndex: segNum
         });
+
+        console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
       }
     });
 
