@@ -3784,31 +3784,39 @@ async function generateAvatarOnly() {
   const segmentLength = 90; // 90 seconds per segment
   const numSegments = Math.ceil(audioDuration / segmentLength);
 
-  // Ask user which segment to start from (to skip already-generated ones)
+  // Ask user which segments to generate
   let startFromSegment = 1;
+  let endAtSegment = numSegments;
+
   if (numSegments > 1) {
-    const skipPrompt = prompt(
+    const rangePrompt = prompt(
       `Your audio needs ${numSegments} segments.\n\n` +
-      `Already have some? Enter the segment # to START from:\n` +
-      `• Enter 1 to generate ALL segments\n` +
-      `• Enter 5 to skip 1-4 and generate 5-${numSegments}\n\n` +
-      `Start from segment:`,
-      '1'
+      `Enter which segments to generate (e.g., "2-4" or "1-8"):\n` +
+      `• "1-${numSegments}" = generate ALL\n` +
+      `• "2-4" = generate only segments 2, 3, 4\n` +
+      `• "5-${numSegments}" = generate segments 5 to ${numSegments}\n\n` +
+      `Generate segments:`,
+      `1-${numSegments}`
     );
 
-    if (skipPrompt === null) {
+    if (rangePrompt === null) {
       // User cancelled
       return;
     }
 
-    startFromSegment = parseInt(skipPrompt) || 1;
+    // Parse range (e.g., "2-4" or just "2")
+    const rangeParts = rangePrompt.split('-').map(s => parseInt(s.trim()));
+    startFromSegment = rangeParts[0] || 1;
+    endAtSegment = rangeParts[1] || rangeParts[0] || numSegments;
+
     if (startFromSegment < 1) startFromSegment = 1;
-    if (startFromSegment > numSegments) {
-      showToast(`Only ${numSegments} segments needed. Nothing to generate.`);
+    if (endAtSegment > numSegments) endAtSegment = numSegments;
+    if (startFromSegment > endAtSegment) {
+      showToast(`Invalid range. Start must be less than end.`);
       return;
     }
 
-    statusEl.textContent = `Will generate segments ${startFromSegment}-${numSegments} (skipping ${startFromSegment - 1})...`;
+    statusEl.textContent = `Will generate segments ${startFromSegment}-${endAtSegment}...`;
   }
 
   btn.disabled = true;
@@ -3855,8 +3863,8 @@ async function generateAvatarOnly() {
       const segment = audioSegments[i];
       const segmentNum = i + 1;
 
-      // Skip segments before startFromSegment (user already has these)
-      if (segmentNum < startFromSegment) {
+      // Skip segments outside the requested range
+      if (segmentNum < startFromSegment || segmentNum > endAtSegment) {
         skippedCount++;
         avatarVideos.push({
           index: i,
@@ -3865,7 +3873,7 @@ async function generateAvatarOnly() {
           endTime: segment.endTime,
           skipped: true
         });
-        console.log(`Segment ${segmentNum} skipped (user has externally)`);
+        console.log(`Segment ${segmentNum} skipped (outside range ${startFromSegment}-${endAtSegment})`);
         continue;
       }
 
