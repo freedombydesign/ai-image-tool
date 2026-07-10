@@ -1416,10 +1416,11 @@ app.post('/api/transcribe-url', async (req, res) => {
     fs.writeFileSync(tempPath, buffer);
     console.log('Saved audio to temp file:', tempPath, 'extension:', ext, 'size:', buffer.length);
 
-    // Transcribe with Whisper
+    // Transcribe with Whisper - force English to avoid wrong language detection
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempPath),
       model: 'whisper-1',
+      language: 'en',  // Force English
       response_format: 'verbose_json',
       timestamp_granularities: ['segment', 'word']
     });
@@ -1452,10 +1453,11 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
     // Get scene descriptions from request body
     const scenes = req.body.scenes ? JSON.parse(req.body.scenes) : [];
 
-    // Transcribe with Whisper - request word-level timestamps
+    // Transcribe with Whisper - request word-level timestamps, force English
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(req.file.path),
       model: 'whisper-1',
+      language: 'en',  // Force English
       response_format: 'verbose_json',
       timestamp_granularities: ['segment', 'word']
     });
