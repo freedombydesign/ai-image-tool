@@ -2858,7 +2858,55 @@ class VideoEditor {
     this.previewModal.hidden = false;
     this.setupPreviewCanvas();
     this.playbackTime = 0;
-    this.updatePreviewFrame();
+
+    // Preload all avatar videos before playback
+    if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
+      this.preloadAvatarVideos().then(() => {
+        console.log('Avatar videos preloaded');
+        this.updatePreviewFrame();
+      });
+    } else {
+      this.updatePreviewFrame();
+    }
+  }
+
+  // Preload all avatar videos for smooth playback
+  async preloadAvatarVideos() {
+    if (!this.previewAvatarVideos) {
+      this.previewAvatarVideos = {};
+    }
+
+    const loadPromises = this.avatarVideos.map(async (av) => {
+      if (!av.videoUrl) return;
+
+      // Skip if already loaded
+      if (this.previewAvatarVideos[av.videoUrl]) return;
+
+      const videoEl = document.createElement('video');
+      videoEl.crossOrigin = 'anonymous';
+      videoEl.muted = true;
+      videoEl.playsInline = true;
+      videoEl.preload = 'auto';
+      videoEl.src = av.videoUrl;
+
+      // Store immediately so we don't double-load
+      this.previewAvatarVideos[av.videoUrl] = videoEl;
+
+      // Wait for video to be fully buffered
+      await new Promise((resolve) => {
+        videoEl.oncanplaythrough = resolve;
+        videoEl.onloadeddata = () => {
+          if (videoEl.readyState >= 3) resolve();
+        };
+        videoEl.onerror = resolve;
+        setTimeout(resolve, 5000); // Timeout fallback
+        videoEl.load();
+      });
+
+      console.log(`Preloaded avatar video: ${av.videoUrl}, duration: ${videoEl.duration}s`);
+    });
+
+    await Promise.all(loadPromises);
   }
 
   // Sync uploaded avatar segments from window.uploadedAvatarSegments to this.avatarVideos
