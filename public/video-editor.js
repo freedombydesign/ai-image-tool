@@ -1505,15 +1505,45 @@ class VideoEditor {
         description: scene.text || scene.caption || ''
       }));
 
-      // Create form data with audio and scene info
-      const formData = new FormData();
-      formData.append('audio', this.audioBlob, 'recording.webm');
-      formData.append('scenes', JSON.stringify(sceneDescriptions));
+      // Upload audio to Supabase first to bypass Vercel limit
+      const configResponse = await fetch('/api/supabase-config');
+      if (!configResponse.ok) {
+        throw new Error('Cannot get storage config');
+      }
+      const config = await configResponse.json();
 
-      // Call transcription API
-      const response = await fetch('/api/transcribe', {
+      const mimeType = this.audioBlob.type || 'audio/mpeg';
+      let ext = 'm4a';
+      if (mimeType.includes('wav')) ext = 'wav';
+      else if (mimeType.includes('mp3') || mimeType.includes('mpeg')) ext = 'mp3';
+      else if (mimeType.includes('webm')) ext = 'webm';
+
+      const fileName = `sync-audio-${Date.now()}.${ext}`;
+      const filePath = `audio/${fileName}`;
+      const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
+
+      const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
-        body: formData
+        headers: {
+          'Authorization': `Bearer ${config.anonKey}`,
+          'apikey': config.anonKey,
+          'Content-Type': mimeType,
+          'x-upsert': 'true'
+        },
+        body: this.audioBlob
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload audio');
+      }
+
+      const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
+
+      // Call transcription API with URL
+      const response = await fetch('/api/transcribe-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl: publicUrl })
       });
 
       const result = await response.json();
@@ -2912,20 +2942,77 @@ async function generateAvatarOnly() {
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ Generating...';
-  statusEl.textContent = 'Preparing audio...';
+  btn.textContent = '⏳ Uploading...';
+  statusEl.textContent = 'Uploading files to cloud...';
 
   try {
-    // Convert audio to proper format
-    const formData = new FormData();
-    formData.append('avatarImage', videoEditor.avatarPhotoBlob, 'avatar.png');
-    formData.append('audioFile', videoEditor.audioBlob, 'audio.mp3');
+    // Get Supabase config
+    const configResponse = await fetch('/api/supabase-config');
+    if (!configResponse.ok) {
+      throw new Error('Cannot get storage config');
+    }
+    const config = await configResponse.json();
 
+    // Upload avatar image to Supabase
+    const avatarPath = `avatars/avatar-${Date.now()}.png`;
+    const avatarUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${avatarPath}`;
+
+    const avatarUploadResponse = await fetch(avatarUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': 'image/png',
+        'x-upsert': 'true'
+      },
+      body: videoEditor.avatarPhotoBlob
+    });
+
+    if (!avatarUploadResponse.ok) {
+      throw new Error('Failed to upload avatar image');
+    }
+
+    const avatarPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${avatarPath}`;
+    statusEl.textContent = 'Avatar image uploaded, uploading audio...';
+
+    // Upload audio to Supabase
+    const mimeType = videoEditor.audioBlob.type || 'audio/mpeg';
+    let ext = 'm4a';
+    if (mimeType.includes('wav')) ext = 'wav';
+    else if (mimeType.includes('mp3') || mimeType.includes('mpeg')) ext = 'mp3';
+    else if (mimeType.includes('webm')) ext = 'webm';
+
+    const audioPath = `audio/avatar-audio-${Date.now()}.${ext}`;
+    const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
+
+    const audioUploadResponse = await fetch(audioUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': mimeType,
+        'x-upsert': 'true'
+      },
+      body: videoEditor.audioBlob
+    });
+
+    if (!audioUploadResponse.ok) {
+      throw new Error('Failed to upload audio');
+    }
+
+    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+
+    btn.textContent = '⏳ Generating...';
     statusEl.textContent = 'Generating talking avatar (this may take a few minutes)...';
 
-    const response = await fetch('/api/animate-avatar', {
+    // Call avatar API with URLs instead of files
+    const response = await fetch('/api/animate-avatar-url', {
       method: 'POST',
-      body: formData
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        avatarUrl: avatarPublicUrl,
+        audioUrl: audioPublicUrl
+      })
     });
 
     const result = await response.json();

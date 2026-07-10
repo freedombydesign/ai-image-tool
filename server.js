@@ -969,6 +969,98 @@ app.post('/api/animate-avatar', upload.fields([
   }
 });
 
+// Animate avatar with lip-sync using URLs (bypasses Vercel payload limit)
+app.post('/api/animate-avatar-url', async (req, res) => {
+  try {
+    const { avatarUrl, audioUrl } = req.body;
+
+    if (!avatarUrl) {
+      return res.status(400).json({ error: 'Avatar URL is required' });
+    }
+    if (!audioUrl) {
+      return res.status(400).json({ error: 'Audio URL is required' });
+    }
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    console.log('Starting avatar animation from URLs...');
+    console.log('Avatar URL:', avatarUrl);
+    console.log('Audio URL:', audioUrl);
+
+    // Use LivePortrait model on Replicate
+    const LIVEPORTRAIT_VERSION = 'eaef9e673ab5c7e0e36f94be1c3e91321b0cf5820664c72c7c7dc48bbbb81add';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: LIVEPORTRAIT_VERSION,
+        input: {
+          face: avatarUrl,
+          driving_audio: audioUrl,
+          live_portrait_dsize: 512,
+          live_portrait_scale: 2.3,
+          video_frame_load_cap: 128,
+          aniportrait_ref_image: avatarUrl,
+          output_format: 'mp4',
+          output_quality: 80
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Replicate API error:', response.status, errorText);
+      throw new Error(`Replicate API error: ${errorText}`);
+    }
+
+    let prediction = await response.json();
+    console.log('Animation prediction started:', prediction.id, 'status:', prediction.status);
+
+    // Poll for completion
+    let pollCount = 0;
+    const maxPolls = 300; // 5 minutes max
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && pollCount < maxPolls) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const pollResponse = await fetch(prediction.urls.get, {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      prediction = await pollResponse.json();
+      pollCount++;
+      if (pollCount % 10 === 0) {
+        console.log(`Animation poll ${pollCount}: ${prediction.status}`);
+      }
+    }
+
+    if (prediction.status === 'failed') {
+      console.error('Animation failed:', prediction.error);
+      throw new Error(prediction.error || 'Animation failed');
+    }
+
+    if (pollCount >= maxPolls) {
+      throw new Error('Animation timed out after 5 minutes');
+    }
+
+    console.log('Animation succeeded, output:', prediction.output);
+
+    res.json({
+      success: true,
+      videoUrl: prediction.output,
+      predictionId: prediction.id
+    });
+
+  } catch (error) {
+    console.error('Animation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Analyze avatar photo with GPT-4 Vision - generates detailed appearance description
 app.post('/api/analyze-avatar', upload.single('image'), async (req, res) => {
   try {
