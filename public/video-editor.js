@@ -94,6 +94,42 @@ class VideoEditor {
     }
   }
 
+  // Save scenes to Supabase for persistence
+  async saveScenesToSupabase() {
+    if (this.scenes.length === 0) return;
+
+    const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
+    if (!userId) {
+      console.log('No user ID for scene persistence');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/db/batch-scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userId,
+          scenes: this.scenes.map(scene => ({
+            imageUrl: scene.imageUrl,
+            text: scene.text || scene.caption || '',
+            duration: scene.duration,
+            startTime: scene.startTime
+          }))
+        })
+      });
+
+      if (response.ok) {
+        console.log(`Saved ${this.scenes.length} scenes to Supabase`);
+      } else {
+        const error = await response.json();
+        console.error('Failed to save scenes:', error);
+      }
+    } catch (e) {
+      console.error('Failed to save scenes to Supabase:', e);
+    }
+  }
+
   // Load avatar settings from localStorage (fast) then Supabase
   async loadAvatarSettings() {
     // Load from localStorage first (immediate)
@@ -580,6 +616,9 @@ class VideoEditor {
     this.renderCaptions();
     this.updateTotalDuration();
 
+    // Auto-save scenes to Supabase for persistence
+    this.saveScenesToSupabase();
+
     showToast(`Imported ${this.scenes.length} scenes!`, false);
   }
 
@@ -605,6 +644,8 @@ class VideoEditor {
           this.renderTimeline();
           this.renderCaptions();
           this.updateTotalDuration();
+          // Auto-save uploaded scenes
+          this.saveScenesToSupabase();
         }
       };
       reader.readAsDataURL(file);
@@ -669,6 +710,8 @@ class VideoEditor {
     this.renderImportedScenes();
     this.renderTimeline();
     this.renderCaptions();
+    // Auto-save after reorder
+    this.saveScenesToSupabase();
   }
 
   removeScene(index) {
@@ -678,6 +721,8 @@ class VideoEditor {
     this.renderTimeline();
     this.renderCaptions();
     this.updateTotalDuration();
+    // Auto-save after removal
+    this.saveScenesToSupabase();
   }
 
   recalculateTimings() {
