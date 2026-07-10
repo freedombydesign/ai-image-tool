@@ -140,19 +140,24 @@ class VideoEditor {
       const response = await fetch(`/api/db/batch-scenes/${userId}`);
       if (response.ok) {
         const data = await response.json();
-        if (data.scenes && data.scenes.length > 0) {
-          this.scenes = data.scenes.map((scene, index) => ({
-            id: `scene-${Date.now()}-${index}`,
-            imageUrl: scene.imageUrl || scene.image_url,
-            text: scene.text || '',
-            caption: scene.text || '',
-            duration: scene.duration || 6,
-            startTime: scene.startTime || scene.start_time || 0
-          }));
-          this.renderScenes();
-          this.updateTotalDuration();
-          console.log(`Loaded ${this.scenes.length} scenes from Supabase`);
-          showToast(`Restored ${this.scenes.length} scenes`, 'success');
+        // API returns { batches: [...] }, get the most recent batch's scenes
+        if (data.batches && data.batches.length > 0) {
+          const mostRecentBatch = data.batches[0]; // Already sorted by created_at desc
+          const scenes = mostRecentBatch.scenes || [];
+          if (scenes.length > 0) {
+            this.scenes = scenes.map((scene, index) => ({
+              id: `scene-${Date.now()}-${index}`,
+              imageUrl: scene.imageUrl || scene.image_url,
+              text: scene.text || '',
+              caption: scene.text || '',
+              duration: scene.duration || 6,
+              startTime: scene.startTime || scene.start_time || 0
+            }));
+            this.renderScenes();
+            this.updateTotalDuration();
+            console.log(`Loaded ${this.scenes.length} scenes from Supabase`);
+            showToast(`Restored ${this.scenes.length} scenes`, 'success');
+          }
         }
       }
     } catch (e) {
