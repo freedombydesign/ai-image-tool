@@ -2917,58 +2917,123 @@ class VideoEditor {
   drawCaption(scene) {
     if (!scene.caption) return;
 
-    const fontSize = parseInt(this.captionFontSize.value);
-    const style = this.captionStyle.value;
-
-    this.ctx.font = `bold ${fontSize}px Inter, sans-serif`;
-    this.ctx.textAlign = 'center';
-    this.ctx.fillStyle = 'white';
-    this.ctx.strokeStyle = 'black';
-    this.ctx.lineWidth = 3;
-
     const canvasW = this.previewCanvas.width;
     const canvasH = this.previewCanvas.height;
 
-    let x = canvasW / 2;
-    let y;
+    // Get all caption settings
+    const position = document.getElementById('caption-style')?.value || 'bottom-center';
+    const fontSize = parseInt(document.getElementById('caption-font-size')?.value || 48);
+    const fontFamily = document.getElementById('caption-font')?.value || 'Impact';
+    const textColor = document.getElementById('caption-text-color')?.value || '#FFFFFF';
+    const highlightColor = document.getElementById('caption-highlight-color')?.value || '#FFFF00';
+    const bgStyle = document.getElementById('caption-bg-color')?.value || 'shadow';
+    const animation = document.getElementById('caption-animation')?.value || 'word-highlight';
+    const wordsPerLine = parseInt(document.getElementById('caption-words-per-line')?.value || 4);
 
-    switch (style) {
-      case 'top-center':
-        y = fontSize + 40;
-        break;
-      case 'bottom-left':
-        x = 40;
-        y = canvasH - 40;
-        this.ctx.textAlign = 'left';
-        break;
-      default: // bottom-center
-        y = canvasH - 40;
+    this.ctx.save();
+    this.ctx.font = `bold ${fontSize}px ${fontFamily}, Impact, sans-serif`;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+
+    // Get word timings if available (from Whisper transcription)
+    const wordTimings = scene.wordTimings || [];
+    const sceneStartTime = scene.startTime || 0;
+    const currentTime = this.playbackTime;
+    const timeInScene = currentTime - sceneStartTime;
+
+    // Split caption into words
+    const words = scene.caption.split(/\s+/);
+
+    // Group into lines
+    const lines = [];
+    for (let i = 0; i < words.length; i += wordsPerLine) {
+      lines.push(words.slice(i, i + wordsPerLine));
     }
 
-    // Word wrap
-    const words = scene.caption.split(' ');
-    const lines = [];
-    let currentLine = '';
-    const maxWidth = canvasW - 80;
+    // Calculate position
+    const lineHeight = fontSize * 1.3;
+    const totalHeight = lines.length * lineHeight;
+    let startY;
 
-    words.forEach(word => {
-      const testLine = currentLine + word + ' ';
-      const metrics = this.ctx.measureText(testLine);
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine.trim());
-        currentLine = word + ' ';
-      } else {
-        currentLine = testLine;
-      }
-    });
-    lines.push(currentLine.trim());
+    if (position === 'top-center') {
+      startY = 80 + totalHeight / 2;
+    } else if (position === 'center') {
+      startY = canvasH / 2;
+    } else {
+      startY = canvasH - 80 - totalHeight / 2;
+    }
 
-    // Draw lines
-    lines.forEach((line, index) => {
-      const lineY = y - ((lines.length - 1 - index) * (fontSize + 10));
-      this.ctx.strokeText(line, x, lineY);
-      this.ctx.fillText(line, x, lineY);
+    // Draw each line with word highlighting
+    let globalWordIndex = 0;
+    lines.forEach((lineWords, lineIndex) => {
+      const y = startY + (lineIndex - (lines.length - 1) / 2) * lineHeight;
+
+      // Calculate line width for centering
+      const lineText = lineWords.join(' ');
+      const lineWidth = this.ctx.measureText(lineText).width;
+      let x = (canvasW - lineWidth) / 2;
+
+      lineWords.forEach((word, wordIdx) => {
+        const wordWidth = this.ctx.measureText(word + ' ').width;
+
+        // Determine if this word should be highlighted
+        let isHighlighted = false;
+
+        if (animation === 'word-highlight' || animation === 'karaoke') {
+          if (wordTimings.length > 0 && wordTimings[globalWordIndex]) {
+            // Use actual word timing from Whisper
+            const wordTiming = wordTimings[globalWordIndex];
+            const wordStart = (wordTiming.start || 0) - sceneStartTime;
+            const wordEnd = (wordTiming.end || wordStart + 0.3) - sceneStartTime;
+            isHighlighted = timeInScene >= wordStart && timeInScene < wordEnd + 0.1;
+          } else {
+            // Estimate based on position (fallback)
+            const sceneDuration = scene.duration || 6;
+            const wordDuration = sceneDuration / words.length;
+            const wordStartTime = globalWordIndex * wordDuration;
+            const wordEndTime = wordStartTime + wordDuration;
+            isHighlighted = timeInScene >= wordStartTime && timeInScene < wordEndTime + 0.1;
+          }
+        }
+
+        // Apply background style
+        if (bgStyle === 'shadow') {
+          this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
+          this.ctx.shadowBlur = 8;
+          this.ctx.shadowOffsetX = 2;
+          this.ctx.shadowOffsetY = 2;
+        } else {
+          this.ctx.shadowColor = 'transparent';
+          this.ctx.shadowBlur = 0;
+        }
+
+        // Set color based on highlight state
+        if (isHighlighted) {
+          this.ctx.fillStyle = highlightColor;
+          // Add scale effect for highlighted word
+          this.ctx.save();
+          const wordCenterX = x + wordWidth / 2;
+          this.ctx.translate(wordCenterX, y);
+          this.ctx.scale(1.1, 1.1);
+          this.ctx.translate(-wordCenterX, -y);
+        } else {
+          this.ctx.fillStyle = textColor;
+        }
+
+        // Draw the word
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(word, x, y);
+
+        if (isHighlighted) {
+          this.ctx.restore();
+        }
+
+        x += wordWidth;
+        globalWordIndex++;
+      });
     });
+
+    this.ctx.restore();
   }
 
   updatePlayhead() {
