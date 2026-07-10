@@ -2941,9 +2941,17 @@ async function generateAvatarOnly() {
     return;
   }
 
+  // Check audio duration and warn about segmentation
+  const audioDuration = videoEditor.audioDuration || 0;
+  const segmentLength = 90; // 90 seconds per segment
+  const numSegments = Math.ceil(audioDuration / segmentLength);
+
+  if (numSegments > 1) {
+    statusEl.textContent = `Audio is ${Math.round(audioDuration)}s - will generate ${numSegments} segments (~90s each)...`;
+  }
+
   btn.disabled = true;
   btn.textContent = '⏳ Uploading...';
-  statusEl.textContent = 'Uploading files to cloud...';
 
   try {
     // Get Supabase config
@@ -2954,6 +2962,7 @@ async function generateAvatarOnly() {
     const config = await configResponse.json();
 
     // Upload avatar image to Supabase
+    statusEl.textContent = 'Uploading avatar image...';
     const avatarPath = `avatars/avatar-${Date.now()}.png`;
     const avatarUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${avatarPath}`;
 
@@ -2973,69 +2982,97 @@ async function generateAvatarOnly() {
     }
 
     const avatarPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${avatarPath}`;
-    statusEl.textContent = 'Avatar image uploaded, uploading audio...';
 
-    // Upload audio to Supabase
-    const mimeType = videoEditor.audioBlob.type || 'audio/mpeg';
-    let ext = 'm4a';
-    if (mimeType.includes('wav')) ext = 'wav';
-    else if (mimeType.includes('mp3') || mimeType.includes('mpeg')) ext = 'mp3';
-    else if (mimeType.includes('webm')) ext = 'webm';
+    // Split audio into segments if needed
+    const audioSegments = await videoEditor.splitAudioForAvatar();
+    const avatarVideos = [];
 
-    const audioPath = `audio/avatar-audio-${Date.now()}.${ext}`;
-    const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
+    for (let i = 0; i < audioSegments.length; i++) {
+      const segment = audioSegments[i];
+      statusEl.textContent = `Processing segment ${i + 1}/${audioSegments.length}...`;
+      btn.textContent = `⏳ ${i + 1}/${audioSegments.length}`;
 
-    const audioUploadResponse = await fetch(audioUploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.anonKey}`,
-        'apikey': config.anonKey,
-        'Content-Type': mimeType,
-        'x-upsert': 'true'
-      },
-      body: videoEditor.audioBlob
-    });
+      // Upload this audio segment
+      const mimeType = 'audio/wav';
+      const audioPath = `audio/avatar-segment-${Date.now()}-${i}.wav`;
+      const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
 
-    if (!audioUploadResponse.ok) {
-      throw new Error('Failed to upload audio');
+      const audioUploadResponse = await fetch(audioUploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.anonKey}`,
+          'apikey': config.anonKey,
+          'Content-Type': mimeType,
+          'x-upsert': 'true'
+        },
+        body: segment.blob
+      });
+
+      if (!audioUploadResponse.ok) {
+        throw new Error(`Failed to upload audio segment ${i + 1}`);
+      }
+
+      const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+
+      // Generate avatar for this segment
+      statusEl.textContent = `Generating avatar ${i + 1}/${audioSegments.length} (may take 1-2 min)...`;
+
+      const response = await fetch('/api/animate-avatar-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          avatarUrl: avatarPublicUrl,
+          audioUrl: audioPublicUrl
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || `Avatar segment ${i + 1} failed`);
+      }
+
+      avatarVideos.push({
+        index: i,
+        videoUrl: result.videoUrl,
+        startTime: segment.startTime,
+        endTime: segment.endTime
+      });
     }
 
-    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+    // Download all avatar videos
+    statusEl.textContent = `Downloading ${avatarVideos.length} avatar video(s)...`;
 
-    btn.textContent = '⏳ Generating...';
-    statusEl.textContent = 'Generating talking avatar (this may take a few minutes)...';
-
-    // Call avatar API with URLs instead of files
-    const response = await fetch('/api/animate-avatar-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        avatarUrl: avatarPublicUrl,
-        audioUrl: audioPublicUrl
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || 'Avatar generation failed');
+    if (avatarVideos.length === 1) {
+      // Single video - download directly
+      const videoResponse = await fetch(avatarVideos[0].videoUrl);
+      const videoBlob = await videoResponse.blob();
+      const url = URL.createObjectURL(videoBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'talking_avatar.mp4';
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      // Multiple videos - download as ZIP
+      const zip = new JSZip();
+      for (let i = 0; i < avatarVideos.length; i++) {
+        statusEl.textContent = `Downloading video ${i + 1}/${avatarVideos.length}...`;
+        const videoResponse = await fetch(avatarVideos[i].videoUrl);
+        const videoBlob = await videoResponse.blob();
+        zip.file(`avatar_part_${String(i + 1).padStart(2, '0')}.mp4`, videoBlob);
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'talking_avatar_parts.zip';
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
-    statusEl.textContent = 'Avatar video ready! Downloading...';
-
-    // Download the video
-    const videoResponse = await fetch(result.videoUrl);
-    const videoBlob = await videoResponse.blob();
-
-    const url = URL.createObjectURL(videoBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'talking_avatar_' + Date.now() + '.mp4';
-    a.click();
-    URL.revokeObjectURL(url);
-
-    statusEl.textContent = 'Avatar video downloaded! Import this into CapCut and overlay on your video.';
-    showToast('Avatar video downloaded! Overlay it in CapCut.', false);
+    statusEl.textContent = `Done! ${avatarVideos.length} avatar video(s) downloaded. Import into CapCut.`;
+    showToast(`${avatarVideos.length} avatar video(s) downloaded!`, false);
 
   } catch (error) {
     console.error('Avatar generation error:', error);
