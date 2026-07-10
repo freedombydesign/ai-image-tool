@@ -242,8 +242,12 @@ function getUserId() {
 
 // Save scenes to Supabase
 async function saveScenesToSupabase() {
-  const validScenes = generatedScenes.filter(s => s && s.imageUrl);
-  if (validScenes.length === 0) return;
+  // Only save scenes with valid storage URLs (not base64)
+  const validScenes = generatedScenes.filter(s => s && s.imageUrl && !s.imageUrl.startsWith('data:'));
+  if (validScenes.length === 0) {
+    console.log('No valid scenes to save (skipping base64 images)');
+    return;
+  }
 
   if (!currentBatchId) {
     currentBatchId = 'batch_' + Date.now();
@@ -264,6 +268,11 @@ async function saveScenesToSupabase() {
         }))
       })
     });
+
+    if (!response.ok) {
+      console.error('Supabase save HTTP error:', response.status);
+      return;
+    }
 
     const data = await response.json();
     if (data.success) {
