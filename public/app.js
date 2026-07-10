@@ -1579,6 +1579,7 @@ function showConvertedScenesPreview(scenes) {
 // Clear converted scenes
 function clearConvertedScenes() {
   convertedVisualScenes = null;
+  parsedSceneDescriptor = null;
   const previewContainer = document.getElementById('converted-scenes-preview');
   if (previewContainer) {
     previewContainer.innerHTML = '';
@@ -1586,9 +1587,248 @@ function clearConvertedScenes() {
   }
 }
 
-// Get visual scenes (either from conversion or fallback to raw script)
+// ============================================================================
+// SCENE DESCRIPTOR - Custom scene descriptions with [AVATAR] placeholders
+// ============================================================================
+
+// Store parsed scene descriptor scenes
+let parsedSceneDescriptor = null;
+
+// Toggle scene descriptor visibility
+function toggleSceneDescriptor() {
+  const checkbox = document.getElementById('use-scene-descriptor');
+  const container = document.getElementById('scene-descriptor-container');
+  if (container) {
+    container.hidden = !checkbox?.checked;
+  }
+}
+
+// Parse scene descriptor text into scenes
+// Supports two modes:
+// 1. Direct mode: Use exactly the scenes provided
+// 2. Beat mode: Distribute target image count across concept beats
+function parseSceneDescriptor() {
+  const input = document.getElementById('scene-descriptor-input');
+  const text = input?.value?.trim();
+
+  if (!text) {
+    showToast('Please enter scene descriptions');
+    return null;
+  }
+
+  // Get avatar description for [AVATAR] replacement
+  const avatarDesc = avatarDescription || document.getElementById('avatar-description')?.value?.trim() || 'the main character';
+
+  // Parse concept beats - look for patterns like "S1 —", "S2:", "Scene 1:", etc.
+  const scenePattern = /(?:^|\n)(?:S|Scene)\s*(\d+)\s*[—\-:]\s*/gi;
+  const beats = [];
+  let match;
+  const matches = [];
+
+  // Find all scene markers
+  while ((match = scenePattern.exec(text)) !== null) {
+    matches.push({
+      index: match.index,
+      sceneNum: parseInt(match[1]),
+      marker: match[0]
+    });
+  }
+
+  // Extract beat content between markers
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index + matches[i].marker.length;
+    const end = i < matches.length - 1 ? matches[i + 1].index : text.length;
+    let content = text.substring(start, end).trim();
+
+    // Replace [AVATAR] with actual avatar description
+    content = content.replace(/\[AVATAR\]/gi, avatarDesc);
+
+    // Keep tags for reference but clean them for the prompt
+    const hasMetaphor = /\[METAPHOR\]/i.test(content);
+    const hasText = /\[TEXT\]/i.test(content);
+    const hasCTA = /\[CTA\]/i.test(content);
+
+    // Remove tags but keep the content
+    content = content.replace(/\[(METAPHOR|TEXT|CTA)\]/gi, '');
+
+    // Clean up extra whitespace
+    content = content.replace(/\s+/g, ' ').trim();
+
+    beats.push({
+      beatNumber: matches[i].sceneNum,
+      concept: content,
+      type: hasCTA ? 'cta' : hasText ? 'text' : hasMetaphor ? 'metaphor' : 'scene',
+      mood: detectMood(content)
+    });
+  }
+
+  if (beats.length === 0) {
+    // Try simple line-by-line parsing if no S1, S2 markers found
+    const lines = text.split('\n').filter(line => line.trim());
+    lines.forEach((line, i) => {
+      let content = line.trim();
+      content = content.replace(/\[AVATAR\]/gi, avatarDesc);
+      content = content.replace(/\[(METAPHOR|TEXT|CTA)\]/gi, '');
+      content = content.replace(/\s+/g, ' ').trim();
+
+      if (content) {
+        beats.push({
+          beatNumber: i + 1,
+          concept: content,
+          type: 'scene',
+          mood: detectMood(content)
+        });
+      }
+    });
+  }
+
+  if (beats.length === 0) {
+    showToast('Could not parse any scenes. Use format: S1 — description');
+    return null;
+  }
+
+  // Get target image count from video settings
+  const targetSceneCount = getCurrentSceneCount();
+
+  // Distribute images across beats
+  const scenes = distributeImagesAcrossBeats(beats, targetSceneCount);
+
+  // Store and show preview
+  parsedSceneDescriptor = scenes;
+  showToast(`Created ${scenes.length} scenes from ${beats.length} concept beats`);
+  showConvertedScenesPreview(scenes);
+
+  return scenes;
+}
+
+// Distribute target number of images across concept beats
+function distributeImagesAcrossBeats(beats, targetCount) {
+  const scenes = [];
+  const beatsCount = beats.length;
+
+  // Calculate how many images per beat (distribute evenly, then add extras to earlier beats)
+  const basePerBeat = Math.floor(targetCount / beatsCount);
+  const extraImages = targetCount % beatsCount;
+
+  let sceneNumber = 1;
+
+  beats.forEach((beat, beatIndex) => {
+    // How many images for this beat
+    const imagesForThisBeat = basePerBeat + (beatIndex < extraImages ? 1 : 0);
+
+    // Generate variations for this beat
+    for (let i = 0; i < imagesForThisBeat; i++) {
+      // Add variation hints for multiple images in same beat
+      let variation = '';
+      if (imagesForThisBeat > 1) {
+        const variationHints = [
+          'wide establishing shot',
+          'medium shot focusing on interaction',
+          'close-up on key element',
+          'different angle showing reaction',
+          'detail shot of hands or expression'
+        ];
+        variation = ` (${variationHints[i % variationHints.length]})`;
+      }
+
+      scenes.push({
+        sceneNumber: sceneNumber,
+        beatNumber: beat.beatNumber,
+        visualDescription: beat.concept + variation,
+        scriptExcerpt: `Beat ${beat.beatNumber}: ${beat.concept.substring(0, 40)}...`,
+        mood: beat.mood,
+        type: beat.type
+      });
+
+      sceneNumber++;
+    }
+  });
+
+  return scenes;
+}
+
+// Parse and expand concept beats with AI for intelligent variations
+async function parseAndExpandWithAI() {
+  const input = document.getElementById('scene-descriptor-input');
+  const text = input?.value?.trim();
+
+  if (!text) {
+    showToast('Please enter scene descriptions');
+    return null;
+  }
+
+  // Get avatar description for [AVATAR] replacement
+  const avatarDesc = avatarDescription || document.getElementById('avatar-description')?.value?.trim() || 'the main character';
+
+  // Get target scene count
+  const targetSceneCount = getCurrentSceneCount();
+
+  showLoading('Expanding concepts with AI...', `Creating ${targetSceneCount} scene variations from your concept beats`);
+
+  try {
+    const response = await fetch('/api/expand-scene-beats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sceneDescriptor: text,
+        avatarDescription: avatarDesc,
+        targetSceneCount: targetSceneCount
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Store and show preview
+    parsedSceneDescriptor = data.scenes;
+    hideLoading();
+    showToast(`AI created ${data.scenes.length} scenes from ${data.beatsCount} concept beats`);
+    showConvertedScenesPreview(data.scenes);
+
+    return data.scenes;
+
+  } catch (error) {
+    hideLoading();
+    console.error('AI expansion error:', error);
+    showToast(`AI expansion failed: ${error.message}. Using basic distribution instead.`);
+    // Fallback to basic parsing
+    return parseSceneDescriptor();
+  }
+}
+
+// Detect mood from scene description
+function detectMood(text) {
+  const lowerText = text.toLowerCase();
+  if (lowerText.includes('calm') || lowerText.includes('quiet') || lowerText.includes('still')) return 'calm';
+  if (lowerText.includes('conflict') || lowerText.includes('tension') || lowerText.includes('opposing')) return 'tense';
+  if (lowerText.includes('warm') || lowerText.includes('engaged') || lowerText.includes('connected')) return 'warm';
+  if (lowerText.includes('metaphor') || lowerText.includes('visual') || lowerText.includes('abstract')) return 'conceptual';
+  if (lowerText.includes('close') || lowerText.includes('cta') || lowerText.includes('end')) return 'closing';
+  return 'neutral';
+}
+
+// Get visual scenes (scene descriptor > converted > raw script)
 function getVisualScenesForGeneration() {
-  // If we have converted visual scenes, use them
+  // Priority 1: Use scene descriptor if enabled and parsed
+  const useDescriptor = document.getElementById('use-scene-descriptor')?.checked;
+  if (useDescriptor && parsedSceneDescriptor && parsedSceneDescriptor.length > 0) {
+    // Check if user edited any scenes in the preview
+    const editedScenes = [];
+    document.querySelectorAll('.scene-visual-input').forEach((input, i) => {
+      if (parsedSceneDescriptor[i]) {
+        editedScenes[i] = {
+          ...parsedSceneDescriptor[i],
+          visualDescription: input.value
+        };
+      }
+    });
+    return editedScenes.length > 0 ? editedScenes : parsedSceneDescriptor;
+  }
+
+  // Priority 2: Use AI-converted visual scenes
   if (convertedVisualScenes && convertedVisualScenes.length > 0) {
     // Check if user edited any scenes
     const editedScenes = [];

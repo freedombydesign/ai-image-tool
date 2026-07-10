@@ -107,6 +107,43 @@
             </div>
           </div>
 
+          <!-- Scene Descriptor Section -->
+          <div class="form-group scene-descriptor-section">
+            <div class="scene-descriptor-header">
+              <label for="scene-descriptor-input">Scene Descriptor (Optional)</label>
+              <label class="toggle-switch small">
+                <input type="checkbox" id="use-scene-descriptor" onchange="toggleSceneDescriptor()">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Use Custom Scenes</span>
+              </label>
+            </div>
+            <div id="scene-descriptor-container" class="scene-descriptor-container" hidden>
+              <textarea id="scene-descriptor-input" rows="12" placeholder="Paste your pre-written scene descriptions here...
+
+Example format:
+S1 — Two people in conversation. [AVATAR] as the seller, seated across from a client.
+
+S2 — The apology as an object. [METAPHOR] The word 'SORRY' on paper drifting across the table.
+
+S3 — Close on hands exchanging a slip of paper. [AVATAR] handing it to the client.
+
+Use [AVATAR] where your character should appear.
+Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
+              <div class="scene-descriptor-info">
+                <span class="info-badge">[AVATAR]</span> = Your avatar character
+                <span class="info-badge">[METAPHOR]</span> = Visual metaphor scene
+                <span class="info-badge">[TEXT]</span> = Text overlay scene
+              </div>
+              <div class="scene-descriptor-actions">
+                <button class="btn secondary small" onclick="parseSceneDescriptor()">Parse Scenes</button>
+                <button class="btn accent small" onclick="parseAndExpandWithAI()" title="Use AI to create intelligent variations for each concept beat">Expand with AI</button>
+              </div>
+              <div class="scene-descriptor-hint">
+                <small>Your concept beats will be distributed across your target scene count. "Expand with AI" creates smarter variations.</small>
+              </div>
+            </div>
+          </div>
+
           <!-- Video Settings -->
           <div class="settings-card">
             <h4>Video Settings</h4>

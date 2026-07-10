@@ -1760,6 +1760,80 @@ Only output the JSON array, no other text.`;
   }
 });
 
+// Expand scene descriptor beats into detailed scene variations using AI
+app.post('/api/expand-scene-beats', async (req, res) => {
+  try {
+    const { sceneDescriptor, avatarDescription, targetSceneCount = 46 } = req.body;
+
+    if (!sceneDescriptor) {
+      return res.status(400).json({ error: 'Scene descriptor is required' });
+    }
+
+    console.log(`Expanding scene beats to ${targetSceneCount} scenes with AI...`);
+
+    const systemPrompt = `You are a visual director expanding concept beats into detailed image prompts.
+
+The user has provided HIGH-LEVEL CONCEPT BEATS (like S1, S2, etc.) that describe the narrative flow of their video.
+Your job is to expand these into EXACTLY ${targetSceneCount} individual scene descriptions, distributed across the concept beats.
+
+RULES:
+1. Distribute scenes proportionally across the beats (more scenes for longer/more complex beats)
+2. Each scene must be a unique, specific visual moment - NO duplicates
+3. For each beat, create variations: different camera angles, moments in time, focus points
+4. Replace [AVATAR] with: ${avatarDescription || 'the main character'}
+5. Remove [METAPHOR], [TEXT], [CTA] tags but honor their intent in the visuals
+6. Each scene description should be 1-3 sentences, highly specific and visual
+7. Vary shot types: wide establishing shots, medium shots, close-ups, over-shoulder, detail shots
+8. Progress the action within each beat - show the sequence of moments
+
+OUTPUT FORMAT - Return a JSON object:
+{
+  "beatsCount": <number of concept beats parsed>,
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "beatNumber": 1,
+      "visualDescription": "Detailed visual description...",
+      "mood": "warm|tense|calm|conceptual|closing"
+    }
+  ]
+}
+
+Only output the JSON, no other text.`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Expand these concept beats into exactly ${targetSceneCount} scene descriptions:\n\n${sceneDescriptor}` }
+      ],
+      temperature: 0.7,
+      max_tokens: 8000
+    });
+
+    let result;
+    try {
+      const responseText = completion.choices[0].message.content.trim();
+      const jsonText = responseText.replace(/^```json\n?|\n?```$/g, '').trim();
+      result = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', completion.choices[0].message.content);
+      throw new Error('Failed to parse scene expansions from AI response');
+    }
+
+    res.json({
+      success: true,
+      scenes: result.scenes,
+      beatsCount: result.beatsCount,
+      totalScenes: result.scenes.length
+    });
+
+  } catch (error) {
+    console.error('Expand scene beats error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================================================
 // SUPABASE API ENDPOINTS
 // ============================================================================

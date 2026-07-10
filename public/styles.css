@@ -983,6 +983,79 @@ footer {
   color: var(--text-muted);
 }
 
+/* Scene Descriptor */
+.scene-descriptor-section {
+  margin-top: 1rem;
+}
+
+.scene-descriptor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.scene-descriptor-header label:first-child {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.scene-descriptor-container {
+  margin-top: 0.5rem;
+}
+
+.scene-descriptor-container textarea {
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.scene-descriptor-container textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+}
+
+.scene-descriptor-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.scene-descriptor-info .info-badge {
+  background: var(--bg-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-family: 'SF Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.scene-descriptor-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.scene-descriptor-hint {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+}
+
+.scene-descriptor-hint small {
+  font-size: 0.8rem;
+}
+
 /* Cost Estimate */
 .cost-estimate {
   padding: 1rem;
