@@ -1599,7 +1599,9 @@ let parsedSceneDescriptor = null;
 function loadSavedSceneDescriptor() {
   try {
     const saved = localStorage.getItem('parsedSceneDescriptor');
-    console.log('Checking for saved scene descriptor...', saved ? 'Found!' : 'None');
+    const useDescriptor = localStorage.getItem('useSceneDescriptor') === 'true';
+    console.log('Checking for saved scene descriptor...', saved ? 'Found!' : 'None', 'Toggle:', useDescriptor);
+
     if (saved && saved !== 'null' && saved !== 'undefined') {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1612,11 +1614,22 @@ function loadSavedSceneDescriptor() {
             // Enable the toggle and show container
             const toggle = document.getElementById('use-scene-descriptor');
             const container = document.getElementById('scene-descriptor-container');
-            if (toggle) toggle.checked = true;
+            if (toggle) {
+              toggle.checked = true;
+              console.log('Use Custom Scenes toggle set to ON');
+            }
             if (container) container.hidden = false;
           }
         }, 1000);
       }
+    } else if (useDescriptor) {
+      // Toggle was on but no scenes - just enable the toggle
+      setTimeout(() => {
+        const toggle = document.getElementById('use-scene-descriptor');
+        const container = document.getElementById('scene-descriptor-container');
+        if (toggle) toggle.checked = true;
+        if (container) container.hidden = false;
+      }, 1000);
     }
   } catch (e) {
     console.error('Failed to load scene descriptor:', e);
@@ -1627,6 +1640,7 @@ function loadSavedSceneDescriptor() {
 function saveSceneDescriptor(scenes) {
   try {
     localStorage.setItem('parsedSceneDescriptor', JSON.stringify(scenes));
+    localStorage.setItem('useSceneDescriptor', 'true');
   } catch (e) {
     console.error('Failed to save scene descriptor:', e);
   }
