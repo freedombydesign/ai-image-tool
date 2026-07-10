@@ -888,8 +888,8 @@ app.post('/api/animate-avatar', upload.fields([
     console.log('Avatar base64 length:', avatarBase64.length);
     console.log('Audio base64 length:', audioBase64.length);
 
-    // Use LivePortrait model on Replicate (fofr/live-portrait)
-    const response = await fetch('https://api.replicate.com/v1/models/fofr/live-portrait/predictions', {
+    // Use SadTalker model on Replicate for audio-driven talking head
+    const response = await fetch('https://api.replicate.com/v1/models/cjwbw/sadtalker/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -897,8 +897,9 @@ app.post('/api/animate-avatar', upload.fields([
       },
       body: JSON.stringify({
         input: {
-          face_image: avatarBase64,
-          driving_audio: audioBase64
+          source_image: avatarBase64,
+          driven_audio: audioBase64,
+          enhancer: "gfpgan"
         }
       })
     });
@@ -980,8 +981,8 @@ app.post('/api/animate-avatar-url', async (req, res) => {
     console.log('Avatar URL:', avatarUrl);
     console.log('Audio URL:', audioUrl);
 
-    // Use LivePortrait model on Replicate (fofr/live-portrait is more reliable)
-    const response = await fetch('https://api.replicate.com/v1/models/fofr/live-portrait/predictions', {
+    // Use SadTalker model on Replicate for audio-driven talking head
+    const response = await fetch('https://api.replicate.com/v1/models/cjwbw/sadtalker/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -989,8 +990,9 @@ app.post('/api/animate-avatar-url', async (req, res) => {
       },
       body: JSON.stringify({
         input: {
-          face_image: avatarUrl,
-          driving_audio: audioUrl
+          source_image: avatarUrl,
+          driven_audio: audioUrl,
+          enhancer: "gfpgan"
         }
       })
     });
