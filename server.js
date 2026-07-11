@@ -903,7 +903,10 @@ app.post('/api/animate-avatar', upload.fields([
         input: {
           image: avatarBase64,
           audio: audioBase64,
-          resolution: "720p"
+          resolution: "720p",
+          // Smooth motion prompt to reduce bouncy/jerky movements
+          video_prompt: "Smooth, natural head movements. Subtle, gentle motion. Professional presenter style. Minimal head bobbing. Calm and steady posture. No sudden movements.",
+          negative_prompt: "jerky movements, bouncing, shaking, twitching, rapid motion, jittery"
         }
       })
     });
@@ -1000,10 +1003,13 @@ app.post('/api/animate-avatar-url', async (req, res) => {
       input: {
         image: avatarUrl,      // Uses URL directly (not base64)
         audio: audioUrl,       // Uses URL directly (not base64)
-        resolution: "720p"
+        resolution: "720p",
+        // Smooth motion prompt to reduce bouncy/jerky movements
+        video_prompt: "Smooth, natural head movements. Subtle, gentle motion. Professional presenter style. Minimal head bobbing. Calm and steady posture. No sudden movements.",
+        negative_prompt: "jerky movements, bouncing, shaking, twitching, rapid motion, jittery"
       }
     };
-    console.log('Sending to p-video-avatar...');
+    console.log('Sending to p-video-avatar with smooth motion settings...');
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
