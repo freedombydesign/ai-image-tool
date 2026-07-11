@@ -3561,11 +3561,20 @@ function startSlideshowPlayback() {
   document.getElementById('slideshow-play-icon').hidden = true;
   document.getElementById('slideshow-pause-icon').hidden = false;
 
-  // Change scene based on scene duration setting
-  const sceneDurationMs = getSceneDuration() * 1000;
-  slideshowState.intervalId = setInterval(() => {
-    slideshowNext();
-  }, sceneDurationMs);
+  // Check if audio is available - if so, audio timeupdate will drive scene changes
+  const audio = document.getElementById('slideshow-audio');
+  const hasAudio = audio && previewAudioData;
+
+  if (hasAudio) {
+    // Audio drives scene changes via timeupdate event - no interval needed
+    console.log('Audio mode: scenes driven by audio time');
+  } else {
+    // No audio - use interval timer for scene changes
+    const sceneDurationMs = getSceneDuration() * 1000;
+    slideshowState.intervalId = setInterval(() => {
+      slideshowNext();
+    }, sceneDurationMs);
+  }
 }
 
 function stopSlideshowPlayback() {
@@ -3906,7 +3915,7 @@ function openSlideshowWithAudio() {
   }, 500);
 }
 
-// Update audio progress during slideshow
+// Update audio progress during slideshow - DRIVES scene changes from audio time
 function updateSlideshowAudioProgress() {
   const audio = document.getElementById('slideshow-audio');
   const progressBar = document.getElementById('slideshow-audio-progress');
@@ -3923,14 +3932,19 @@ function updateSlideshowAudioProgress() {
   // Calculate expected scene based on audio time and scene duration setting
   const sceneDuration = getSceneDuration();
   const expectedScene = Math.floor(audio.currentTime / sceneDuration);
-  const actualScene = slideshowState.currentIndex;
+  const maxScene = slideshowState.scenes.length - 1;
+  const targetScene = Math.min(expectedScene, maxScene);
 
-  if (Math.abs(expectedScene - actualScene) <= 1) {
+  // ACTUALLY change the scene to match audio position
+  if (targetScene !== slideshowState.currentIndex && targetScene >= 0) {
+    slideshowState.currentIndex = targetScene;
+    updateSlideshowDisplay();
+  }
+
+  // Update sync indicator
+  if (syncIndicator && syncStatusText) {
     syncIndicator.style.color = 'var(--success)';
     syncStatusText.textContent = 'Audio synced';
-  } else {
-    syncIndicator.style.color = 'var(--warning)';
-    syncStatusText.textContent = `Scene ${expectedScene + 1} expected`;
   }
 }
 
