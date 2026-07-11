@@ -3529,6 +3529,7 @@ function updateSlideshowDisplay() {
   const text = document.getElementById('slideshow-scene-text');
   const counter = document.getElementById('slideshow-counter');
   const progressFill = document.getElementById('slideshow-progress-fill');
+  const scrubber = document.getElementById('slideshow-scrubber');
 
   img.src = scene.imageUrl;
   text.textContent = scene.text || '';
@@ -3536,6 +3537,11 @@ function updateSlideshowDisplay() {
 
   const progress = ((slideshowState.currentIndex + 1) / slideshowState.scenes.length) * 100;
   progressFill.style.width = `${progress}%`;
+
+  // Update scrubber position
+  if (scrubber) {
+    scrubber.value = progress;
+  }
 }
 
 function slideshowNext() {
@@ -3634,6 +3640,44 @@ if (slideshowProgressBar) {
     const audio = document.getElementById('slideshow-audio');
     if (audio && previewAudioData) {
       audio.currentTime = slideshowState.currentIndex * getSceneDuration();
+    }
+  });
+}
+
+// Scene scrubber slider - drag to any scene
+const slideshowScrubber = document.getElementById('slideshow-scrubber');
+if (slideshowScrubber) {
+  slideshowScrubber.addEventListener('input', (e) => {
+    const percentage = parseInt(e.target.value) / 100;
+    const targetIndex = Math.floor(percentage * slideshowState.scenes.length);
+
+    // Clamp to valid range
+    slideshowState.currentIndex = Math.max(0, Math.min(targetIndex, slideshowState.scenes.length - 1));
+    updateSlideshowDisplay();
+
+    // Sync audio if present
+    const audio = document.getElementById('slideshow-audio');
+    if (audio && previewAudioData) {
+      audio.currentTime = slideshowState.currentIndex * getSceneDuration();
+    }
+  });
+}
+
+// Audio scrubber slider - drag to any position in audio
+const audioScrubber = document.getElementById('slideshow-audio-scrubber');
+if (audioScrubber) {
+  audioScrubber.addEventListener('input', (e) => {
+    const audio = document.getElementById('slideshow-audio');
+    if (audio && audio.duration) {
+      const percentage = parseFloat(e.target.value) / 100;
+      audio.currentTime = percentage * audio.duration;
+
+      // Update scene to match audio position
+      const sceneDuration = getSceneDuration();
+      const targetScene = Math.floor(audio.currentTime / sceneDuration);
+      const maxScene = slideshowState.scenes.length - 1;
+      slideshowState.currentIndex = Math.min(targetScene, maxScene);
+      updateSlideshowDisplay();
     }
   });
 }
