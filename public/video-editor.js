@@ -384,6 +384,7 @@ class VideoEditor {
   initElements() {
     // Import
     this.importFromBatchBtn = document.getElementById('import-from-batch');
+    this.loadPreviousBatchBtn = document.getElementById('load-previous-batch');
     this.sceneUploadArea = document.getElementById('scene-upload-area');
     this.sceneFilesInput = document.getElementById('scene-files');
     this.importedScenesGrid = document.getElementById('imported-scenes');
@@ -493,6 +494,9 @@ class VideoEditor {
   initEventListeners() {
     // Import
     this.importFromBatchBtn.addEventListener('click', () => this.importFromBatch());
+    if (this.loadPreviousBatchBtn) {
+      this.loadPreviousBatchBtn.addEventListener('click', () => this.showPreviousBatches());
+    }
     this.sceneUploadArea.addEventListener('click', () => this.sceneFilesInput.click());
     this.sceneFilesInput.addEventListener('change', (e) => this.handleSceneUpload(e));
 
@@ -933,6 +937,122 @@ class VideoEditor {
     this.updateTotalDuration();
     this.saveScenesToSupabase();
     showToast(`${count} scenes ${action}! Total: ${this.scenes.length}`, 'success');
+  }
+
+  // Show previous batches from Supabase
+  async showPreviousBatches() {
+    const userId = localStorage.getItem('ai_tool_user_id');
+    if (!userId) {
+      showToast('No saved batches found.');
+      return;
+    }
+
+    try {
+      showToast('Loading previous batches...', 'info');
+      const response = await fetch(`/api/db/batch-scenes/${userId}`);
+      const data = await response.json();
+
+      if (!data.success || !data.batches || data.batches.length === 0) {
+        showToast('No previous batches found.');
+        return;
+      }
+
+      // Create batch selection overlay
+      const overlay = document.createElement('div');
+      overlay.className = 'batch-history-overlay';
+
+      const batchesHtml = data.batches.map((batch, index) => {
+        const date = new Date(batch.created_at || batch.createdAt || Date.now());
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const sceneCount = batch.scenes ? batch.scenes.length : 0;
+        const firstScene = batch.scenes && batch.scenes[0] ? batch.scenes[0].imageUrl : '';
+
+        return `
+          <div class="batch-history-item" data-batch-index="${index}">
+            <div class="batch-thumbnail">
+              ${firstScene ? `<img src="${firstScene}" alt="Batch preview">` : '<div class="no-preview">No preview</div>'}
+              <span class="batch-scene-count">${sceneCount} scenes</span>
+            </div>
+            <div class="batch-info">
+              <span class="batch-date">${dateStr}</span>
+              ${index === 0 ? '<span class="batch-latest">Latest</span>' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      overlay.innerHTML = `
+        <div class="batch-history-dialog">
+          <div class="batch-history-header">
+            <h3>📂 Previous Batches</h3>
+            <button class="batch-history-close">&times;</button>
+          </div>
+          <p class="batch-history-subtitle">Click a batch to load it</p>
+          <div class="batch-history-grid">
+            ${batchesHtml}
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(overlay);
+
+      // Close button
+      overlay.querySelector('.batch-history-close').addEventListener('click', () => {
+        overlay.remove();
+      });
+
+      // Close on overlay click
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.remove();
+        }
+      });
+
+      // Batch selection
+      overlay.querySelectorAll('.batch-history-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const batchIndex = parseInt(item.dataset.batchIndex);
+          const selectedBatch = data.batches[batchIndex];
+          overlay.remove();
+          this.loadBatchScenes(selectedBatch);
+        });
+      });
+
+    } catch (error) {
+      console.error('Failed to load previous batches:', error);
+      showToast('Failed to load previous batches.');
+    }
+  }
+
+  // Load scenes from a specific batch
+  loadBatchScenes(batch) {
+    if (!batch.scenes || batch.scenes.length === 0) {
+      showToast('This batch has no scenes.');
+      return;
+    }
+
+    const sceneDuration = typeof getSceneDuration === 'function'
+      ? getSceneDuration()
+      : (document.getElementById('scene-duration')?.value || 6);
+    const duration = parseInt(sceneDuration);
+
+    const newScenes = batch.scenes.filter(s => s && s.imageUrl).map((scene, index) => ({
+      id: Date.now() + index,
+      imageUrl: scene.imageUrl,
+      text: scene.text || '',
+      duration: duration,
+      caption: scene.text ? scene.text.substring(0, 100) : '',
+      startTime: 0
+    }));
+
+    // If there are existing scenes, ask user what to do
+    if (this.scenes.length > 0) {
+      this.showImportChoiceDialog(newScenes);
+    } else {
+      this.scenes = newScenes;
+      this.recalculateTimings();
+      this.finishImport(newScenes.length, 'loaded');
+    }
   }
 
   // Handle scene file upload

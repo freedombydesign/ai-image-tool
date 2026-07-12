@@ -2316,6 +2316,143 @@ footer {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* Batch history dialog */
+.batch-history-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+}
+
+.batch-history-dialog {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 700px;
+  width: 95%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease;
+}
+
+.batch-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.batch-history-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.batch-history-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.batch-history-close:hover {
+  color: var(--text);
+}
+
+.batch-history-subtitle {
+  color: var(--text-muted);
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+}
+
+.batch-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+  overflow-y: auto;
+  max-height: 60vh;
+  padding-right: 0.5rem;
+}
+
+.batch-history-item {
+  background: var(--bg);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.batch-history-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  border-color: var(--primary);
+}
+
+.batch-thumbnail {
+  position: relative;
+  aspect-ratio: 16/9;
+  background: var(--border);
+}
+
+.batch-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.batch-thumbnail .no-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.batch-scene-count {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.batch-info {
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.batch-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.batch-latest {
+  font-size: 0.7rem;
+  background: var(--primary);
+  color: white;
+  padding: 1px 6px;
+  border-radius: 3px;
+  width: fit-content;
+}
+
 /* Small button variant */
 .btn.small {
   padding: 0.5rem 1rem;
