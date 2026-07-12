@@ -1088,15 +1088,17 @@ class VideoEditor {
   renderImportedScenes() {
     this.importedScenesGrid.innerHTML = this.scenes.map((scene, index) => `
       <div class="imported-scene ${this.swapSelection === index ? 'swap-selected' : ''}" data-index="${index}" draggable="true">
-        <img src="${scene.imageUrl}" alt="Scene ${index + 1}">
+        <img src="${scene.imageUrl}" alt="Scene ${index + 1}"
+             onclick="videoEditor.viewSceneFullscreen(${index})"
+             title="Click to view full size" style="cursor: pointer;">
         <span class="scene-order">${index + 1}</span>
         <div class="imported-scene-actions">
-          <button class="swap-scene-btn" onclick="videoEditor.toggleSwapSelection(${index})" title="Swap with another scene">
+          <button class="swap-scene-btn" onclick="event.stopPropagation(); videoEditor.toggleSwapSelection(${index})" title="Swap with another scene">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
               <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
             </svg>
           </button>
-          <button class="remove-scene" onclick="videoEditor.removeScene(${index})" title="Remove scene">×</button>
+          <button class="remove-scene" onclick="event.stopPropagation(); videoEditor.removeScene(${index})" title="Remove scene">×</button>
         </div>
       </div>
     `).join('');
@@ -2746,7 +2748,9 @@ class VideoEditor {
       const widthPercent = (scene.duration / totalDuration) * 100;
       return `
         <div class="timeline-scene" data-index="${index}" style="width: ${widthPercent}%">
-          <img src="${scene.imageUrl}" alt="Scene ${index + 1}">
+          <img src="${scene.imageUrl}" alt="Scene ${index + 1}"
+               onclick="videoEditor.viewSceneFullscreen(${index})"
+               title="Click to view full size" style="cursor: pointer;">
           <span class="scene-duration">${scene.duration.toFixed(1)}s</span>
           <div class="resize-handle"></div>
         </div>
