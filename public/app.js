@@ -156,6 +156,34 @@ const THUMBNAIL_STYLES = {
   }
 };
 
+// Professional outfit variations for character reference scenes
+// These override the outfit from the reference image to add variety
+const OUTFIT_VARIATIONS = [
+  'wearing a sleek navy blue blazer over a white silk blouse',
+  'wearing an elegant emerald green dress with subtle gold jewelry',
+  'wearing a modern charcoal business suit with a crisp white shirt',
+  'wearing a soft cream-colored cashmere sweater',
+  'wearing a sophisticated burgundy turtleneck',
+  'wearing a stylish black leather jacket over a gray top',
+  'wearing a professional light blue button-up shirt',
+  'wearing an elegant champagne colored blouse with pearl accents',
+  'wearing a modern olive green blazer',
+  'wearing a chic dusty pink business dress',
+  'wearing a professional pinstripe suit in dark gray',
+  'wearing an elegant lavender silk top',
+  'wearing a smart camel colored coat over neutral tones',
+  'wearing a sleek black turtleneck with minimalist jewelry',
+  'wearing a vibrant royal blue silk blouse',
+  'wearing an elegant forest green cardigan',
+  'wearing a professional plum-colored blazer',
+  'wearing a stylish tan trench coat',
+  'wearing a chic ivory wrap dress',
+  'wearing an elegant mauve business top'
+];
+
+// Track if outfit variety is enabled
+let outfitVarietyEnabled = false;
+
 // Tab Navigation
 const tabs = document.querySelectorAll('.tab');
 const tabContents = document.querySelectorAll('.tab-content');
@@ -693,10 +721,14 @@ function toggleCharacterRef() {
   useCharacterRef = checkbox?.checked || false;
   saveAvatarState();
 
-  // Show/hide Style Priority option based on Character Match state
+  // Show/hide Style Priority and Outfit Variety options based on Character Match state
   const stylePriorityRow = document.getElementById('style-priority-row');
+  const outfitVarietyRow = document.getElementById('outfit-variety-row');
   if (stylePriorityRow) {
     stylePriorityRow.style.display = useCharacterRef ? 'flex' : 'none';
+  }
+  if (outfitVarietyRow) {
+    outfitVarietyRow.style.display = useCharacterRef ? 'flex' : 'none';
   }
 
   if (useCharacterRef && !avatarImageData) {
@@ -704,6 +736,7 @@ function toggleCharacterRef() {
     checkbox.checked = false;
     useCharacterRef = false;
     if (stylePriorityRow) stylePriorityRow.style.display = 'none';
+    if (outfitVarietyRow) outfitVarietyRow.style.display = 'none';
   } else if (useCharacterRef) {
     showToast('Character Reference enabled - scenes will match your full appearance!', false);
   }
@@ -739,9 +772,45 @@ function loadStylePriority() {
   }
 }
 
+// Toggle Outfit Variety mode
+function toggleOutfitVariety() {
+  const checkbox = document.getElementById('outfit-variety');
+  outfitVarietyEnabled = checkbox?.checked || false;
+  localStorage.setItem('outfitVariety', JSON.stringify(outfitVarietyEnabled));
+
+  if (outfitVarietyEnabled) {
+    showToast('Outfit Variety ON - each scene will have a different outfit', false);
+  } else {
+    showToast('Outfit Variety OFF - outfits will match reference image', false);
+  }
+}
+
+// Load outfit variety setting on page load
+function loadOutfitVariety() {
+  try {
+    const saved = localStorage.getItem('outfitVariety');
+    if (saved !== null) {
+      outfitVarietyEnabled = JSON.parse(saved);
+      const checkbox = document.getElementById('outfit-variety');
+      if (checkbox) checkbox.checked = outfitVarietyEnabled;
+    }
+  } catch (e) {
+    console.error('Failed to load outfit variety setting:', e);
+  }
+}
+
+// Get outfit variation for a specific scene index
+function getOutfitVariation(sceneIndex) {
+  if (!outfitVarietyEnabled) return '';
+  // Cycle through outfits based on scene index
+  const outfit = OUTFIT_VARIATIONS[sceneIndex % OUTFIT_VARIATIONS.length];
+  return `. Character is ${outfit}`;
+}
+
 // Make toggleCharacterRef available globally
 window.toggleCharacterRef = toggleCharacterRef;
 window.toggleStylePriority = toggleStylePriority;
+window.toggleOutfitVariety = toggleOutfitVariety;
 
 // Load from Supabase (async, called on page load)
 async function loadAvatarStateFromDB() {
@@ -2195,7 +2264,7 @@ setupUploadArea('edit-upload', 'edit-file', 'edit-preview');
 setupUploadArea('variations-upload', 'variations-file', 'variations-preview');
 
 // Build prompt with style
-function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
+function buildStyledPrompt(sceneDescription, style, includeInspiration = true, sceneIndex = -1) {
   const styleInfo = STYLE_PRESETS[style];
   let basePrompt = sceneDescription;
 
@@ -2228,6 +2297,14 @@ function buildStyledPrompt(sceneDescription, style, includeInspiration = true) {
   const avatarInstructions = getAvatarInstructions();
   if (avatarInstructions) {
     basePrompt += avatarInstructions;
+  }
+
+  // Add outfit variation for character reference scenes (override reference image clothing)
+  if (sceneIndex >= 0 && useCharacterRef && avatarImageData) {
+    const outfitVariation = getOutfitVariation(sceneIndex);
+    if (outfitVariation) {
+      basePrompt += outfitVariation;
+    }
   }
 
   // Add inspiration reference note if available
@@ -2391,7 +2468,7 @@ async function generatePreviewScenes() {
   // Generate preview scenes sequentially
   for (let i = 0; i < previewScenes.length; i++) {
     const { index, text } = previewScenes[i];
-    const styledPrompt = buildStyledPrompt(text, selectedStyle);
+    const styledPrompt = buildStyledPrompt(text, selectedStyle, true, index);
 
     updateLoadingProgress(i + 1, previewScenes.length);
 
@@ -2555,7 +2632,7 @@ async function generateBatchScenes() {
     }
 
     const sceneText = scenes[i];
-    const styledPrompt = buildStyledPrompt(sceneText, selectedStyle);
+    const styledPrompt = buildStyledPrompt(sceneText, selectedStyle, true, i);
 
     generatedCount++;
     updateLoadingProgress(generatedCount, scenesToGenerate);
@@ -2775,7 +2852,7 @@ async function previewSingleScene(index) {
   const size = document.getElementById('batch-size').value;
   const quality = document.getElementById('batch-quality').value;
   const model = document.getElementById('batch-model')?.value || 'dall-e-3';
-  const styledPrompt = buildStyledPrompt(sceneText, selectedStyle);
+  const styledPrompt = buildStyledPrompt(sceneText, selectedStyle, true, index);
 
   try {
     showToast(`Generating scene ${index + 1}...`, false);
@@ -4162,6 +4239,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Load style priority setting
   loadStylePriority();
+
+  // Load outfit variety setting
+  loadOutfitVariety();
 
   // Initialize thumbnail gallery from localStorage on page load
   if (thumbnailHistory && thumbnailHistory.length > 0) {

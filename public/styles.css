@@ -1375,6 +1375,54 @@ footer {
   display: flex;
 }
 
+/* Imported scene actions container */
+.imported-scene-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.imported-scene:hover .imported-scene-actions {
+  opacity: 1;
+}
+
+.imported-scene-actions .remove-scene {
+  position: static;
+  display: flex;
+}
+
+.imported-scene-actions .swap-scene-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.imported-scene-actions .swap-scene-btn:hover {
+  background: var(--primary-dark, #4f46e5);
+  transform: scale(1.1);
+}
+
+.imported-scene.swap-selected {
+  border-color: var(--warning, #f59e0b) !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.4);
+}
+
+.imported-scene.swap-selected .swap-scene-btn {
+  background: var(--warning, #f59e0b);
+}
+
 /* Audio Controls */
 .audio-controls {
   display: flex;

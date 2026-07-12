@@ -853,15 +853,67 @@ class VideoEditor {
 
   renderImportedScenes() {
     this.importedScenesGrid.innerHTML = this.scenes.map((scene, index) => `
-      <div class="imported-scene" data-index="${index}" draggable="true">
+      <div class="imported-scene ${this.swapSelection === index ? 'swap-selected' : ''}" data-index="${index}" draggable="true">
         <img src="${scene.imageUrl}" alt="Scene ${index + 1}">
         <span class="scene-order">${index + 1}</span>
-        <button class="remove-scene" onclick="videoEditor.removeScene(${index})">×</button>
+        <div class="imported-scene-actions">
+          <button class="swap-scene-btn" onclick="videoEditor.toggleSwapSelection(${index})" title="Swap with another scene">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+            </svg>
+          </button>
+          <button class="remove-scene" onclick="videoEditor.removeScene(${index})" title="Remove scene">×</button>
+        </div>
       </div>
     `).join('');
 
     // Add drag and drop
     this.initDragAndDrop();
+  }
+
+  // Swap selection state
+  swapSelection = null;
+
+  toggleSwapSelection(index) {
+    if (this.swapSelection === null) {
+      // First selection
+      this.swapSelection = index;
+      this.renderImportedScenes();
+      this.showToast(`Scene ${index + 1} selected. Click another scene's swap button to swap.`);
+    } else if (this.swapSelection === index) {
+      // Deselect
+      this.swapSelection = null;
+      this.renderImportedScenes();
+      this.showToast('Swap cancelled');
+    } else {
+      // Perform swap
+      this.swapScenes(this.swapSelection, index);
+      this.swapSelection = null;
+    }
+  }
+
+  swapScenes(indexA, indexB) {
+    // Swap the scenes in the array
+    const temp = this.scenes[indexA];
+    this.scenes[indexA] = this.scenes[indexB];
+    this.scenes[indexB] = temp;
+
+    // Update timings and re-render
+    this.recalculateTimings();
+    this.renderImportedScenes();
+    this.renderTimeline();
+    this.renderCaptions();
+    this.saveScenesToSupabase();
+    this.showToast(`Swapped scene ${indexA + 1} with scene ${indexB + 1}`);
+  }
+
+  showToast(message) {
+    // Use existing showToast if available, otherwise create simple notification
+    if (typeof window.showToast === 'function') {
+      window.showToast(message, false);
+    } else {
+      console.log('Video Editor:', message);
+    }
   }
 
   initDragAndDrop() {
