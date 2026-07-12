@@ -485,6 +485,14 @@ class VideoEditor {
     this.previewAvatarVideo = document.getElementById('preview-avatar-video');
     this.previewCaptionOverlay = document.getElementById('preview-caption-overlay');
 
+    // Scene indicator and reorder controls
+    this.previewSceneIndicator = document.getElementById('preview-scene-indicator');
+    this.sceneIndicatorNumber = this.previewSceneIndicator?.querySelector('.scene-indicator-number');
+    this.sceneIndicatorDesc = this.previewSceneIndicator?.querySelector('.scene-indicator-desc');
+    this.previewMoveEarlierBtn = document.getElementById('preview-move-earlier');
+    this.previewMoveLaterBtn = document.getElementById('preview-move-later');
+    this.currentPreviewSceneIndex = -1; // Track currently displayed scene
+
     // Canvas context
     this.ctx = this.previewCanvas.getContext('2d');
 
@@ -638,6 +646,14 @@ class VideoEditor {
     // Preview Modal
     this.closePreviewBtn.addEventListener('click', () => this.closePreview());
     this.previewPlayPauseBtn.addEventListener('click', () => this.togglePlayback());
+
+    // Scene Reorder Controls
+    if (this.previewMoveEarlierBtn) {
+      this.previewMoveEarlierBtn.addEventListener('click', () => this.moveSceneEarlier());
+    }
+    if (this.previewMoveLaterBtn) {
+      this.previewMoveLaterBtn.addEventListener('click', () => this.moveSceneLater());
+    }
 
     // Preview Scrubber
     if (this.previewScrubber) {
@@ -2659,6 +2675,113 @@ class VideoEditor {
     showToast(`Distributed ${this.scenes.length} scenes evenly (~${durationPerScene.toFixed(1)}s each). Total: ${this.formatTime(this.audioDuration)}`, 'success');
   }
 
+  // Update the scene indicator during preview playback
+  updateSceneIndicator(currentTime) {
+    if (!this.previewSceneIndicator || this.scenes.length === 0) return;
+
+    // Find which scene is currently playing
+    let currentSceneIndex = -1;
+    for (let i = 0; i < this.scenes.length; i++) {
+      const scene = this.scenes[i];
+      const sceneEnd = scene.startTime + scene.duration;
+      if (currentTime >= scene.startTime && currentTime < sceneEnd) {
+        currentSceneIndex = i;
+        break;
+      }
+    }
+
+    // If no scene found and we're past all scenes, show last scene
+    if (currentSceneIndex === -1 && currentTime >= 0) {
+      currentSceneIndex = this.scenes.length - 1;
+    }
+
+    // Only update if scene changed
+    if (currentSceneIndex !== this.currentPreviewSceneIndex) {
+      this.currentPreviewSceneIndex = currentSceneIndex;
+
+      if (currentSceneIndex >= 0 && currentSceneIndex < this.scenes.length) {
+        const scene = this.scenes[currentSceneIndex];
+        const sceneNumber = currentSceneIndex + 1;
+        const sceneText = scene.text || scene.caption || '';
+        const truncatedText = sceneText.length > 50 ? sceneText.substring(0, 50) + '...' : sceneText;
+
+        if (this.sceneIndicatorNumber) {
+          this.sceneIndicatorNumber.textContent = `Scene ${sceneNumber} of ${this.scenes.length}`;
+        }
+        if (this.sceneIndicatorDesc) {
+          this.sceneIndicatorDesc.textContent = truncatedText;
+        }
+        this.previewSceneIndicator.style.display = 'block';
+      } else {
+        this.previewSceneIndicator.style.display = 'none';
+      }
+    }
+  }
+
+  // Move the current scene earlier in the order (swap with previous scene)
+  moveSceneEarlier() {
+    if (this.currentPreviewSceneIndex <= 0) {
+      showToast('This is already the first scene.');
+      return;
+    }
+
+    const currentIndex = this.currentPreviewSceneIndex;
+    const prevIndex = currentIndex - 1;
+
+    // Swap scenes in the array
+    [this.scenes[prevIndex], this.scenes[currentIndex]] = [this.scenes[currentIndex], this.scenes[prevIndex]];
+
+    // Recalculate timings after swap
+    this.recalculateSceneTimings();
+
+    // Update the current scene index
+    this.currentPreviewSceneIndex = prevIndex;
+
+    // Update UI
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateSceneIndicator(this.currentTime);
+
+    showToast(`Moved scene ${currentIndex + 1} to position ${prevIndex + 1}`, 'success');
+  }
+
+  // Move the current scene later in the order (swap with next scene)
+  moveSceneLater() {
+    if (this.currentPreviewSceneIndex < 0 || this.currentPreviewSceneIndex >= this.scenes.length - 1) {
+      showToast('This is already the last scene.');
+      return;
+    }
+
+    const currentIndex = this.currentPreviewSceneIndex;
+    const nextIndex = currentIndex + 1;
+
+    // Swap scenes in the array
+    [this.scenes[currentIndex], this.scenes[nextIndex]] = [this.scenes[nextIndex], this.scenes[currentIndex]];
+
+    // Recalculate timings after swap
+    this.recalculateSceneTimings();
+
+    // Update the current scene index
+    this.currentPreviewSceneIndex = nextIndex;
+
+    // Update UI
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateSceneIndicator(this.currentTime);
+
+    showToast(`Moved scene ${currentIndex + 1} to position ${nextIndex + 1}`, 'success');
+  }
+
+  // Recalculate scene timings after reordering
+  recalculateSceneTimings() {
+    let currentStart = 0;
+    for (let i = 0; i < this.scenes.length; i++) {
+      const scene = this.scenes[i];
+      scene.startTime = currentStart;
+      currentStart += scene.duration;
+    }
+  }
+
   // Apply basic timing from transcription segments (fallback)
   applyBasicSegmentTiming(segments) {
     if (!segments || segments.length === 0) {
@@ -3498,6 +3621,10 @@ class VideoEditor {
       this.previewScrubber.value = 0;
     }
 
+    // Reset scene indicator
+    this.currentPreviewSceneIndex = -1;
+    this.updateSceneIndicator(0);
+
     // Avatar Only Mode - use native video for smooth playback
     if (this.avatarOnlyMode && this.avatarVideos && this.avatarVideos.length > 0) {
       // Hide canvas and layered, show native video
@@ -3509,6 +3636,10 @@ class VideoEditor {
         this.previewNativeVideo.src = this.avatarVideos[0].videoUrl;
         this.previewNativeVideo.load();
       }
+      // Hide scene indicator and reorder controls in Avatar Only mode
+      if (this.previewSceneIndicator) this.previewSceneIndicator.style.display = 'none';
+      if (this.previewMoveEarlierBtn) this.previewMoveEarlierBtn.style.display = 'none';
+      if (this.previewMoveLaterBtn) this.previewMoveLaterBtn.style.display = 'none';
       console.log('Avatar Only Mode - using native video playback');
       return;
     }
@@ -3532,6 +3663,11 @@ class VideoEditor {
         this.previewSceneImg.src = this.scenes[0].imageUrl;
       }
 
+      // Show scene indicator and reorder controls
+      if (this.previewSceneIndicator) this.previewSceneIndicator.style.display = 'block';
+      if (this.previewMoveEarlierBtn) this.previewMoveEarlierBtn.style.display = '';
+      if (this.previewMoveLaterBtn) this.previewMoveLaterBtn.style.display = '';
+
       console.log('Avatar + Scenes - using native layered playback');
       return;
     }
@@ -3540,6 +3676,11 @@ class VideoEditor {
     if (this.previewCanvas) this.previewCanvas.hidden = false;
     if (this.previewNativeVideo) this.previewNativeVideo.hidden = true;
     if (this.previewNativeLayered) this.previewNativeLayered.hidden = true;
+
+    // Show scene indicator and reorder controls for canvas mode
+    if (this.previewSceneIndicator) this.previewSceneIndicator.style.display = 'block';
+    if (this.previewMoveEarlierBtn) this.previewMoveEarlierBtn.style.display = '';
+    if (this.previewMoveLaterBtn) this.previewMoveLaterBtn.style.display = '';
 
     this.setupPreviewCanvas();
 
@@ -3864,6 +4005,9 @@ class VideoEditor {
       }
     }
 
+    // Update scene indicator overlay
+    this.updateSceneIndicator(this.playbackTime);
+
     // Update scrubber and time display
     this.updateScrubberPosition();
     this.updateTimeDisplay();
@@ -3929,6 +4073,7 @@ class VideoEditor {
     this.updatePlayhead();
     this.updateScrubberPosition();
     this.updateTimeDisplay();
+    this.updateSceneIndicator(this.playbackTime);
 
     this.animationFrame = requestAnimationFrame(() => this.animate());
   }
