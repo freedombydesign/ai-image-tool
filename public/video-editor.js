@@ -2620,30 +2620,65 @@ class VideoEditor {
         return;
       }
 
+      // Build full transcription with word positions
+      const fullTranscription = result.transcription?.toLowerCase() || segments.map(s => s.text).join(' ').toLowerCase();
+
+      // Common words to ignore when matching
+      const stopWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'and', 'but', 'if', 'or', 'because', 'until', 'while', 'that', 'this', 'these', 'those', 'what', 'which', 'who', 'whom', 'its', 'your', 'their', 'our', 'his', 'her', 'visual', 'image', 'scene', 'showing', 'shows', 'display', 'displays']);
+
       // Match each scene to a segment and find when its text appears
       const sceneMatches = this.scenes.map((scene, originalIndex) => {
         const sceneText = (scene.text || scene.caption || '').toLowerCase();
-        const sceneWords = sceneText.split(/\s+/).filter(w => w.length > 2);
+        // Filter out stop words and very short words, keep meaningful words
+        const sceneWords = sceneText
+          .replace(/[\[\]\(\)\{\}:,\.!?;'"]/g, ' ')  // Remove punctuation
+          .split(/\s+/)
+          .filter(w => w.length > 2 && !stopWords.has(w));
 
-        let bestMatch = { segment: null, score: 0, startTime: Infinity };
+        let bestMatch = { segment: null, score: 0, startTime: Infinity, matchedWord: '' };
 
-        // Find the segment that best matches this scene's text
-        for (const segment of segments) {
-          const segmentText = segment.text.toLowerCase();
-
-          // Calculate word overlap score
-          let matchedWords = 0;
-          for (const word of sceneWords) {
-            if (segmentText.includes(word)) {
-              matchedWords++;
+        // First, try to find key words in the full transcription
+        for (const word of sceneWords) {
+          const wordIndex = fullTranscription.indexOf(word);
+          if (wordIndex !== -1) {
+            // Found this word - now find which segment it's in
+            let charCount = 0;
+            for (const segment of segments) {
+              const segmentLen = segment.text.length + 1; // +1 for space
+              if (charCount + segmentLen > wordIndex) {
+                // This segment contains our word
+                const score = 1.0; // Direct word match
+                if (segment.start < bestMatch.startTime) {
+                  bestMatch = { segment, score, startTime: segment.start, matchedWord: word };
+                }
+                break;
+              }
+              charCount += segmentLen;
             }
           }
+        }
 
-          const score = sceneWords.length > 0 ? matchedWords / sceneWords.length : 0;
+        // Fallback: search each segment for word overlap
+        if (!bestMatch.segment) {
+          for (const segment of segments) {
+            const segmentText = segment.text.toLowerCase();
 
-          // Keep the earliest segment with a good match
-          if (score > 0.3 && (score > bestMatch.score || (score === bestMatch.score && segment.start < bestMatch.startTime))) {
-            bestMatch = { segment, score, startTime: segment.start };
+            // Calculate word overlap score
+            let matchedWords = 0;
+            let firstMatchedWord = '';
+            for (const word of sceneWords) {
+              if (segmentText.includes(word)) {
+                matchedWords++;
+                if (!firstMatchedWord) firstMatchedWord = word;
+              }
+            }
+
+            const score = sceneWords.length > 0 ? matchedWords / sceneWords.length : 0;
+
+            // Lower threshold to 0.15 (just need ~1 meaningful word match)
+            if (score > 0.15 && (score > bestMatch.score || (score === bestMatch.score && segment.start < bestMatch.startTime))) {
+              bestMatch = { segment, score, startTime: segment.start, matchedWord: firstMatchedWord };
+            }
           }
         }
 
@@ -2652,8 +2687,15 @@ class VideoEditor {
           originalIndex,
           matchedSegment: bestMatch.segment,
           matchScore: bestMatch.score,
-          audioStartTime: bestMatch.startTime
+          audioStartTime: bestMatch.startTime,
+          matchedWord: bestMatch.matchedWord
         };
+      });
+
+      // Log matching results for debugging
+      console.log('Scene matching results:');
+      sceneMatches.forEach((m, i) => {
+        console.log(`Scene ${i + 1}: "${(m.scene.text || '').substring(0, 40)}..." → ${m.matchedSegment ? `matched "${m.matchedWord}" at ${m.audioStartTime.toFixed(1)}s` : 'NO MATCH'}`);
       });
 
       // Sort scenes by when their text appears in the audio
@@ -2684,9 +2726,11 @@ class VideoEditor {
       // Replace scenes array with reordered version
       this.scenes = reorderedScenes;
 
-      // Log the reordering
+      // Count matches and reorders
+      const matchedCount = sceneMatches.filter(m => m.matchedSegment).length;
       const reorderCount = sceneMatches.filter((m, i) => m.originalIndex !== i).length;
-      console.log(`Reordered ${reorderCount} scenes based on audio matching`);
+
+      console.log(`Matched ${matchedCount}/${this.scenes.length} scenes, reordered ${reorderCount}`);
       sceneMatches.forEach((m, newIndex) => {
         if (m.originalIndex !== newIndex) {
           console.log(`Scene "${(m.scene.text || '').substring(0, 30)}..." moved from position ${m.originalIndex + 1} to ${newIndex + 1}`);
@@ -2698,7 +2742,7 @@ class VideoEditor {
       this.updateTotalDuration();
       this.saveScenesToSupabase();
 
-      showToast(`Reordered ${this.scenes.length} scenes to match audio sequence! (~${durationPerScene.toFixed(1)}s each)`, 'success');
+      showToast(`Matched ${matchedCount}/${this.scenes.length} scenes to audio. Moved ${reorderCount} scenes. (~${durationPerScene.toFixed(1)}s each)`, 'success');
 
     } catch (error) {
       console.error('Auto-reorder error:', error);
