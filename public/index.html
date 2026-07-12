@@ -1004,9 +1004,12 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
             </div>
             <div class="preview-canvas-container">
               <canvas id="preview-canvas"></canvas>
+              <!-- Native video player for Avatar Only mode (smoother playback) -->
+              <video id="preview-native-video" class="preview-native-video" playsinline hidden></video>
             </div>
             <div class="preview-controls">
               <button class="btn secondary" id="preview-play-pause">▶️ Play</button>
+              <input type="range" id="preview-scrubber" class="preview-scrubber" min="0" max="100" value="0" step="0.1">
               <span id="preview-time">0:00 / 0:00</span>
             </div>
           </div>

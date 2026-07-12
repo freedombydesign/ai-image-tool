@@ -474,6 +474,8 @@ class VideoEditor {
     this.previewCanvas = document.getElementById('preview-canvas');
     this.previewPlayPauseBtn = document.getElementById('preview-play-pause');
     this.previewTime = document.getElementById('preview-time');
+    this.previewScrubber = document.getElementById('preview-scrubber');
+    this.previewNativeVideo = document.getElementById('preview-native-video');
 
     // Canvas context
     this.ctx = this.previewCanvas.getContext('2d');
@@ -619,6 +621,30 @@ class VideoEditor {
     // Preview Modal
     this.closePreviewBtn.addEventListener('click', () => this.closePreview());
     this.previewPlayPauseBtn.addEventListener('click', () => this.togglePlayback());
+
+    // Preview Scrubber
+    if (this.previewScrubber) {
+      this.previewScrubber.addEventListener('input', (e) => this.seekPreview(e.target.value));
+      this.previewScrubber.addEventListener('mousedown', () => this.scrubbing = true);
+      this.previewScrubber.addEventListener('mouseup', () => this.scrubbing = false);
+    }
+
+    // Native video time update for Avatar Only mode
+    if (this.previewNativeVideo) {
+      this.previewNativeVideo.addEventListener('timeupdate', () => {
+        if (this.avatarOnlyMode && !this.scrubbing) {
+          this.playbackTime = this.previewNativeVideo.currentTime;
+          this.updateScrubberPosition();
+          this.updateTimeDisplay();
+        }
+      });
+      this.previewNativeVideo.addEventListener('ended', () => {
+        if (this.avatarOnlyMode) {
+          this.previewNativeVideo.currentTime = 0;
+          this.previewNativeVideo.play();
+        }
+      });
+    }
   }
 
   // Sync color picker with hex text input
@@ -3095,7 +3121,8 @@ class VideoEditor {
 
   // Preview
   openPreview() {
-    if (this.scenes.length === 0) {
+    // Avatar Only mode doesn't require scenes
+    if (!this.avatarOnlyMode && this.scenes.length === 0) {
       showToast('Add scenes first to preview.');
       return;
     }
@@ -3104,8 +3131,32 @@ class VideoEditor {
     this.syncUploadedAvatarSegments();
 
     this.previewModal.hidden = false;
-    this.setupPreviewCanvas();
     this.playbackTime = 0;
+
+    // Reset scrubber
+    if (this.previewScrubber) {
+      this.previewScrubber.value = 0;
+    }
+
+    // Avatar Only Mode - use native video for smooth playback
+    if (this.avatarOnlyMode && this.avatarVideos && this.avatarVideos.length > 0) {
+      // Hide canvas, show native video
+      if (this.previewCanvas) this.previewCanvas.hidden = true;
+      if (this.previewNativeVideo) {
+        this.previewNativeVideo.hidden = false;
+        // Use first avatar video segment
+        this.previewNativeVideo.src = this.avatarVideos[0].videoUrl;
+        this.previewNativeVideo.load();
+      }
+      console.log('Avatar Only Mode - using native video playback');
+      return;
+    }
+
+    // Normal mode - use canvas
+    if (this.previewCanvas) this.previewCanvas.hidden = false;
+    if (this.previewNativeVideo) this.previewNativeVideo.hidden = true;
+
+    this.setupPreviewCanvas();
 
     // Preload all avatar videos before playback
     if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
@@ -3195,6 +3246,50 @@ class VideoEditor {
   closePreview() {
     this.previewModal.hidden = true;
     this.stopPlayback();
+
+    // Stop native video if playing
+    if (this.previewNativeVideo) {
+      this.previewNativeVideo.pause();
+      this.previewNativeVideo.hidden = true;
+    }
+    if (this.previewCanvas) {
+      this.previewCanvas.hidden = false;
+    }
+  }
+
+  // Seek to position via scrubber
+  seekPreview(percent) {
+    const totalDuration = this.getTotalDuration();
+    this.playbackTime = (percent / 100) * totalDuration;
+
+    // Avatar Only mode - seek native video
+    if (this.avatarOnlyMode && this.previewNativeVideo && !this.previewNativeVideo.hidden) {
+      this.previewNativeVideo.currentTime = this.playbackTime;
+    } else {
+      // Normal mode - seek audio and update frame
+      if (this.audioPlayer && this.audioPlayer.duration) {
+        this.audioPlayer.currentTime = this.playbackTime;
+      }
+      this.updatePreviewFrame();
+    }
+
+    this.updateTimeDisplay();
+  }
+
+  // Update scrubber position
+  updateScrubberPosition() {
+    if (!this.previewScrubber || this.scrubbing) return;
+    const totalDuration = this.getTotalDuration();
+    const percent = (this.playbackTime / totalDuration) * 100;
+    this.previewScrubber.value = percent;
+  }
+
+  // Update time display
+  updateTimeDisplay() {
+    const totalDuration = this.getTotalDuration();
+    if (this.previewTime) {
+      this.previewTime.textContent = `${this.formatTime(this.playbackTime)} / ${this.formatTime(totalDuration)}`;
+    }
   }
 
   setupPreviewCanvas() {
@@ -3215,6 +3310,13 @@ class VideoEditor {
     this.isPlaying = true;
     this.previewPlayPauseBtn.textContent = '⏸️ Pause';
     this.lastFrameTime = performance.now();
+
+    // Avatar Only Mode - play native video directly
+    if (this.avatarOnlyMode && this.previewNativeVideo && !this.previewNativeVideo.hidden) {
+      this.previewNativeVideo.currentTime = this.playbackTime;
+      this.previewNativeVideo.play().catch(e => console.log('Native video play error:', e));
+      return; // Don't use animation frame for native video
+    }
 
     // Play voiceover - ensure blob URL is valid
     if (this.audioBlob) {
@@ -3254,6 +3356,11 @@ class VideoEditor {
       cancelAnimationFrame(this.animationFrame);
     }
 
+    // Stop native video if Avatar Only mode
+    if (this.previewNativeVideo && !this.previewNativeVideo.hidden) {
+      this.previewNativeVideo.pause();
+    }
+
     if (this.audioPlayer) {
       this.audioPlayer.pause();
     }
@@ -3291,8 +3398,8 @@ class VideoEditor {
 
     this.updatePreviewFrame();
     this.updatePlayhead();
-
-    this.previewTime.textContent = `${this.formatTime(this.playbackTime)} / ${this.formatTime(totalDuration)}`;
+    this.updateScrubberPosition();
+    this.updateTimeDisplay();
 
     this.animationFrame = requestAnimationFrame(() => this.animate());
   }
