@@ -1666,30 +1666,50 @@ function matchScenesToTranscription(scenes, transcription) {
     }
   });
 
-  // Fill in gaps for unmatched scenes using interpolation
+  // Ensure scenes are contiguous - each scene ends when the next one starts
   const totalDuration = transcription.duration || (segments.length > 0 ? segments[segments.length - 1].end : 0);
-  let lastEndTime = 0;
 
+  // First pass: fill in unmatched scenes with interpolated start times
+  let lastKnownTime = 0;
   sceneTimings.forEach((timing, index) => {
     if (timing.startTime === null) {
-      // Find next matched scene
+      // Find next matched scene to interpolate
       let nextMatchedIndex = index + 1;
       while (nextMatchedIndex < sceneTimings.length && sceneTimings[nextMatchedIndex].startTime === null) {
         nextMatchedIndex++;
       }
 
       const nextStartTime = nextMatchedIndex < sceneTimings.length ? sceneTimings[nextMatchedIndex].startTime : totalDuration;
-      const gapDuration = nextStartTime - lastEndTime;
+      const gapDuration = nextStartTime - lastKnownTime;
       const unmatchedCount = nextMatchedIndex - index;
       const durationPerScene = gapDuration / unmatchedCount;
 
-      timing.startTime = lastEndTime;
-      timing.endTime = lastEndTime + durationPerScene;
-      timing.duration = durationPerScene;
+      timing.startTime = lastKnownTime + (durationPerScene * (index - (nextMatchedIndex - unmatchedCount)));
     }
-
-    lastEndTime = timing.endTime;
+    lastKnownTime = timing.startTime;
   });
+
+  // Second pass: make scenes contiguous (each ends when next starts)
+  // This ensures no gaps or overlaps
+  for (let i = 0; i < sceneTimings.length; i++) {
+    if (i < sceneTimings.length - 1) {
+      // Scene ends when next scene starts
+      sceneTimings[i].endTime = sceneTimings[i + 1].startTime;
+    } else {
+      // Last scene ends at audio end
+      sceneTimings[i].endTime = totalDuration;
+    }
+    sceneTimings[i].duration = sceneTimings[i].endTime - sceneTimings[i].startTime;
+  }
+
+  // Log for debugging
+  console.log('Scene timings:', sceneTimings.map(t => ({
+    scene: t.sceneIndex + 1,
+    start: t.startTime?.toFixed(2),
+    end: t.endTime?.toFixed(2),
+    duration: t.duration?.toFixed(2),
+    matched: t.matchedText?.substring(0, 30)
+  })));
 
   return sceneTimings;
 }
