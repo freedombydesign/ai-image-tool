@@ -1951,12 +1951,15 @@ footer {
   align-items: center;
   justify-content: center;
   background: #000;
-  min-height: 400px;
+  min-height: 300px;
+  max-height: calc(90vh - 140px); /* Account for header and controls */
+  overflow: hidden;
 }
 
 #preview-canvas {
   max-width: 100%;
   max-height: 100%;
+  object-fit: contain;
 }
 
 .preview-controls {
@@ -1997,6 +2000,8 @@ footer {
 .preview-native-video {
   max-width: 100%;
   max-height: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
