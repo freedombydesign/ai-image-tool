@@ -723,13 +723,14 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                   <div class="form-group">
                     <label for="avatar-background-type">Background Type</label>
                     <select id="avatar-background-type" onchange="videoEditor.updateBackgroundType()">
-                      <option value="solid" selected>Solid Color</option>
+                      <option value="original" selected>Use Video Background (as-is)</option>
+                      <option value="solid">Solid Color</option>
                       <option value="gradient">Gradient</option>
                       <option value="blurred">Blurred Image</option>
                     </select>
                   </div>
 
-                  <div id="solid-bg-options" class="bg-options">
+                  <div id="solid-bg-options" class="bg-options" hidden>
                     <div class="form-group">
                       <label for="avatar-bg-color">Background Color</label>
                       <div class="color-input-row">

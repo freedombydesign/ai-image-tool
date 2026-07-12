@@ -36,7 +36,7 @@ class VideoEditor {
 
     // Avatar Only Mode (full-screen avatar without scenes)
     this.avatarOnlyMode = false;
-    this.avatarOnlyBackgroundType = 'solid'; // solid, gradient, blurred
+    this.avatarOnlyBackgroundType = 'original'; // original, solid, gradient, blurred
     this.avatarOnlyBgColor = '#1a1a2e';
     this.avatarOnlyGradientStart = '#1a1a2e';
     this.avatarOnlyGradientEnd = '#16213e';
@@ -1663,7 +1663,7 @@ class VideoEditor {
 
   updateBackgroundType() {
     const typeSelect = document.getElementById('avatar-background-type');
-    this.avatarOnlyBackgroundType = typeSelect?.value || 'solid';
+    this.avatarOnlyBackgroundType = typeSelect?.value || 'original';
 
     // Show/hide relevant options
     const solidOptions = document.getElementById('solid-bg-options');
@@ -1726,6 +1726,13 @@ class VideoEditor {
   // Draw background for avatar-only mode
   drawAvatarOnlyBackground(ctx, width, height) {
     switch (this.avatarOnlyBackgroundType) {
+      case 'original':
+        // Use video's original background - just clear with black
+        // The avatar video itself contains the background
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+        break;
+
       case 'solid':
         const bgColor = document.getElementById('avatar-bg-color')?.value || this.avatarOnlyBgColor;
         ctx.fillStyle = bgColor;
@@ -1780,6 +1787,11 @@ class VideoEditor {
 
   // Get avatar rect for avatar-only mode (larger/centered)
   getAvatarOnlyRect(canvasWidth, canvasHeight) {
+    // When using original video background, always use full size to preserve the background
+    if (this.avatarOnlyBackgroundType === 'original') {
+      return { x: 0, y: 0, width: canvasWidth, height: canvasHeight };
+    }
+
     const sizeSelect = document.getElementById('avatar-only-size');
     const size = sizeSelect?.value || this.avatarOnlySize;
 
