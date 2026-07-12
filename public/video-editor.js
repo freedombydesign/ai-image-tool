@@ -426,7 +426,7 @@ class VideoEditor {
 
     // Timeline
     this.playPreviewBtn = document.getElementById('play-preview-btn');
-    this.autoSyncBtn = document.getElementById('auto-sync-btn');
+    this.autoReorderBtn = document.getElementById('auto-reorder-btn');
     this.distributeEvenlyBtn = document.getElementById('distribute-evenly-btn');
     this.totalDuration = document.getElementById('total-duration');
     this.waveformContainer = document.getElementById('waveform-container');
@@ -575,7 +575,9 @@ class VideoEditor {
 
     // Timeline
     this.playPreviewBtn.addEventListener('click', () => this.openPreview());
-    this.autoSyncBtn.addEventListener('click', () => this.autoSyncScenes());
+    if (this.autoReorderBtn) {
+      this.autoReorderBtn.addEventListener('click', () => this.autoReorderByAudio());
+    }
     if (this.distributeEvenlyBtn) {
       this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
     }
@@ -2546,25 +2548,18 @@ class VideoEditor {
     this.waveformContainer.appendChild(canvas);
   }
 
-  // Auto-sync scenes to audio using intelligent speech recognition
-  async autoSyncScenes() {
+  // Auto-reorder scenes to match audio sequence and set timing automatically
+  async autoReorderByAudio() {
     if (!this.audioBlob || this.scenes.length === 0) {
-      showToast('Need both audio and scenes to auto-sync.');
+      showToast('Need both audio and scenes to auto-reorder.');
       return;
     }
 
-    // Show syncing state
-    this.autoSyncBtn.disabled = true;
-    this.autoSyncBtn.innerHTML = '⏳ Analyzing Audio...';
+    // Show processing state
+    this.autoReorderBtn.disabled = true;
+    this.autoReorderBtn.innerHTML = '⏳ Analyzing Audio...';
 
     try {
-      // Prepare scene descriptions for matching
-      const sceneDescriptions = this.scenes.map((scene, index) => ({
-        index,
-        text: scene.text || scene.caption || `Scene ${index + 1}`,
-        description: scene.text || scene.caption || ''
-      }));
-
       // Upload audio to Supabase first to bypass Vercel limit
       const configResponse = await fetch('/api/supabase-config');
       if (!configResponse.ok) {
@@ -2599,6 +2594,8 @@ class VideoEditor {
 
       const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
 
+      this.autoReorderBtn.innerHTML = '⏳ Transcribing...';
+
       // Call transcription API with URL
       const response = await fetch('/api/transcribe-url', {
         method: 'POST',
@@ -2614,38 +2611,101 @@ class VideoEditor {
 
       console.log('Transcription result:', result);
 
-      // Apply scene timings from intelligent matching
-      if (result.sceneTimings && result.sceneTimings.length > 0) {
-        result.sceneTimings.forEach((timing, index) => {
-          if (this.scenes[index]) {
-            this.scenes[index].startTime = timing.startTime;
-            this.scenes[index].duration = timing.duration;
+      this.autoReorderBtn.innerHTML = '⏳ Matching Scenes...';
 
-            // Log matching confidence for debugging
-            if (timing.confidence > 0.1) {
-              console.log(`Scene ${index + 1} matched to: "${timing.matchedText}" (confidence: ${(timing.confidence * 100).toFixed(1)}%)`);
-            }
-          }
-        });
-
-        this.renderTimeline();
-        this.renderCaptions();
-        this.updateTotalDuration();
-        showToast(`Scenes synced using speech recognition! Transcription: "${result.transcription.substring(0, 50)}..."`, false);
-      } else {
-        // Fallback to basic transcription-based timing using segments
-        this.applyBasicSegmentTiming(result.segments);
+      // Get segments with timestamps
+      const segments = result.segments || [];
+      if (segments.length === 0) {
+        showToast('No speech segments found in audio.');
+        return;
       }
 
-    } catch (error) {
-      console.error('Smart sync error:', error);
+      // Match each scene to a segment and find when its text appears
+      const sceneMatches = this.scenes.map((scene, originalIndex) => {
+        const sceneText = (scene.text || scene.caption || '').toLowerCase();
+        const sceneWords = sceneText.split(/\s+/).filter(w => w.length > 2);
 
-      // Fallback to silence-based sync
-      showToast('Speech recognition unavailable, using pause detection...', false);
-      this.fallbackSilenceSync();
+        let bestMatch = { segment: null, score: 0, startTime: Infinity };
+
+        // Find the segment that best matches this scene's text
+        for (const segment of segments) {
+          const segmentText = segment.text.toLowerCase();
+
+          // Calculate word overlap score
+          let matchedWords = 0;
+          for (const word of sceneWords) {
+            if (segmentText.includes(word)) {
+              matchedWords++;
+            }
+          }
+
+          const score = sceneWords.length > 0 ? matchedWords / sceneWords.length : 0;
+
+          // Keep the earliest segment with a good match
+          if (score > 0.3 && (score > bestMatch.score || (score === bestMatch.score && segment.start < bestMatch.startTime))) {
+            bestMatch = { segment, score, startTime: segment.start };
+          }
+        }
+
+        return {
+          scene,
+          originalIndex,
+          matchedSegment: bestMatch.segment,
+          matchScore: bestMatch.score,
+          audioStartTime: bestMatch.startTime
+        };
+      });
+
+      // Sort scenes by when their text appears in the audio
+      sceneMatches.sort((a, b) => {
+        // Scenes with matches come first, sorted by time
+        if (a.matchedSegment && b.matchedSegment) {
+          return a.audioStartTime - b.audioStartTime;
+        }
+        // Unmatched scenes go to the end, keeping original order
+        if (a.matchedSegment) return -1;
+        if (b.matchedSegment) return 1;
+        return a.originalIndex - b.originalIndex;
+      });
+
+      // Reorder scenes array
+      const reorderedScenes = sceneMatches.map(m => m.scene);
+
+      // Calculate timing - distribute evenly but use match times as hints
+      const totalDuration = this.audioDuration || segments[segments.length - 1].end;
+      const durationPerScene = totalDuration / reorderedScenes.length;
+
+      reorderedScenes.forEach((scene, index) => {
+        scene.startTime = index * durationPerScene;
+        scene.duration = durationPerScene;
+        scene.id = `scene-${Date.now()}-${index}`; // Update ID for tracking
+      });
+
+      // Replace scenes array with reordered version
+      this.scenes = reorderedScenes;
+
+      // Log the reordering
+      const reorderCount = sceneMatches.filter((m, i) => m.originalIndex !== i).length;
+      console.log(`Reordered ${reorderCount} scenes based on audio matching`);
+      sceneMatches.forEach((m, newIndex) => {
+        if (m.originalIndex !== newIndex) {
+          console.log(`Scene "${(m.scene.text || '').substring(0, 30)}..." moved from position ${m.originalIndex + 1} to ${newIndex + 1}`);
+        }
+      });
+
+      this.renderTimeline();
+      this.renderCaptions();
+      this.updateTotalDuration();
+      this.saveScenesToSupabase();
+
+      showToast(`Reordered ${this.scenes.length} scenes to match audio sequence! (~${durationPerScene.toFixed(1)}s each)`, 'success');
+
+    } catch (error) {
+      console.error('Auto-reorder error:', error);
+      showToast('Failed to reorder: ' + error.message, false);
     } finally {
-      this.autoSyncBtn.disabled = false;
-      this.autoSyncBtn.innerHTML = '🎯 Auto-Sync';
+      this.autoReorderBtn.disabled = false;
+      this.autoReorderBtn.innerHTML = '🎯 Auto-Reorder by Audio';
     }
   }
 
