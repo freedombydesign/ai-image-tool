@@ -847,24 +847,92 @@ class VideoEditor {
       : (document.getElementById('scene-duration')?.value || 6);
     const duration = parseInt(sceneDuration);
 
-    this.scenes = scenesToImport.map((scene, index) => ({
-      id: index,
+    // Convert imported scenes to our format
+    const newScenes = scenesToImport.map((scene, index) => ({
+      id: Date.now() + index, // Unique ID
       imageUrl: scene.imageUrl,
       text: scene.text || '',
       duration: duration,
       caption: scene.text ? scene.text.substring(0, 100) : '',
-      startTime: index * duration
+      startTime: 0 // Will be recalculated
     }));
 
+    // If there are existing scenes, ask user what to do
+    if (this.scenes.length > 0) {
+      this.showImportChoiceDialog(newScenes);
+      return;
+    }
+
+    // No existing scenes - just import
+    this.scenes = newScenes;
+    this.recalculateTimings();
+    this.finishImport(newScenes.length, 'imported');
+  }
+
+  // Show dialog to choose replace or append
+  showImportChoiceDialog(newScenes) {
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'import-choice-overlay';
+    overlay.innerHTML = `
+      <div class="import-choice-dialog">
+        <h3>Import ${newScenes.length} Scenes</h3>
+        <p>You have ${this.scenes.length} existing scene(s). What would you like to do?</p>
+        <div class="import-choice-buttons">
+          <button class="btn secondary" id="import-replace">
+            🔄 Replace All
+            <small>Remove existing scenes</small>
+          </button>
+          <button class="btn primary" id="import-append">
+            ➕ Add to Existing
+            <small>Keep current scenes</small>
+          </button>
+        </div>
+        <button class="btn text import-cancel">Cancel</button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Handle button clicks
+    overlay.querySelector('#import-replace').addEventListener('click', () => {
+      this.scenes = newScenes;
+      this.recalculateTimings();
+      this.finishImport(newScenes.length, 'imported');
+      overlay.remove();
+    });
+
+    overlay.querySelector('#import-append').addEventListener('click', () => {
+      const startId = Date.now();
+      newScenes.forEach((scene, i) => {
+        scene.id = startId + i;
+      });
+      this.scenes = [...this.scenes, ...newScenes];
+      this.recalculateTimings();
+      this.finishImport(newScenes.length, 'added');
+      overlay.remove();
+    });
+
+    overlay.querySelector('.import-cancel').addEventListener('click', () => {
+      overlay.remove();
+    });
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+  }
+
+  // Finish import process
+  finishImport(count, action) {
     this.renderImportedScenes();
     this.renderTimeline();
     this.renderCaptions();
     this.updateTotalDuration();
-
-    // Auto-save scenes to Supabase for persistence
     this.saveScenesToSupabase();
-
-    showToast(`Imported ${this.scenes.length} scenes!`, false);
+    showToast(`${count} scenes ${action}! Total: ${this.scenes.length}`, 'success');
   }
 
   // Handle scene file upload
