@@ -2683,8 +2683,9 @@ class VideoEditor {
     this.captionsList.innerHTML = this.scenes.map((scene, index) => `
       <div class="caption-item">
         <div class="caption-scene-wrapper">
-          <img src="${scene.imageUrl}" class="caption-scene" alt="Scene ${index + 1}">
-          <button class="replace-image-btn" onclick="videoEditor.triggerReplaceImage(${index})" title="Replace Image">
+          <img src="${scene.imageUrl}" class="caption-scene" alt="Scene ${index + 1}"
+               onclick="videoEditor.viewSceneFullscreen(${index})" title="Click to view full size">
+          <button class="replace-image-btn" onclick="event.stopPropagation(); videoEditor.triggerReplaceImage(${index})" title="Replace Image">
             🔄
           </button>
         </div>
@@ -2751,6 +2752,80 @@ class VideoEditor {
       console.error('Error replacing image:', error);
       showToast('Failed to replace image.');
     }
+  }
+
+  // View scene image in fullscreen modal
+  viewSceneFullscreen(index) {
+    const scene = this.scenes[index];
+    if (!scene || !scene.imageUrl) return;
+
+    // Create fullscreen overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'scene-fullscreen-overlay';
+    overlay.innerHTML = `
+      <div class="scene-fullscreen-content">
+        <button class="scene-fullscreen-close" title="Close">&times;</button>
+        <img src="${scene.imageUrl}" alt="Scene ${index + 1}">
+        <div class="scene-fullscreen-info">
+          <span class="scene-fullscreen-number">Scene ${index + 1}</span>
+          <span class="scene-fullscreen-duration">${scene.duration.toFixed(1)}s</span>
+          ${scene.caption ? `<p class="scene-fullscreen-caption">${scene.caption}</p>` : ''}
+        </div>
+        <div class="scene-fullscreen-nav">
+          ${index > 0 ? `<button class="btn secondary scene-nav-prev" title="Previous">← Previous</button>` : '<span></span>'}
+          ${index < this.scenes.length - 1 ? `<button class="btn secondary scene-nav-next" title="Next">Next →</button>` : '<span></span>'}
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Close button
+    overlay.querySelector('.scene-fullscreen-close').addEventListener('click', () => {
+      overlay.remove();
+    });
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+
+    // Navigation
+    const prevBtn = overlay.querySelector('.scene-nav-prev');
+    const nextBtn = overlay.querySelector('.scene-nav-next');
+
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        overlay.remove();
+        this.viewSceneFullscreen(index - 1);
+      });
+    }
+
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        overlay.remove();
+        this.viewSceneFullscreen(index + 1);
+      });
+    }
+
+    // Keyboard navigation
+    const handleKeydown = (e) => {
+      if (e.key === 'Escape') {
+        overlay.remove();
+        document.removeEventListener('keydown', handleKeydown);
+      } else if (e.key === 'ArrowLeft' && index > 0) {
+        overlay.remove();
+        document.removeEventListener('keydown', handleKeydown);
+        this.viewSceneFullscreen(index - 1);
+      } else if (e.key === 'ArrowRight' && index < this.scenes.length - 1) {
+        overlay.remove();
+        document.removeEventListener('keydown', handleKeydown);
+        this.viewSceneFullscreen(index + 1);
+      }
+    };
+    document.addEventListener('keydown', handleKeydown);
   }
 
   // Generate captions from audio transcription

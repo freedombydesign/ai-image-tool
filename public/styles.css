@@ -2216,6 +2216,106 @@ footer {
   }
 }
 
+/* Scene fullscreen viewer */
+.scene-fullscreen-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+}
+
+.scene-fullscreen-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.scene-fullscreen-content img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.scene-fullscreen-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 2rem;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+
+.scene-fullscreen-close:hover {
+  opacity: 1;
+}
+
+.scene-fullscreen-info {
+  margin-top: 1rem;
+  text-align: center;
+  color: white;
+}
+
+.scene-fullscreen-number {
+  background: var(--primary);
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.scene-fullscreen-duration {
+  margin-left: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.scene-fullscreen-caption {
+  margin-top: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.95rem;
+  max-width: 600px;
+}
+
+.scene-fullscreen-nav {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 1.5rem;
+  padding: 0 1rem;
+}
+
+.scene-fullscreen-nav .btn {
+  min-width: 100px;
+}
+
+/* Clickable scene thumbnail */
+.caption-scene-wrapper .caption-scene {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.caption-scene-wrapper .caption-scene:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
 /* Small button variant */
 .btn.small {
   padding: 0.5rem 1rem;
