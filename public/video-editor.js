@@ -34,6 +34,17 @@ class VideoEditor {
     this.avatarShape = 'circle';
     this.avatarVideos = []; // Generated avatar videos per scene
 
+    // Avatar Only Mode (full-screen avatar without scenes)
+    this.avatarOnlyMode = false;
+    this.avatarOnlyBackgroundType = 'solid'; // solid, gradient, blurred
+    this.avatarOnlyBgColor = '#1a1a2e';
+    this.avatarOnlyGradientStart = '#1a1a2e';
+    this.avatarOnlyGradientEnd = '#16213e';
+    this.avatarOnlyGradientDirection = 'to bottom';
+    this.avatarOnlyBlurredImage = null;
+    this.avatarOnlyBlurAmount = 15;
+    this.avatarOnlySize = 'large';
+
     // FFmpeg
     this.ffmpeg = null;
     this.ffmpegLoaded = false;
@@ -1626,6 +1637,179 @@ class VideoEditor {
     this.saveAvatarSettings(); // Persist
   }
 
+  // Avatar Only Mode - full screen avatar without scene images
+  toggleAvatarOnlyMode() {
+    const checkbox = document.getElementById('avatar-only-mode');
+    this.avatarOnlyMode = checkbox?.checked || false;
+
+    const optionsDiv = document.getElementById('avatar-only-options');
+    if (optionsDiv) {
+      optionsDiv.hidden = !this.avatarOnlyMode;
+    }
+
+    // Initialize background upload handlers if not done
+    if (this.avatarOnlyMode) {
+      this.initAvatarOnlyBackgroundUpload();
+    }
+
+    // Update size select to use avatar-only sizes
+    if (this.avatarOnlyMode) {
+      // In avatar only mode, use full/large sizes
+      this.avatarSize = this.avatarOnlySize;
+    }
+
+    showToast(this.avatarOnlyMode ? 'Avatar Only Mode - full screen avatar without scenes' : 'Normal mode - avatar as overlay on scenes', false);
+  }
+
+  updateBackgroundType() {
+    const typeSelect = document.getElementById('avatar-background-type');
+    this.avatarOnlyBackgroundType = typeSelect?.value || 'solid';
+
+    // Show/hide relevant options
+    const solidOptions = document.getElementById('solid-bg-options');
+    const gradientOptions = document.getElementById('gradient-bg-options');
+    const blurredOptions = document.getElementById('blurred-bg-options');
+
+    if (solidOptions) solidOptions.hidden = this.avatarOnlyBackgroundType !== 'solid';
+    if (gradientOptions) gradientOptions.hidden = this.avatarOnlyBackgroundType !== 'gradient';
+    if (blurredOptions) blurredOptions.hidden = this.avatarOnlyBackgroundType !== 'blurred';
+  }
+
+  initAvatarOnlyBackgroundUpload() {
+    const uploadArea = document.getElementById('blurred-bg-upload');
+    const fileInput = document.getElementById('blurred-bg-file');
+    const placeholder = document.getElementById('blurred-bg-placeholder');
+    const preview = document.getElementById('blurred-bg-preview');
+    const previewImg = document.getElementById('blurred-bg-img');
+    const clearBtn = document.getElementById('clear-blurred-bg');
+    const blurSlider = document.getElementById('blur-amount');
+    const blurValue = document.getElementById('blur-amount-value');
+
+    if (!uploadArea || uploadArea.dataset.initialized) return;
+    uploadArea.dataset.initialized = 'true';
+
+    uploadArea.addEventListener('click', () => fileInput?.click());
+
+    fileInput?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          this.avatarOnlyBlurredImage = ev.target.result;
+          if (previewImg) previewImg.src = ev.target.result;
+          if (placeholder) placeholder.hidden = true;
+          if (preview) preview.hidden = false;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    clearBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.avatarOnlyBlurredImage = null;
+      if (fileInput) fileInput.value = '';
+      if (placeholder) placeholder.hidden = false;
+      if (preview) preview.hidden = true;
+    });
+
+    blurSlider?.addEventListener('input', (e) => {
+      this.avatarOnlyBlurAmount = parseInt(e.target.value);
+      if (blurValue) blurValue.textContent = `${this.avatarOnlyBlurAmount}px`;
+    });
+
+    // Color sync for solid and gradient backgrounds
+    this.setupColorSync('avatar-bg-color', 'avatar-bg-color-hex');
+    this.setupColorSync('avatar-gradient-start', 'avatar-gradient-start-hex');
+    this.setupColorSync('avatar-gradient-end', 'avatar-gradient-end-hex');
+  }
+
+  // Draw background for avatar-only mode
+  drawAvatarOnlyBackground(ctx, width, height) {
+    switch (this.avatarOnlyBackgroundType) {
+      case 'solid':
+        const bgColor = document.getElementById('avatar-bg-color')?.value || this.avatarOnlyBgColor;
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, width, height);
+        break;
+
+      case 'gradient':
+        const startColor = document.getElementById('avatar-gradient-start')?.value || this.avatarOnlyGradientStart;
+        const endColor = document.getElementById('avatar-gradient-end')?.value || this.avatarOnlyGradientEnd;
+        const direction = document.getElementById('avatar-gradient-direction')?.value || this.avatarOnlyGradientDirection;
+
+        let gradient;
+        if (direction === 'radial') {
+          gradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height)/2);
+        } else if (direction === 'to right') {
+          gradient = ctx.createLinearGradient(0, 0, width, 0);
+        } else if (direction === 'to bottom right') {
+          gradient = ctx.createLinearGradient(0, 0, width, height);
+        } else {
+          gradient = ctx.createLinearGradient(0, 0, 0, height);
+        }
+        gradient.addColorStop(0, startColor);
+        gradient.addColorStop(1, endColor);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+
+      case 'blurred':
+        if (this.avatarOnlyBlurredImage) {
+          // Draw blurred image
+          const img = new Image();
+          img.src = this.avatarOnlyBlurredImage;
+          if (img.complete) {
+            ctx.filter = `blur(${this.avatarOnlyBlurAmount}px)`;
+            // Scale to cover
+            const scale = Math.max(width / img.width, height / img.height);
+            const scaledW = img.width * scale;
+            const scaledH = img.height * scale;
+            const offsetX = (width - scaledW) / 2;
+            const offsetY = (height - scaledH) / 2;
+            ctx.drawImage(img, offsetX, offsetY, scaledW, scaledH);
+            ctx.filter = 'none';
+          }
+        } else {
+          // Fallback to dark background
+          ctx.fillStyle = '#1a1a2e';
+          ctx.fillRect(0, 0, width, height);
+        }
+        break;
+    }
+  }
+
+  // Get avatar rect for avatar-only mode (larger/centered)
+  getAvatarOnlyRect(canvasWidth, canvasHeight) {
+    const sizeSelect = document.getElementById('avatar-only-size');
+    const size = sizeSelect?.value || this.avatarOnlySize;
+
+    let avatarWidth, avatarHeight;
+
+    switch (size) {
+      case 'medium':
+        avatarWidth = canvasWidth * 0.5;
+        avatarHeight = canvasHeight * 0.5;
+        break;
+      case 'large':
+        avatarWidth = canvasWidth * 0.7;
+        avatarHeight = canvasHeight * 0.7;
+        break;
+      case 'full':
+        avatarWidth = canvasWidth;
+        avatarHeight = canvasHeight;
+        break;
+      default:
+        avatarWidth = canvasWidth * 0.7;
+        avatarHeight = canvasHeight * 0.7;
+    }
+
+    // Center the avatar
+    const x = (canvasWidth - avatarWidth) / 2;
+    const y = (canvasHeight - avatarHeight) / 2;
+
+    return { x, y, width: avatarWidth, height: avatarHeight };
+  }
+
   async handleAvatarPhotoUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -3103,6 +3287,25 @@ class VideoEditor {
 
   updatePreviewFrame() {
     const currentScene = this.getSceneAtTime(this.playbackTime);
+
+    // Avatar Only Mode - no scene images needed
+    if (this.avatarOnlyMode) {
+      // Draw background
+      this.drawAvatarOnlyBackground(this.ctx, this.previewCanvas.width, this.previewCanvas.height);
+
+      // Draw avatar (large/centered)
+      if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
+        this.drawAvatarOnPreviewFullscreen();
+      }
+
+      // Draw caption if scene exists
+      if (currentScene) {
+        this.drawCaption(currentScene);
+      }
+      return;
+    }
+
+    // Normal mode - scene images with avatar overlay
     if (!currentScene) return;
 
     const img = new Image();
@@ -3122,6 +3325,71 @@ class VideoEditor {
       this.drawCaption(currentScene);
     };
     img.src = currentScene.imageUrl;
+  }
+
+  // Draw avatar fullscreen for avatar-only mode
+  async drawAvatarOnPreviewFullscreen() {
+    const avatarVideo = this.avatarVideos.find(av =>
+      this.playbackTime >= av.startTime && this.playbackTime < av.endTime
+    );
+
+    if (!avatarVideo || !avatarVideo.videoUrl) return;
+
+    if (!this.previewAvatarVideos) {
+      this.previewAvatarVideos = {};
+    }
+
+    let videoEl = this.previewAvatarVideos[avatarVideo.videoUrl];
+    if (!videoEl) {
+      videoEl = document.createElement('video');
+      videoEl.crossOrigin = 'anonymous';
+      videoEl.muted = true;
+      videoEl.playsInline = true;
+      videoEl.preload = 'auto';
+      videoEl.src = avatarVideo.videoUrl;
+      videoEl.load();
+      this.previewAvatarVideos[avatarVideo.videoUrl] = videoEl;
+
+      await new Promise(resolve => {
+        videoEl.oncanplaythrough = resolve;
+        videoEl.onloadeddata = () => { if (videoEl.readyState >= 3) resolve(); };
+        videoEl.onerror = resolve;
+        setTimeout(resolve, 3000);
+      });
+    }
+
+    // Sync video time
+    if (this.currentAvatarSegment !== avatarVideo.videoUrl) {
+      if (this.currentAvatarSegment && this.previewAvatarVideos[this.currentAvatarSegment]) {
+        this.previewAvatarVideos[this.currentAvatarSegment].pause();
+      }
+      this.currentAvatarSegment = avatarVideo.videoUrl;
+      const localTime = this.playbackTime - avatarVideo.startTime;
+      videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+      if (this.isPlaying) {
+        videoEl.play().catch(() => {});
+      }
+    }
+
+    if (this.isPlaying) {
+      if (videoEl.paused) videoEl.play().catch(() => {});
+      const localTime = this.playbackTime - avatarVideo.startTime;
+      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
+        videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+      }
+    } else {
+      videoEl.pause();
+      const localTime = this.playbackTime - avatarVideo.startTime;
+      if (Math.abs(videoEl.currentTime - localTime) > 0.05) {
+        videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+      }
+    }
+
+    // Get rect for avatar-only mode (larger/centered)
+    const rect = this.getAvatarOnlyRect(this.previewCanvas.width, this.previewCanvas.height);
+
+    // Draw avatar
+    this.ctx.drawImage(videoEl, rect.x, rect.y, rect.width, rect.height);
   }
 
   // Draw avatar on preview canvas

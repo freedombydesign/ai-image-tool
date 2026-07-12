@@ -708,6 +708,97 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 </div>
               </div>
 
+              <!-- Avatar Only Mode -->
+              <div class="avatar-only-section">
+                <div class="avatar-toggle" style="margin-top: 1rem;">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="avatar-only-mode" onchange="videoEditor.toggleAvatarOnlyMode()">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span>Avatar Only Mode</span>
+                  <small class="help-text" style="margin-left: 0.5rem;">(Full-screen avatar without scenes)</small>
+                </div>
+
+                <div id="avatar-only-options" class="avatar-only-options" hidden>
+                  <div class="form-group">
+                    <label for="avatar-background-type">Background Type</label>
+                    <select id="avatar-background-type" onchange="videoEditor.updateBackgroundType()">
+                      <option value="solid" selected>Solid Color</option>
+                      <option value="gradient">Gradient</option>
+                      <option value="blurred">Blurred Image</option>
+                    </select>
+                  </div>
+
+                  <div id="solid-bg-options" class="bg-options">
+                    <div class="form-group">
+                      <label for="avatar-bg-color">Background Color</label>
+                      <div class="color-input-row">
+                        <input type="color" id="avatar-bg-color" value="#1a1a2e">
+                        <input type="text" id="avatar-bg-color-hex" value="#1a1a2e" maxlength="7">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="gradient-bg-options" class="bg-options" hidden>
+                    <div class="form-group">
+                      <label>Gradient Colors</label>
+                      <div class="gradient-colors">
+                        <div class="color-input-row">
+                          <input type="color" id="avatar-gradient-start" value="#1a1a2e">
+                          <input type="text" id="avatar-gradient-start-hex" value="#1a1a2e" maxlength="7">
+                        </div>
+                        <span style="margin: 0 0.5rem;">→</span>
+                        <div class="color-input-row">
+                          <input type="color" id="avatar-gradient-end" value="#16213e">
+                          <input type="text" id="avatar-gradient-end-hex" value="#16213e" maxlength="7">
+                        </div>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label for="avatar-gradient-direction">Direction</label>
+                      <select id="avatar-gradient-direction">
+                        <option value="to bottom" selected>Top to Bottom</option>
+                        <option value="to right">Left to Right</option>
+                        <option value="to bottom right">Diagonal</option>
+                        <option value="radial">Radial (Center)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div id="blurred-bg-options" class="bg-options" hidden>
+                    <div class="upload-area small" id="blurred-bg-upload">
+                      <input type="file" id="blurred-bg-file" accept="image/*" hidden>
+                      <div class="upload-placeholder" id="blurred-bg-placeholder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                          <circle cx="8.5" cy="8.5" r="1.5"/>
+                          <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        <span>Upload Background Image</span>
+                      </div>
+                      <div id="blurred-bg-preview" class="bg-preview" hidden>
+                        <img id="blurred-bg-img" src="" alt="Background">
+                        <button class="btn text small" id="clear-blurred-bg">Change</button>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label for="blur-amount">Blur Amount</label>
+                      <input type="range" id="blur-amount" min="5" max="30" value="15">
+                      <span id="blur-amount-value">15px</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group" style="margin-top: 1rem;">
+                    <label for="avatar-only-size">Avatar Size</label>
+                    <select id="avatar-only-size">
+                      <option value="medium">Medium (50%)</option>
+                      <option value="large" selected>Large (70%)</option>
+                      <option value="full">Full Screen</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <!-- Avatar Status -->
               <div id="avatar-generation-status" class="avatar-status" hidden>
                 <div class="status-header">
