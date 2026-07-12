@@ -427,6 +427,7 @@ class VideoEditor {
     // Timeline
     this.playPreviewBtn = document.getElementById('play-preview-btn');
     this.autoSyncBtn = document.getElementById('auto-sync-btn');
+    this.distributeEvenlyBtn = document.getElementById('distribute-evenly-btn');
     this.totalDuration = document.getElementById('total-duration');
     this.waveformContainer = document.getElementById('waveform-container');
     this.timeline = document.getElementById('timeline');
@@ -566,6 +567,9 @@ class VideoEditor {
     // Timeline
     this.playPreviewBtn.addEventListener('click', () => this.openPreview());
     this.autoSyncBtn.addEventListener('click', () => this.autoSyncScenes());
+    if (this.distributeEvenlyBtn) {
+      this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
+    }
 
     // Captions
     if (this.generateCaptionsBtn) {
@@ -2626,6 +2630,33 @@ class VideoEditor {
       this.autoSyncBtn.disabled = false;
       this.autoSyncBtn.innerHTML = '🎯 Auto-Sync';
     }
+  }
+
+  // Distribute scenes evenly across audio duration (simple, guaranteed to work)
+  distributeEvenly() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first.');
+      return;
+    }
+
+    if (!this.audioDuration || this.audioDuration === 0) {
+      showToast('Add audio first to distribute scenes.');
+      return;
+    }
+
+    const durationPerScene = this.audioDuration / this.scenes.length;
+
+    this.scenes.forEach((scene, index) => {
+      scene.startTime = index * durationPerScene;
+      scene.duration = durationPerScene;
+    });
+
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateTotalDuration();
+
+    const formatted = this.formatTime(durationPerScene);
+    showToast(`Distributed ${this.scenes.length} scenes evenly (~${durationPerScene.toFixed(1)}s each). Total: ${this.formatTime(this.audioDuration)}`, 'success');
   }
 
   // Apply basic timing from transcription segments (fallback)
