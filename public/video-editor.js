@@ -3075,7 +3075,15 @@ class VideoEditor {
     const delta = (now - this.lastFrameTime) / 1000;
     this.lastFrameTime = now;
 
-    this.playbackTime += delta;
+    // SYNC with audio player if audio is playing - this is the source of truth
+    // This prevents avatar and scenes from drifting out of sync with voiceover
+    if (this.audioPlayer && !this.audioPlayer.paused && this.audioPlayer.duration > 0) {
+      // Use audio time as the master clock
+      this.playbackTime = this.audioPlayer.currentTime;
+    } else {
+      // No audio or audio paused - use delta time
+      this.playbackTime += delta;
+    }
 
     const totalDuration = this.getTotalDuration();
     if (this.playbackTime >= totalDuration) {
@@ -3173,16 +3181,17 @@ class VideoEditor {
       if (videoEl.paused) {
         videoEl.play().catch(() => {});
       }
-      // Check sync - if drifted more than 0.3s, resync
+      // Check sync - if drifted more than 0.1s, resync immediately
+      // Tighter tolerance for better lip-sync with audio
       const localTime = this.playbackTime - avatarVideo.startTime;
-      if (Math.abs(videoEl.currentTime - localTime) > 0.3) {
+      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
         videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
       }
     } else {
       // Paused - seek to exact frame
       videoEl.pause();
       const localTime = this.playbackTime - avatarVideo.startTime;
-      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
+      if (Math.abs(videoEl.currentTime - localTime) > 0.05) {
         videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
       }
     }
