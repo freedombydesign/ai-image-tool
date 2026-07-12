@@ -3599,15 +3599,28 @@ class VideoEditor {
       if (videoEl.paused) {
         videoEl.play().catch(() => {});
       }
-      // Check sync - if drifted more than 0.1s, resync immediately
-      // Tighter tolerance for better lip-sync with audio
+
       const localTime = this.playbackTime - avatarVideo.startTime;
-      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
+      const drift = videoEl.currentTime - localTime;
+
+      // Use playback rate adjustment for smooth sync instead of hard seeking
+      // This prevents visible jumps when resyncing
+      if (Math.abs(drift) > 0.5) {
+        // Large drift - hard seek is necessary
         videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
+        videoEl.playbackRate = 1.0;
+      } else if (Math.abs(drift) > 0.05) {
+        // Small drift - adjust playback rate to catch up smoothly
+        // If video is ahead (positive drift), slow down; if behind, speed up
+        videoEl.playbackRate = drift > 0 ? 0.95 : 1.05;
+      } else {
+        // In sync - normal playback rate
+        videoEl.playbackRate = 1.0;
       }
     } else {
-      // Paused - seek to exact frame
+      // Paused - seek to exact frame and reset playback rate
       videoEl.pause();
+      videoEl.playbackRate = 1.0;
       const localTime = this.playbackTime - avatarVideo.startTime;
       if (Math.abs(videoEl.currentTime - localTime) > 0.05) {
         videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
