@@ -1821,12 +1821,46 @@ footer {
   align-items: flex-start;
 }
 
+.caption-item .caption-scene-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .caption-item .caption-scene {
   width: 60px;
   height: 34px;
   border-radius: 4px;
   object-fit: cover;
-  flex-shrink: 0;
+  display: block;
+}
+
+.caption-item .replace-image-btn {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg-card);
+  color: white;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  padding: 0;
+}
+
+.caption-item .caption-scene-wrapper:hover .replace-image-btn {
+  opacity: 1;
+}
+
+.caption-item .replace-image-btn:hover {
+  background: var(--primary-dark);
+  transform: scale(1.1);
 }
 
 .caption-item .caption-input {

@@ -2614,7 +2614,12 @@ class VideoEditor {
 
     this.captionsList.innerHTML = this.scenes.map((scene, index) => `
       <div class="caption-item">
-        <img src="${scene.imageUrl}" class="caption-scene" alt="Scene ${index + 1}">
+        <div class="caption-scene-wrapper">
+          <img src="${scene.imageUrl}" class="caption-scene" alt="Scene ${index + 1}">
+          <button class="replace-image-btn" onclick="videoEditor.triggerReplaceImage(${index})" title="Replace Image">
+            🔄
+          </button>
+        </div>
         <div class="caption-input">
           <textarea
             placeholder="Enter caption for scene ${index + 1}..."
@@ -2629,6 +2634,54 @@ class VideoEditor {
   updateCaption(index, text) {
     if (this.scenes[index]) {
       this.scenes[index].caption = text;
+    }
+  }
+
+  // Trigger file picker to replace scene image
+  triggerReplaceImage(index) {
+    this.replaceImageIndex = index;
+
+    // Create a temporary file input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e) => this.handleReplaceImage(e, index);
+    input.click();
+  }
+
+  // Handle the image replacement
+  async handleReplaceImage(event, index) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Please select an image file.');
+      return;
+    }
+
+    try {
+      // Create object URL for immediate preview
+      const imageUrl = URL.createObjectURL(file);
+
+      // Update the scene
+      if (this.scenes[index]) {
+        // Revoke old object URL if it exists
+        if (this.scenes[index].imageUrl && this.scenes[index].imageUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(this.scenes[index].imageUrl);
+        }
+
+        this.scenes[index].imageUrl = imageUrl;
+        this.scenes[index].imageFile = file; // Store file for later upload if needed
+
+        // Re-render timeline and captions
+        this.renderTimeline();
+        this.renderCaptions();
+
+        showToast(`Scene ${index + 1} image replaced!`, 'success');
+      }
+    } catch (error) {
+      console.error('Error replacing image:', error);
+      showToast('Failed to replace image.');
     }
   }
 
