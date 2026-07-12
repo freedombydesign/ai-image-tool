@@ -489,6 +489,7 @@ class VideoEditor {
     this.previewSceneIndicator = document.getElementById('preview-scene-indicator');
     this.sceneIndicatorNumber = this.previewSceneIndicator?.querySelector('.scene-indicator-number');
     this.sceneIndicatorDesc = this.previewSceneIndicator?.querySelector('.scene-indicator-desc');
+    this.sceneNumberBadge = document.getElementById('scene-number-badge');
     this.previewMoveEarlierBtn = document.getElementById('preview-move-earlier');
     this.previewMoveLaterBtn = document.getElementById('preview-move-later');
     this.currentPreviewSceneIndex = -1; // Track currently displayed scene
@@ -2711,9 +2712,17 @@ class VideoEditor {
         if (this.sceneIndicatorDesc) {
           this.sceneIndicatorDesc.textContent = truncatedText;
         }
+        // Update large scene number badge on image
+        if (this.sceneNumberBadge) {
+          this.sceneNumberBadge.textContent = sceneNumber;
+          this.sceneNumberBadge.style.display = 'block';
+        }
         this.previewSceneIndicator.style.display = 'block';
       } else {
         this.previewSceneIndicator.style.display = 'none';
+        if (this.sceneNumberBadge) {
+          this.sceneNumberBadge.style.display = 'none';
+        }
       }
     }
   }
@@ -3636,8 +3645,9 @@ class VideoEditor {
         this.previewNativeVideo.src = this.avatarVideos[0].videoUrl;
         this.previewNativeVideo.load();
       }
-      // Hide scene indicator and reorder controls in Avatar Only mode
+      // Hide scene indicator, badge, and reorder controls in Avatar Only mode
       if (this.previewSceneIndicator) this.previewSceneIndicator.style.display = 'none';
+      if (this.sceneNumberBadge) this.sceneNumberBadge.style.display = 'none';
       if (this.previewMoveEarlierBtn) this.previewMoveEarlierBtn.style.display = 'none';
       if (this.previewMoveLaterBtn) this.previewMoveLaterBtn.style.display = 'none';
       console.log('Avatar Only Mode - using native video playback');
