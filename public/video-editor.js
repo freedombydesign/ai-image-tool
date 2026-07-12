@@ -4107,6 +4107,15 @@ class VideoEditor {
     // Sync playback time with audio (master clock)
     if (this.audioPlayer && !this.audioPlayer.paused && this.audioPlayer.duration > 0) {
       this.playbackTime = this.audioPlayer.currentTime;
+
+      // Keep avatar video synced to audio - correct if drifted more than 0.3 seconds
+      if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
+        const drift = Math.abs(this.previewAvatarVideo.currentTime - this.playbackTime);
+        if (drift > 0.3) {
+          this.previewAvatarVideo.currentTime = this.playbackTime;
+          console.log(`Avatar sync corrected: drift was ${drift.toFixed(2)}s`);
+        }
+      }
     } else if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
       this.playbackTime = this.previewAvatarVideo.currentTime;
     }
