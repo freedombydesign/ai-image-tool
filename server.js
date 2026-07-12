@@ -1638,11 +1638,16 @@ function matchScenesToTranscription(scenes, transcription) {
     if (bestMatch && bestScore > 0.05) {
       // Found a matching segment
       usedSegments.add(bestSegmentIndex);
+      // Apply anticipation offset - show scene BEFORE the words are spoken
+      // This creates a more natural viewing experience where you see the image
+      // just before or as the narrator talks about it
+      const anticipationOffset = 1.0; // seconds before speech
+      const adjustedStart = Math.max(0, bestMatch.start - anticipationOffset);
       sceneTimings.push({
         sceneIndex,
-        startTime: bestMatch.start,
+        startTime: adjustedStart,
         endTime: bestMatch.end,
-        duration: bestMatch.end - bestMatch.start,
+        duration: bestMatch.end - adjustedStart,
         matchedText: bestMatch.text,
         confidence: bestScore,
         segmentIndex: bestSegmentIndex
