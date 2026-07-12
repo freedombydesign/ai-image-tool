@@ -3384,24 +3384,55 @@ class VideoEditor {
     }
 
     if (this.isPlaying) {
-      if (videoEl.paused) videoEl.play().catch(() => {});
+      if (videoEl.paused) {
+        videoEl.play().catch(() => {});
+      }
+      // Only resync if drift is significant (0.5s) to avoid jumpy playback
+      // Let the video play naturally most of the time
       const localTime = this.playbackTime - avatarVideo.startTime;
-      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
+      if (Math.abs(videoEl.currentTime - localTime) > 0.5) {
         videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
       }
     } else {
       videoEl.pause();
       const localTime = this.playbackTime - avatarVideo.startTime;
-      if (Math.abs(videoEl.currentTime - localTime) > 0.05) {
+      if (Math.abs(videoEl.currentTime - localTime) > 0.1) {
         videoEl.currentTime = Math.max(0, Math.min(localTime, videoEl.duration - 0.1));
       }
     }
 
-    // Get rect for avatar-only mode (larger/centered)
-    const rect = this.getAvatarOnlyRect(this.previewCanvas.width, this.previewCanvas.height);
+    // Get rect for avatar-only mode - preserve original aspect ratio
+    const videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+    const canvasAspect = this.previewCanvas.width / this.previewCanvas.height;
+
+    let drawWidth, drawHeight, drawX, drawY;
+
+    if (this.avatarOnlyBackgroundType === 'original') {
+      // Preserve original aspect ratio - fit video without stretching
+      if (videoAspect > canvasAspect) {
+        // Video is wider than canvas - fit to width
+        drawWidth = this.previewCanvas.width;
+        drawHeight = drawWidth / videoAspect;
+        drawX = 0;
+        drawY = (this.previewCanvas.height - drawHeight) / 2;
+      } else {
+        // Video is taller than canvas - fit to height
+        drawHeight = this.previewCanvas.height;
+        drawWidth = drawHeight * videoAspect;
+        drawX = (this.previewCanvas.width - drawWidth) / 2;
+        drawY = 0;
+      }
+    } else {
+      // Custom background - use size selector
+      const rect = this.getAvatarOnlyRect(this.previewCanvas.width, this.previewCanvas.height);
+      drawX = rect.x;
+      drawY = rect.y;
+      drawWidth = rect.width;
+      drawHeight = rect.height;
+    }
 
     // Draw avatar
-    this.ctx.drawImage(videoEl, rect.x, rect.y, rect.width, rect.height);
+    this.ctx.drawImage(videoEl, drawX, drawY, drawWidth, drawHeight);
   }
 
   // Draw avatar on preview canvas
