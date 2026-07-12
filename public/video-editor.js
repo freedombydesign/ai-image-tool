@@ -2710,21 +2710,42 @@ class VideoEditor {
         return a.originalIndex - b.originalIndex;
       });
 
-      // Reorder scenes array
-      const reorderedScenes = sceneMatches.map(m => m.scene);
-
-      // Calculate timing - distribute evenly but use match times as hints
       const totalDuration = this.audioDuration || segments[segments.length - 1].end;
-      const durationPerScene = totalDuration / reorderedScenes.length;
+      const anticipationOffset = 1.0; // Show scene 1 second BEFORE words are spoken
 
-      reorderedScenes.forEach((scene, index) => {
-        scene.startTime = index * durationPerScene;
-        scene.duration = durationPerScene;
-        scene.id = `scene-${Date.now()}-${index}`; // Update ID for tracking
+      // Set timing based on ACTUAL audio timestamps (not even distribution)
+      sceneMatches.forEach((match, index) => {
+        const scene = match.scene;
+
+        if (match.matchedSegment) {
+          // Use actual audio time, with anticipation offset
+          scene.startTime = Math.max(0, match.audioStartTime - anticipationOffset);
+        } else {
+          // Unmatched scene - place after last matched scene
+          const lastMatchedTime = sceneMatches
+            .slice(0, index)
+            .filter(m => m.matchedSegment)
+            .pop()?.audioStartTime || 0;
+          scene.startTime = lastMatchedTime + 1;
+        }
+
+        scene.id = `scene-${Date.now()}-${index}`;
       });
 
-      // Replace scenes array with reordered version
-      this.scenes = reorderedScenes;
+      // Make scenes contiguous (each ends when next begins)
+      const sortedByStart = [...sceneMatches].sort((a, b) => a.scene.startTime - b.scene.startTime);
+      sortedByStart.forEach((match, index) => {
+        if (index < sortedByStart.length - 1) {
+          match.scene.duration = sortedByStart[index + 1].scene.startTime - match.scene.startTime;
+        } else {
+          match.scene.duration = totalDuration - match.scene.startTime;
+        }
+        // Minimum duration of 0.5 seconds
+        match.scene.duration = Math.max(0.5, match.scene.duration);
+      });
+
+      // Reorder scenes array by start time
+      this.scenes = sortedByStart.map(m => m.scene);
 
       // Count matches and reorders
       const matchedCount = sceneMatches.filter(m => m.matchedSegment).length;
@@ -2742,7 +2763,7 @@ class VideoEditor {
       this.updateTotalDuration();
       this.saveScenesToSupabase();
 
-      showToast(`Matched ${matchedCount}/${this.scenes.length} scenes to audio. Moved ${reorderCount} scenes. (~${durationPerScene.toFixed(1)}s each)`, 'success');
+      showToast(`Matched ${matchedCount}/${this.scenes.length} scenes to audio timestamps. Scenes now sync with speech!`, 'success');
 
     } catch (error) {
       console.error('Auto-reorder error:', error);
