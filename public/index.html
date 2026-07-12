@@ -1006,6 +1006,12 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
               <canvas id="preview-canvas"></canvas>
               <!-- Native video player for Avatar Only mode (smoother playback) -->
               <video id="preview-native-video" class="preview-native-video" playsinline hidden></video>
+              <!-- Native layered preview for Avatar + Scenes (smoother playback) -->
+              <div id="preview-native-layered" class="preview-native-layered" hidden>
+                <img id="preview-scene-img" class="preview-scene-img" alt="Scene">
+                <video id="preview-avatar-video" class="preview-avatar-video" playsinline muted></video>
+                <div id="preview-caption-overlay" class="preview-caption-overlay"></div>
+              </div>
             </div>
             <div class="preview-controls">
               <button class="btn secondary" id="preview-play-pause">▶️ Play</button>

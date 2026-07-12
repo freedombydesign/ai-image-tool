@@ -477,8 +477,17 @@ class VideoEditor {
     this.previewScrubber = document.getElementById('preview-scrubber');
     this.previewNativeVideo = document.getElementById('preview-native-video');
 
+    // Native layered preview elements (for Avatar + Scenes)
+    this.previewNativeLayered = document.getElementById('preview-native-layered');
+    this.previewSceneImg = document.getElementById('preview-scene-img');
+    this.previewAvatarVideo = document.getElementById('preview-avatar-video');
+    this.previewCaptionOverlay = document.getElementById('preview-caption-overlay');
+
     // Canvas context
     this.ctx = this.previewCanvas.getContext('2d');
+
+    // Use native preview by default (smoother playback)
+    this.useNativePreview = true;
   }
 
   initEventListeners() {
@@ -3140,8 +3149,9 @@ class VideoEditor {
 
     // Avatar Only Mode - use native video for smooth playback
     if (this.avatarOnlyMode && this.avatarVideos && this.avatarVideos.length > 0) {
-      // Hide canvas, show native video
+      // Hide canvas and layered, show native video
       if (this.previewCanvas) this.previewCanvas.hidden = true;
+      if (this.previewNativeLayered) this.previewNativeLayered.hidden = true;
       if (this.previewNativeVideo) {
         this.previewNativeVideo.hidden = false;
         // Use first avatar video segment
@@ -3152,9 +3162,33 @@ class VideoEditor {
       return;
     }
 
-    // Normal mode - use canvas
+    // Avatar + Scenes Mode with native preview (smooth playback)
+    if (this.useNativePreview && this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
+      // Hide canvas and native video, show layered preview
+      if (this.previewCanvas) this.previewCanvas.hidden = true;
+      if (this.previewNativeVideo) this.previewNativeVideo.hidden = true;
+      if (this.previewNativeLayered) this.previewNativeLayered.hidden = false;
+
+      // Set up avatar video element
+      this.previewAvatarVideo.src = this.avatarVideos[0].videoUrl;
+      this.previewAvatarVideo.load();
+
+      // Apply avatar styling (position, size, shape)
+      this.updateNativeAvatarStyle();
+
+      // Show first scene
+      if (this.scenes.length > 0 && this.scenes[0].imageUrl) {
+        this.previewSceneImg.src = this.scenes[0].imageUrl;
+      }
+
+      console.log('Avatar + Scenes - using native layered playback');
+      return;
+    }
+
+    // Fallback: Canvas mode (no avatar or native preview disabled)
     if (this.previewCanvas) this.previewCanvas.hidden = false;
     if (this.previewNativeVideo) this.previewNativeVideo.hidden = true;
+    if (this.previewNativeLayered) this.previewNativeLayered.hidden = true;
 
     this.setupPreviewCanvas();
 
@@ -3167,6 +3201,35 @@ class VideoEditor {
     } else {
       this.updatePreviewFrame();
     }
+  }
+
+  // Update native avatar video element styling based on settings
+  updateNativeAvatarStyle() {
+    if (!this.previewAvatarVideo) return;
+
+    // Reset classes
+    this.previewAvatarVideo.className = 'preview-avatar-video';
+
+    // Shape
+    this.previewAvatarVideo.classList.add(this.avatarShape === 'circle' ? 'circle' : 'rectangle');
+
+    // Position
+    const posMap = {
+      'bottom-right': 'pos-bottom-right',
+      'bottom-left': 'pos-bottom-left',
+      'top-right': 'pos-top-right',
+      'top-left': 'pos-top-left',
+      'center': 'pos-center'
+    };
+    this.previewAvatarVideo.classList.add(posMap[this.avatarPosition] || 'pos-bottom-right');
+
+    // Size
+    const sizeMap = {
+      'small': 'size-small',
+      'medium': 'size-medium',
+      'large': 'size-large'
+    };
+    this.previewAvatarVideo.classList.add(sizeMap[this.avatarSize] || 'size-medium');
   }
 
   // Preload all avatar videos for smooth playback
@@ -3252,9 +3315,22 @@ class VideoEditor {
       this.previewNativeVideo.pause();
       this.previewNativeVideo.hidden = true;
     }
+
+    // Stop native layered preview
+    if (this.previewNativeLayered) {
+      this.previewNativeLayered.hidden = true;
+      if (this.previewAvatarVideo) {
+        this.previewAvatarVideo.pause();
+      }
+    }
+
+    // Reset to canvas as default
     if (this.previewCanvas) {
       this.previewCanvas.hidden = false;
     }
+
+    // Reset scene tracking
+    this.currentNativeScene = null;
   }
 
   // Seek to position via scrubber
@@ -3265,8 +3341,24 @@ class VideoEditor {
     // Avatar Only mode - seek native video
     if (this.avatarOnlyMode && this.previewNativeVideo && !this.previewNativeVideo.hidden) {
       this.previewNativeVideo.currentTime = this.playbackTime;
-    } else {
-      // Normal mode - seek audio and update frame
+    }
+    // Native Layered mode - seek avatar video and audio
+    else if (this.previewNativeLayered && !this.previewNativeLayered.hidden) {
+      if (this.previewAvatarVideo) {
+        this.previewAvatarVideo.currentTime = this.playbackTime;
+      }
+      if (this.audioPlayer && this.audioPlayer.duration) {
+        this.audioPlayer.currentTime = this.playbackTime;
+      }
+      // Update scene image immediately
+      const currentScene = this.getSceneAtTime(this.playbackTime);
+      if (currentScene && this.previewSceneImg && currentScene.imageUrl) {
+        this.previewSceneImg.src = currentScene.imageUrl;
+        this.currentNativeScene = currentScene.id;
+      }
+    }
+    // Canvas mode - seek audio and update frame
+    else {
       if (this.audioPlayer && this.audioPlayer.duration) {
         this.audioPlayer.currentTime = this.playbackTime;
       }
@@ -3318,6 +3410,38 @@ class VideoEditor {
       return; // Don't use animation frame for native video
     }
 
+    // Native Layered Mode (Avatar + Scenes) - smooth native video with scene switching
+    if (this.previewNativeLayered && !this.previewNativeLayered.hidden) {
+      // Start avatar video
+      if (this.previewAvatarVideo) {
+        this.previewAvatarVideo.currentTime = this.playbackTime;
+        this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
+      }
+
+      // Start voiceover audio
+      if (this.audioBlob) {
+        if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
+          const url = URL.createObjectURL(this.audioBlob);
+          this.audioPlayer.src = url;
+          this.currentAudioUrl = url;
+        }
+        this.audioPlayer.currentTime = this.playbackTime;
+        this.audioPlayer.play().catch(e => console.log('Voiceover play error:', e));
+      }
+
+      // Start background music
+      if (this.bgMusicBlob && this.bgMusicPlayer) {
+        this.bgMusicPlayer.currentTime = this.playbackTime % (this.bgMusicPlayer.duration || 1);
+        this.bgMusicPlayer.volume = this.bgMusicVolume;
+        this.bgMusicPlayer.play().catch(e => console.log('Background music play error:', e));
+      }
+
+      // Start lightweight animation loop for scene/caption switching
+      this.animateNativeLayered();
+      return;
+    }
+
+    // Canvas mode fallback
     // Play voiceover - ensure blob URL is valid
     if (this.audioBlob) {
       // Recreate blob URL if needed (Firefox fix)
@@ -3348,6 +3472,55 @@ class VideoEditor {
     this.animate();
   }
 
+  // Lightweight animation loop for native layered preview
+  // Only updates scene images and captions - video playback is native
+  animateNativeLayered() {
+    if (!this.isPlaying) return;
+
+    // Sync playback time with audio (master clock)
+    if (this.audioPlayer && !this.audioPlayer.paused && this.audioPlayer.duration > 0) {
+      this.playbackTime = this.audioPlayer.currentTime;
+    } else if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
+      this.playbackTime = this.previewAvatarVideo.currentTime;
+    }
+
+    const totalDuration = this.getTotalDuration();
+
+    // Loop at end
+    if (this.playbackTime >= totalDuration) {
+      this.playbackTime = 0;
+      if (this.audioPlayer) this.audioPlayer.currentTime = 0;
+      if (this.previewAvatarVideo) this.previewAvatarVideo.currentTime = 0;
+    }
+
+    // Update scene image
+    const currentScene = this.getSceneAtTime(this.playbackTime);
+    if (currentScene && this.previewSceneImg && this.currentNativeScene !== currentScene.id) {
+      this.currentNativeScene = currentScene.id;
+      if (currentScene.imageUrl) {
+        this.previewSceneImg.src = currentScene.imageUrl;
+      }
+    }
+
+    // Update caption
+    if (this.previewCaptionOverlay && currentScene) {
+      const caption = currentScene.caption || '';
+      if (caption && this.captionsEnabled) {
+        this.previewCaptionOverlay.textContent = caption;
+        this.previewCaptionOverlay.classList.add('visible');
+      } else {
+        this.previewCaptionOverlay.classList.remove('visible');
+      }
+    }
+
+    // Update scrubber and time display
+    this.updateScrubberPosition();
+    this.updateTimeDisplay();
+
+    // Continue loop
+    this.animationFrame = requestAnimationFrame(() => this.animateNativeLayered());
+  }
+
   stopPlayback() {
     this.isPlaying = false;
     this.previewPlayPauseBtn.textContent = '▶️ Play';
@@ -3359,6 +3532,11 @@ class VideoEditor {
     // Stop native video if Avatar Only mode
     if (this.previewNativeVideo && !this.previewNativeVideo.hidden) {
       this.previewNativeVideo.pause();
+    }
+
+    // Stop native layered avatar video
+    if (this.previewAvatarVideo && !this.previewNativeLayered?.hidden) {
+      this.previewAvatarVideo.pause();
     }
 
     if (this.audioPlayer) {
