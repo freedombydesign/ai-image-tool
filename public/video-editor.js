@@ -120,18 +120,22 @@ class VideoEditor {
       return;
     }
 
-    // Use existing batch ID or create a new one based on timestamp
-    if (!this.currentBatchId) {
-      this.currentBatchId = `video-${Date.now()}`;
-    }
+    // Use a consistent batch ID for video editor scenes
+    const batchId = 'video-editor-main';
 
     try {
+      // Delete existing batch first to prevent duplicates
+      await fetch(`/api/db/batch-scenes/${userId}/${batchId}`, {
+        method: 'DELETE'
+      });
+
+      // Now save the current scenes
       const response = await fetch('/api/db/batch-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: userId,
-          batchId: this.currentBatchId,
+          batchId: batchId,
           scenes: this.scenes.map((scene, index) => ({
             imageUrl: scene.imageUrl,
             text: scene.text || scene.caption || '',
@@ -144,7 +148,7 @@ class VideoEditor {
       });
 
       if (response.ok) {
-        console.log(`Saved ${this.scenes.length} scenes to Supabase (batch: ${this.currentBatchId})`);
+        console.log(`Saved ${this.scenes.length} scenes to Supabase`);
       } else {
         const error = await response.json();
         console.error('Failed to save scenes:', error);
