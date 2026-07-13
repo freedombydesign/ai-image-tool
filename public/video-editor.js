@@ -3177,7 +3177,7 @@ CRITICAL STYLE RULES - SOFT PINK GLAM AESTHETIC:
 
 CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, harsh lighting, cool/blue tones, bright neon colors, busy cluttered backgrounds.
 
-CRITICAL: DO NOT include ANY text, words, letters, signs, labels, speech bubbles, text overlays, or written content in the image. The image must be purely visual with ZERO text of any kind.`;
+CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays.`;
 
     // Show loading state on the button
     const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
