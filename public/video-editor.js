@@ -120,23 +120,31 @@ class VideoEditor {
       return;
     }
 
+    // Use existing batch ID or create a new one based on timestamp
+    if (!this.currentBatchId) {
+      this.currentBatchId = `video-${Date.now()}`;
+    }
+
     try {
       const response = await fetch('/api/db/batch-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: userId,
-          scenes: this.scenes.map(scene => ({
+          batchId: this.currentBatchId,
+          scenes: this.scenes.map((scene, index) => ({
             imageUrl: scene.imageUrl,
             text: scene.text || scene.caption || '',
+            visualDescription: scene.visualDescription || '',
             duration: scene.duration,
-            startTime: scene.startTime
+            startTime: scene.startTime,
+            index: index
           }))
         })
       });
 
       if (response.ok) {
-        console.log(`Saved ${this.scenes.length} scenes to Supabase`);
+        console.log(`Saved ${this.scenes.length} scenes to Supabase (batch: ${this.currentBatchId})`);
       } else {
         const error = await response.json();
         console.error('Failed to save scenes:', error);
