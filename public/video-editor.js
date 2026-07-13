@@ -3122,15 +3122,17 @@ class VideoEditor {
     // Add content filter AND style consistency rules
     prompt = `${prompt}.
 
-CRITICAL STYLE RULES:
-- Soft, muted color palette (purples, sunset pinks, warm beiges, cream)
-- Cinematic lighting with soft gradients, warm sunset/evening tones
-- Cozy home office or living room setting with subtle decor
-- Abstract art or simple frames OK, but NO motivational quote posters
-- Character should wear neutral/soft colors (white, beige, cream, soft pink, black) - NOT bright red
-- Elegant, warm, approachable aesthetic
+CRITICAL STYLE RULES - SOFT PINK GLAM AESTHETIC:
+- Warm ambient lamp lighting with golden glow
+- Soft pink, lavender, and mauve wall tones
+- Cozy evening atmosphere with warm shadows
+- Elegant, glamorous but approachable feel
+- Rich warm color grading (pink, coral, warm browns)
+- Character in white blouse, cream, or soft neutral clothing
+- Soft bokeh background, cinematic depth of field
+- Luxurious but cozy interior (velvet, warm wood, soft textures)
 
-CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, "girlboss" aesthetic, mugs with slogans, busy cluttered backgrounds with lots of text.`;
+CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, harsh lighting, cool/blue tones, bright neon colors, busy cluttered backgrounds.`;
 
     // Show loading state on the button
     const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
