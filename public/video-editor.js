@@ -2899,8 +2899,8 @@ class VideoEditor {
       const words2 = new Set(getMeaningfulWords(text2));
       if (words1.size === 0 || words2.size === 0) return 0;
       const intersection = [...words1].filter(w => words2.has(w));
-      // Require at least 2 matching meaningful words
-      if (intersection.length < 2) return 0;
+      // Allow even 1 matching word for short dialogue
+      if (intersection.length === 0) return 0;
       return intersection.length / Math.min(words1.size, words2.size);
     };
 
@@ -2918,8 +2918,8 @@ class VideoEditor {
 
       const expectedTime = timing.startTime;
 
-      // Search window: ±15% of total duration around expected time
-      const windowSize = totalDuration * 0.15;
+      // Search window: ±25% of total duration around expected time (wider for better matching)
+      const windowSize = totalDuration * 0.25;
       const windowStart = Math.max(0, expectedTime - windowSize);
       const windowEnd = Math.min(totalDuration, expectedTime + windowSize);
 
@@ -2939,8 +2939,8 @@ class VideoEditor {
         }
       }
 
-      // Only refine if we have a CONFIDENT match (>0.5 similarity)
-      if (bestMatch && bestScore >= 0.5) {
+      // Only refine if we have a reasonable match (>0.3 similarity)
+      if (bestMatch && bestScore >= 0.3) {
         const newStartTime = Math.max(0, bestMatch.start - anticipation);
 
         // Only adjust if the refinement doesn't cause overlap issues
