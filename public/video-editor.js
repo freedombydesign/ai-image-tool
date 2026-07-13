@@ -2590,23 +2590,26 @@ class VideoEditor {
     // Adjust to fit exact duration
     const actualTotal = this.scenes.reduce((sum, s) => sum + s.duration, 0);
     const scale = totalDuration / actualTotal;
+    const anticipation = 1.5; // Show scenes 1.5 seconds BEFORE words are spoken
+
     currentTime = 0;
     this.scenes.forEach(scene => {
-      scene.startTime = currentTime;
+      scene.startTime = Math.max(0, currentTime - anticipation);
       scene.duration *= scale;
       currentTime += scene.duration;
     });
+
+    // Make scenes contiguous after anticipation shift
+    for (let i = 0; i < this.scenes.length - 1; i++) {
+      this.scenes[i].duration = this.scenes[i + 1].startTime - this.scenes[i].startTime;
+    }
+    this.scenes[this.scenes.length - 1].duration = totalDuration - this.scenes[this.scenes.length - 1].startTime;
 
     this.renderTimeline();
     this.renderCaptions();
     this.updateTotalDuration();
 
-    console.log('Word-based timing:');
-    this.scenes.forEach((s, i) => {
-      console.log(`Scene ${i + 1}: ${wordCounts[i]} words → ${s.duration.toFixed(1)}s`);
-    });
-
-    showToast(`Synced based on word count! Scenes with more text get more time.`, 'success');
+    showToast(`Synced based on word count (shifted ${anticipation}s earlier)`, 'success');
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)
@@ -2622,18 +2625,29 @@ class VideoEditor {
     }
 
     const durationPerScene = this.audioDuration / this.scenes.length;
+    const anticipation = 1.5; // Show scenes 1.5 seconds BEFORE words are spoken
 
     this.scenes.forEach((scene, index) => {
-      scene.startTime = index * durationPerScene;
+      // Shift each scene earlier by anticipation amount
+      scene.startTime = Math.max(0, (index * durationPerScene) - anticipation);
       scene.duration = durationPerScene;
     });
+
+    // Make sure scenes don't overlap due to anticipation shift
+    for (let i = 0; i < this.scenes.length - 1; i++) {
+      const nextStart = this.scenes[i + 1].startTime;
+      if (this.scenes[i].startTime + this.scenes[i].duration > nextStart) {
+        this.scenes[i].duration = nextStart - this.scenes[i].startTime;
+      }
+    }
+    // Last scene goes to end of audio
+    this.scenes[this.scenes.length - 1].duration = this.audioDuration - this.scenes[this.scenes.length - 1].startTime;
 
     this.renderTimeline();
     this.renderCaptions();
     this.updateTotalDuration();
 
-    const formatted = this.formatTime(durationPerScene);
-    showToast(`Distributed ${this.scenes.length} scenes evenly (~${durationPerScene.toFixed(1)}s each). Total: ${this.formatTime(this.audioDuration)}`, 'success');
+    showToast(`Distributed ${this.scenes.length} scenes (~${durationPerScene.toFixed(1)}s each, shifted ${anticipation}s earlier)`, 'success');
   }
 
   // Update the scene indicator during preview playback
