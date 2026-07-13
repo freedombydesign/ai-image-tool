@@ -1535,7 +1535,76 @@ app.post('/api/transcribe-url', async (req, res) => {
   }
 });
 
-// Transcribe audio using Whisper API with timestamps
+// Transcribe audio using base64 (more reliable on Vercel)
+app.post('/api/transcribe-base64', express.json({ limit: '50mb' }), async (req, res) => {
+  let tempPath = null;
+  try {
+    const { audio, extension, scenes } = req.body;
+
+    if (!audio) {
+      return res.status(400).json({ error: 'audio (base64) is required' });
+    }
+
+    console.log('Transcribing base64 audio, extension:', extension, 'scenes:', scenes?.length);
+
+    // Decode base64 to buffer
+    const base64Data = audio.replace(/^data:audio\/\w+;base64,/, '');
+    const fileBuffer = Buffer.from(base64Data, 'base64');
+    console.log('Decoded buffer length:', fileBuffer.length);
+
+    // Save to temp file
+    const ext = extension || 'mp3';
+    tempPath = `/tmp/transcribe_${Date.now()}.${ext}`;
+    fs.writeFileSync(tempPath, fileBuffer);
+    console.log('Saved to temp file:', tempPath);
+
+    // Transcribe with Whisper
+    console.log('Calling OpenAI Whisper API...');
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(tempPath),
+      model: 'whisper-1',
+      language: 'en',
+      response_format: 'verbose_json'
+    });
+    console.log('Transcription received, segments:', transcription.segments?.length);
+
+    // Cleanup temp file
+    if (tempPath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+
+    // Parse scenes if provided
+    const sceneList = scenes || [];
+
+    // If no scenes provided, just return the transcription
+    if (sceneList.length === 0) {
+      return res.json({
+        success: true,
+        transcription: transcription.text,
+        segments: transcription.segments
+      });
+    }
+
+    // Match scenes to transcription
+    const sceneTimings = matchScenesToTranscription(sceneList, transcription);
+
+    res.json({
+      success: true,
+      transcription: transcription.text,
+      segments: transcription.segments,
+      sceneTimings
+    });
+
+  } catch (error) {
+    console.error('Transcription error:', error.message);
+    if (tempPath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Transcribe audio using Whisper API with timestamps (file upload version)
 app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
   let tempPath = null;
   try {

@@ -2691,9 +2691,6 @@ class VideoEditor {
     }
 
     try {
-      // Prepare form data with audio and scene info
-      const formData = new FormData();
-
       // Determine audio file extension from blob type
       const mimeType = this.audioBlob.type || 'audio/mpeg';
       let extension = 'mp3';
@@ -2702,7 +2699,10 @@ class VideoEditor {
       else if (mimeType.includes('ogg')) extension = 'ogg';
       else if (mimeType.includes('m4a')) extension = 'm4a';
 
-      formData.append('audio', this.audioBlob, `audio.${extension}`);
+      // Convert audio blob to base64
+      showToast('Preparing audio for transcription...', 'info');
+      const arrayBuffer = await this.audioBlob.arrayBuffer();
+      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
       // Send scene text/descriptions for matching
       const sceneData = this.scenes.map((scene, index) => ({
@@ -2710,13 +2710,17 @@ class VideoEditor {
         text: scene.text || scene.caption || '',
         description: scene.visualDescription || ''
       }));
-      formData.append('scenes', JSON.stringify(sceneData));
 
       showToast('Transcribing audio with Whisper...', 'info');
 
-      const response = await fetch('/api/transcribe', {
+      const response = await fetch('/api/transcribe-base64', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audio: base64Audio,
+          extension: extension,
+          scenes: sceneData
+        })
       });
 
       const result = await response.json();
