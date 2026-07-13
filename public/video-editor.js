@@ -644,6 +644,16 @@ class VideoEditor {
       this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
     }
 
+    // Expanded Timeline Editor
+    const expandTimelineBtn = document.getElementById('expand-timeline-btn');
+    if (expandTimelineBtn) {
+      expandTimelineBtn.addEventListener('click', () => this.openExpandedTimeline());
+    }
+    const closeExpandedBtn = document.getElementById('close-expanded-timeline');
+    if (closeExpandedBtn) {
+      closeExpandedBtn.addEventListener('click', () => this.closeExpandedTimeline());
+    }
+
     // Captions
     if (this.generateCaptionsBtn) {
       this.generateCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio());
@@ -2893,7 +2903,7 @@ class VideoEditor {
     }
   }
 
-  // Match scenes to transcription segments using dialogue text matching
+  // Match scenes to transcription segments using SEMANTIC text matching
   matchScenesToSegments(segments, totalDuration) {
     if (!segments || segments.length === 0 || this.scenes.length === 0) {
       return 0;
@@ -2902,11 +2912,153 @@ class VideoEditor {
     console.log(`Matching ${this.scenes.length} scenes to ${segments.length} segments over ${totalDuration?.toFixed(1)}s`);
 
     const numScenes = this.scenes.length;
-    const numSegments = segments.length;
-    const anticipation = 2.0; // Start scene slightly before dialogue
+    const anticipation = 3.0; // Start scene before dialogue
+
+    // === SEMANTIC CONCEPT MAPPINGS ===
+    // Maps visual/conceptual keywords to related spoken words
+    const semanticMap = {
+      // Money & Abundance
+      'money': ['money', 'wealth', 'rich', 'income', 'financial', 'cash', 'dollars', 'abundance', 'prosperity', 'afford', 'earn', 'salary', 'budget', 'investment', 'debt', 'bills', 'pay', 'cost', 'expensive', 'savings'],
+      'wealth': ['wealth', 'wealthy', 'rich', 'money', 'abundance', 'prosperity', 'fortune', 'millionaire', 'assets', 'financial'],
+      'abundance': ['abundance', 'abundant', 'plenty', 'overflow', 'prosperity', 'wealth', 'rich', 'blessed', 'fortunate'],
+      'prosperity': ['prosperity', 'prosperous', 'wealth', 'success', 'thriving', 'flourishing', 'abundance'],
+      'financial': ['financial', 'finance', 'money', 'budget', 'income', 'expenses', 'debt', 'savings', 'investment'],
+
+      // Spirituality & Mindset
+      'meditation': ['meditation', 'meditate', 'calm', 'peace', 'mindful', 'breathe', 'relax', 'center', 'quiet', 'stillness', 'presence'],
+      'spiritual': ['spiritual', 'spirit', 'soul', 'divine', 'universe', 'energy', 'vibration', 'consciousness', 'awakening', 'enlightenment'],
+      'manifest': ['manifest', 'manifestation', 'attract', 'create', 'intention', 'desire', 'vision', 'dream', 'goal', 'reality'],
+      'mindset': ['mindset', 'mind', 'belief', 'think', 'thought', 'perspective', 'attitude', 'mental', 'psychology'],
+      'gratitude': ['gratitude', 'grateful', 'thankful', 'appreciate', 'blessing', 'blessed', 'thanks'],
+      'healing': ['healing', 'heal', 'health', 'wellness', 'recovery', 'restore', 'therapy', 'wholeness'],
+
+      // Emotions & States
+      'happy': ['happy', 'happiness', 'joy', 'joyful', 'pleased', 'delighted', 'content', 'satisfied', 'cheerful', 'smile'],
+      'love': ['love', 'loving', 'loved', 'heart', 'compassion', 'care', 'affection', 'romance', 'relationship'],
+      'fear': ['fear', 'afraid', 'scared', 'worry', 'anxiety', 'anxious', 'nervous', 'stress', 'panic', 'concern'],
+      'confident': ['confident', 'confidence', 'bold', 'brave', 'courage', 'strong', 'powerful', 'assertive'],
+      'peace': ['peace', 'peaceful', 'calm', 'serene', 'tranquil', 'quiet', 'still', 'relaxed'],
+      'stress': ['stress', 'stressed', 'anxiety', 'anxious', 'overwhelm', 'pressure', 'tension', 'worry'],
+
+      // Life & Growth
+      'journey': ['journey', 'path', 'road', 'travel', 'adventure', 'trip', 'way', 'route', 'destination'],
+      'growth': ['growth', 'grow', 'growing', 'develop', 'evolve', 'progress', 'improve', 'expand', 'transform'],
+      'change': ['change', 'changing', 'transform', 'shift', 'transition', 'different', 'new', 'evolve'],
+      'success': ['success', 'successful', 'achieve', 'accomplish', 'win', 'victory', 'triumph', 'goal'],
+      'dream': ['dream', 'dreams', 'vision', 'goal', 'aspiration', 'hope', 'desire', 'wish', 'imagine'],
+      'future': ['future', 'tomorrow', 'ahead', 'coming', 'next', 'forward', 'later', 'destiny', 'fate'],
+      'past': ['past', 'yesterday', 'before', 'history', 'memory', 'memories', 'ago', 'used', 'former'],
+
+      // People & Relationships
+      'woman': ['woman', 'women', 'lady', 'female', 'she', 'her', 'girl', 'mother', 'wife', 'sister', 'daughter'],
+      'man': ['man', 'men', 'male', 'he', 'him', 'guy', 'father', 'husband', 'brother', 'son'],
+      'family': ['family', 'families', 'parent', 'child', 'children', 'kids', 'mom', 'dad', 'mother', 'father'],
+      'friend': ['friend', 'friends', 'friendship', 'buddy', 'companion', 'relationship'],
+
+      // Actions & Activities
+      'work': ['work', 'working', 'job', 'career', 'business', 'profession', 'employment', 'office', 'boss'],
+      'learn': ['learn', 'learning', 'study', 'education', 'knowledge', 'understand', 'discover', 'teach'],
+      'create': ['create', 'creating', 'creation', 'build', 'make', 'design', 'craft', 'produce'],
+      'speak': ['speak', 'speaking', 'talk', 'say', 'tell', 'voice', 'words', 'communicate', 'express'],
+      'write': ['write', 'writing', 'written', 'journal', 'note', 'book', 'story', 'letter'],
+
+      // Nature & Environment
+      'nature': ['nature', 'natural', 'earth', 'world', 'environment', 'outdoors', 'outside', 'green'],
+      'sun': ['sun', 'sunshine', 'sunny', 'light', 'bright', 'morning', 'dawn', 'day', 'warm'],
+      'moon': ['moon', 'night', 'evening', 'dark', 'stars', 'midnight', 'sleep', 'dream'],
+      'ocean': ['ocean', 'sea', 'water', 'wave', 'beach', 'shore', 'flow', 'deep'],
+      'mountain': ['mountain', 'mountains', 'peak', 'climb', 'high', 'top', 'summit', 'hill'],
+      'forest': ['forest', 'trees', 'woods', 'nature', 'green', 'leaves', 'path', 'wilderness'],
+
+      // Body & Health
+      'body': ['body', 'physical', 'health', 'healthy', 'fitness', 'exercise', 'strength', 'energy'],
+      'brain': ['brain', 'mind', 'mental', 'think', 'thought', 'intelligence', 'smart', 'cognitive'],
+      'heart': ['heart', 'love', 'feel', 'feeling', 'emotion', 'passion', 'care', 'compassion'],
+      'energy': ['energy', 'energetic', 'power', 'force', 'vibration', 'frequency', 'dynamic', 'vital'],
+
+      // Abstract concepts
+      'time': ['time', 'moment', 'now', 'present', 'today', 'tomorrow', 'yesterday', 'hour', 'minute', 'year'],
+      'life': ['life', 'living', 'alive', 'exist', 'existence', 'lifetime', 'born', 'death', 'world'],
+      'truth': ['truth', 'true', 'real', 'reality', 'honest', 'authentic', 'genuine', 'fact'],
+      'power': ['power', 'powerful', 'strength', 'strong', 'force', 'energy', 'control', 'ability'],
+      'freedom': ['freedom', 'free', 'liberty', 'liberate', 'release', 'escape', 'independent']
+    };
+
+    // Stopwords to ignore
+    const stopwords = new Set(['the', 'a', 'an', 'i', 'you', 'to', 'and', 'of', 'is', 'it', 'in',
+      'that', 'for', 'on', 'with', 'as', 'at', 'by', 'this', 'be', 'are', 'was', 'have', 'has',
+      'had', 'but', 'or', 'not', 'so', 'if', 'my', 'your', 'we', 'they', 'me', 'him', 'her',
+      'its', 'just', 'like', 'dont', 'can', 'will', 'would', 'could', 'should', 'do', 'does',
+      'image', 'photo', 'picture', 'showing', 'depicts', 'scene', 'background', 'style',
+      'did', 'been', 'being', 'get', 'got', 'going', 'gonna', 'want', 'know', 'think', 'say',
+      'said', 'let', 'make', 'made', 'take', 'come', 'came', 'look', 'see', 'way', 'well',
+      'back', 'now', 'then', 'here', 'there', 'when', 'what', 'who', 'how', 'why', 'all',
+      'any', 'some', 'one', 'two', 'out', 'about', 'into', 'over', 'after', 'before']);
+
+    // Get ALL text from scene (prompt, text, caption, everything)
+    const getSceneText = (scene) => {
+      const parts = [
+        scene.text || '',
+        scene.caption || '',
+        scene.prompt || '',
+        scene.description || ''
+      ];
+      return parts.join(' ').toLowerCase();
+    };
+
+    // Get meaningful words from text
+    const getMeaningfulWords = (text) => {
+      return (text || '').toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !stopwords.has(w));
+    };
+
+    // Expand keywords using semantic map
+    const expandKeywords = (words) => {
+      const expanded = new Set(words);
+      words.forEach(word => {
+        // Direct semantic mappings
+        if (semanticMap[word]) {
+          semanticMap[word].forEach(syn => expanded.add(syn));
+        }
+        // Also check if word appears in any semantic group
+        Object.values(semanticMap).forEach(group => {
+          if (group.includes(word)) {
+            group.forEach(syn => expanded.add(syn));
+          }
+        });
+      });
+      return [...expanded];
+    };
+
+    // Calculate SEMANTIC similarity
+    const semanticSimilarity = (sceneText, segmentText) => {
+      const sceneWords = getMeaningfulWords(sceneText);
+      const segmentWords = new Set(getMeaningfulWords(segmentText));
+
+      if (sceneWords.length === 0 || segmentWords.size === 0) return 0;
+
+      // Expand scene keywords semantically
+      const expandedSceneWords = expandKeywords(sceneWords);
+
+      // Count matches (including semantic matches)
+      let matches = 0;
+      let directMatches = 0;
+
+      for (const word of expandedSceneWords) {
+        if (segmentWords.has(word)) {
+          matches++;
+          if (sceneWords.includes(word)) directMatches++;
+        }
+      }
+
+      // Score: direct matches count more
+      const score = (directMatches * 2 + matches) / (expandedSceneWords.length + sceneWords.length);
+      return Math.min(1, score);
+    };
 
     // === STEP 1: PROPORTIONAL BASELINE ===
-    // Every scene gets a guaranteed time based on position
     const sceneTimings = this.scenes.map((scene, i) => ({
       sceneIndex: i,
       startTime: (i / numScenes) * totalDuration,
@@ -2917,98 +3069,60 @@ class VideoEditor {
 
     console.log('Step 1: Assigned proportional times to all', numScenes, 'scenes');
 
-    // === STEP 2: DIALOGUE REFINEMENT ===
-    // For scenes with dialogue, try to snap to matching audio segment
-
-    // Stopwords to ignore in matching
-    const stopwords = new Set(['the', 'a', 'an', 'i', 'you', 'to', 'and', 'of', 'is', 'it', 'in',
-      'that', 'for', 'on', 'with', 'as', 'at', 'by', 'this', 'be', 'are', 'was', 'have', 'has',
-      'had', 'but', 'or', 'not', 'so', 'if', 'my', 'your', 'we', 'they', 'me', 'him', 'her',
-      'its', 'just', 'like', 'dont', 'can', 'will', 'would', 'could', 'should', 'do', 'does',
-      'did', 'been', 'being', 'get', 'got', 'going', 'gonna', 'want', 'know', 'think', 'say',
-      'said', 'let', 'make', 'made', 'take', 'come', 'came', 'look', 'see', 'way', 'well',
-      'back', 'now', 'then', 'here', 'there', 'when', 'what', 'who', 'how', 'why', 'all',
-      'any', 'some', 'one', 'two', 'out', 'about', 'into', 'over', 'after', 'before']);
-
-    // Extract dialogue from scene (text in quotes)
-    const getDialogue = (scene) => {
-      const text = scene.text || scene.caption || '';
-      const quotes = text.match(/"([^"]*)"/g) || [];
-      return quotes.map(q => q.replace(/"/g, '')).join(' ').toLowerCase();
-    };
-
-    // Get meaningful words (no stopwords, 3+ chars)
-    const getMeaningfulWords = (text) => {
-      return (text || '').toLowerCase()
-        .replace(/[^\w\s]/g, '')
-        .split(/\s+/)
-        .filter(w => w.length >= 3 && !stopwords.has(w));
-    };
-
-    // Calculate similarity (Jaccard with meaningful words only)
-    const similarity = (text1, text2) => {
-      const words1 = new Set(getMeaningfulWords(text1));
-      const words2 = new Set(getMeaningfulWords(text2));
-      if (words1.size === 0 || words2.size === 0) return 0;
-      const intersection = [...words1].filter(w => words2.has(w));
-      // Allow even 1 matching word for short dialogue
-      if (intersection.length === 0) return 0;
-      return intersection.length / Math.min(words1.size, words2.size);
-    };
-
-    // Build a time-indexed lookup of segments for fast searching
-    const segmentsByTime = segments.map((seg, idx) => ({ ...seg, idx }));
+    // === STEP 2: SEMANTIC MATCHING ===
+    // For EACH scene, search ALL segments for the best semantic match
 
     let refinedCount = 0;
+    const usedSegments = new Set(); // Track used segments to avoid duplicate placements
 
-    // For each scene, look for a matching segment near its proportional time
     sceneTimings.forEach((timing, sceneIndex) => {
       const scene = this.scenes[sceneIndex];
-      const dialogue = getDialogue(scene);
+      const sceneText = getSceneText(scene);
 
-      if (!dialogue || dialogue.length < 5) return; // Skip scenes without dialogue
+      if (!sceneText || sceneText.length < 10) return;
 
       const expectedTime = timing.startTime;
 
-      // Search window: ±25% of total duration around expected time (wider for better matching)
-      const windowSize = totalDuration * 0.25;
-      const windowStart = Math.max(0, expectedTime - windowSize);
-      const windowEnd = Math.min(totalDuration, expectedTime + windowSize);
-
-      // Find segments within the time window
-      const candidateSegments = segmentsByTime.filter(seg =>
-        seg.start >= windowStart && seg.start <= windowEnd
-      );
-
+      // Search ALL segments, but prefer ones closer to expected time
       let bestMatch = null;
       let bestScore = 0;
 
-      for (const seg of candidateSegments) {
-        const score = similarity(dialogue, seg.text);
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = seg;
-        }
-      }
+      segments.forEach((seg, segIdx) => {
+        if (usedSegments.has(segIdx)) return; // Skip already used segments
 
-      // Only refine if we have a reasonable match (>0.3 similarity)
-      if (bestMatch && bestScore >= 0.3) {
+        const baseScore = semanticSimilarity(sceneText, seg.text);
+
+        // Bonus for being near expected position (encourages order preservation)
+        const timeDiff = Math.abs(seg.start - expectedTime) / totalDuration;
+        const positionBonus = Math.max(0, 0.3 - timeDiff); // Up to 0.3 bonus for close matches
+
+        const finalScore = baseScore + positionBonus;
+
+        if (finalScore > bestScore && baseScore >= 0.15) { // Lower threshold for semantic matching
+          bestScore = finalScore;
+          bestMatch = { ...seg, idx: segIdx, baseScore };
+        }
+      });
+
+      // Accept matches with reasonable confidence
+      if (bestMatch && bestMatch.baseScore >= 0.15) {
         const newStartTime = Math.max(0, bestMatch.start - anticipation);
 
-        // Only adjust if the refinement doesn't cause overlap issues
-        const prevTime = sceneIndex > 0 ? sceneTimings[sceneIndex - 1].startTime : -1;
-        if (newStartTime > prevTime) {
-          timing.startTime = newStartTime;
-          timing.confidence = bestScore;
-          timing.matched = true;
-          timing.method = 'dialogue';
-          refinedCount++;
-          console.log(`Scene ${sceneIndex + 1} refined: ${expectedTime.toFixed(1)}s → ${newStartTime.toFixed(1)}s (${(bestScore * 100).toFixed(0)}% match)`);
-        }
+        timing.startTime = newStartTime;
+        timing.confidence = bestMatch.baseScore;
+        timing.matched = true;
+        timing.method = 'semantic';
+        timing.matchedText = bestMatch.text?.substring(0, 50);
+        usedSegments.add(bestMatch.idx);
+        refinedCount++;
+
+        console.log(`Scene ${sceneIndex + 1} matched: ${expectedTime.toFixed(1)}s → ${newStartTime.toFixed(1)}s (${(bestMatch.baseScore * 100).toFixed(0)}% semantic match)`);
+        console.log(`  Scene: "${sceneText.substring(0, 60)}..."`);
+        console.log(`  Audio: "${bestMatch.text?.substring(0, 60)}..."`);
       }
     });
 
-    console.log(`Step 2: Refined ${refinedCount}/${numScenes} scenes using dialogue matching`);
+    console.log(`Step 2: Matched ${refinedCount}/${numScenes} scenes using SEMANTIC matching`);
 
     // === STEP 3: REDISTRIBUTE BETWEEN ANCHORS ===
     // Find anchor points (refined scenes) and redistribute unrefined scenes between them
@@ -3122,6 +3236,271 @@ class VideoEditor {
     this.updateTotalDuration();
 
     showToast(`Distributed ${this.scenes.length} scenes (~${durationPerScene.toFixed(1)}s each, shifted ${anticipation}s earlier)`, 'success');
+  }
+
+  // ===== EXPANDED TIMELINE EDITOR =====
+
+  openExpandedTimeline() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first to use the timeline editor.');
+      return;
+    }
+
+    const modal = document.getElementById('expanded-timeline-modal');
+    if (!modal) return;
+
+    modal.style.display = 'flex';
+    this.renderExpandedTimeline();
+    this.setupExpandedTimelineInteractions();
+
+    // Update preview with first scene
+    this.updateExpandedPreview(0);
+
+    // Bind control buttons
+    const playBtn = document.getElementById('expanded-play-btn');
+    const syncBtn = document.getElementById('expanded-sync-audio-btn');
+    const distributeBtn = document.getElementById('expanded-distribute-btn');
+
+    if (playBtn) {
+      playBtn.onclick = () => this.toggleExpandedPlayback();
+    }
+    if (syncBtn) {
+      syncBtn.onclick = () => {
+        this.syncToAudio();
+        this.renderExpandedTimeline();
+        this.setupExpandedTimelineInteractions();
+      };
+    }
+    if (distributeBtn) {
+      distributeBtn.onclick = () => {
+        this.distributeEvenly();
+        this.renderExpandedTimeline();
+        this.setupExpandedTimelineInteractions();
+      };
+    }
+  }
+
+  closeExpandedTimeline() {
+    const modal = document.getElementById('expanded-timeline-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+
+    // Stop any playback
+    if (this.expandedPlaybackInterval) {
+      clearInterval(this.expandedPlaybackInterval);
+      this.expandedPlaybackInterval = null;
+    }
+    if (this.audioElement) {
+      this.audioElement.pause();
+    }
+
+    // Re-render the regular timeline
+    this.renderTimeline();
+    this.renderCaptions();
+  }
+
+  renderExpandedTimeline() {
+    const scenesContainer = document.getElementById('expanded-timeline-scenes');
+    if (!scenesContainer) return;
+
+    const totalDuration = this.audioDuration || this.getTotalDuration();
+
+    scenesContainer.innerHTML = this.scenes.map((scene, index) => {
+      const leftPercent = (scene.startTime / totalDuration) * 100;
+      const widthPercent = (scene.duration / totalDuration) * 100;
+      return `
+        <div class="expanded-scene" data-index="${index}"
+             style="left: ${leftPercent}%; width: ${widthPercent}%">
+          <img src="${scene.imageUrl}" alt="Scene ${index + 1}">
+          <span class="scene-label">${index + 1}</span>
+          <span class="scene-time">${scene.duration.toFixed(1)}s</span>
+        </div>
+      `;
+    }).join('');
+
+    // Render waveform copy
+    const waveformArea = document.getElementById('expanded-waveform');
+    if (waveformArea && this.waveformContainer) {
+      // Copy waveform visual
+      const svg = this.waveformContainer.querySelector('svg');
+      if (svg) {
+        waveformArea.innerHTML = '';
+        const clone = svg.cloneNode(true);
+        clone.style.width = '100%';
+        clone.style.height = '100%';
+        waveformArea.appendChild(clone);
+      }
+    }
+  }
+
+  updateExpandedPreview(sceneIndex) {
+    const scene = this.scenes[sceneIndex];
+    if (!scene) return;
+
+    const previewImg = document.getElementById('expanded-preview-image');
+    const sceneNumber = document.getElementById('expanded-scene-number');
+    const sceneTime = document.getElementById('expanded-scene-time');
+
+    if (previewImg) previewImg.src = scene.imageUrl;
+    if (sceneNumber) sceneNumber.textContent = `Scene ${sceneIndex + 1}`;
+    if (sceneTime) sceneTime.textContent = this.formatTime(scene.startTime);
+  }
+
+  setupExpandedTimelineInteractions() {
+    const scenesContainer = document.getElementById('expanded-timeline-scenes');
+    if (!scenesContainer) return;
+
+    const sceneElements = scenesContainer.querySelectorAll('.expanded-scene');
+
+    sceneElements.forEach(sceneEl => {
+      const sceneIndex = parseInt(sceneEl.dataset.index);
+      let isDragging = false;
+      let dragStartX, dragStartLeft;
+      let lastScrubTime = 0;
+
+      const onMouseDown = (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartLeft = sceneEl.offsetLeft;
+        sceneEl.classList.add('dragging');
+
+        // Update preview to this scene
+        this.updateExpandedPreview(sceneIndex);
+
+        // Start audio scrubbing
+        if (this.audioElement) {
+          this.audioElement.pause();
+        }
+
+        e.preventDefault();
+      };
+
+      const onMouseMove = (e) => {
+        if (!isDragging) return;
+
+        const timelineWidth = scenesContainer.offsetWidth;
+        const totalDuration = this.audioDuration || this.getTotalDuration();
+
+        const diff = e.clientX - dragStartX;
+        const newLeft = Math.max(0, Math.min(timelineWidth - sceneEl.offsetWidth, dragStartLeft + diff));
+        const newStartTime = (newLeft / timelineWidth) * totalDuration;
+
+        // Update scene position
+        this.scenes[sceneIndex].startTime = Math.max(0, newStartTime);
+
+        // Update visual position directly
+        sceneEl.style.left = `${(newStartTime / totalDuration) * 100}%`;
+
+        // Update preview info
+        const sceneTime = document.getElementById('expanded-scene-time');
+        if (sceneTime) sceneTime.textContent = this.formatTime(newStartTime);
+
+        // Update current time display
+        const currentTimeEl = document.getElementById('expanded-current-time');
+        if (currentTimeEl) {
+          currentTimeEl.textContent = `${this.formatTime(newStartTime)} / ${this.formatTime(totalDuration)}`;
+        }
+
+        // Audio scrubbing - play at current position (throttled)
+        const now = Date.now();
+        if (this.audioElement && now - lastScrubTime > 80) {
+          lastScrubTime = now;
+          this.audioElement.currentTime = newStartTime;
+          this.audioElement.play().catch(() => {});
+
+          // Stop after a short moment
+          setTimeout(() => {
+            if (isDragging && this.audioElement) {
+              this.audioElement.pause();
+            }
+          }, 120);
+        }
+
+        // Update playhead position
+        const playhead = document.getElementById('expanded-timeline-playhead');
+        if (playhead) {
+          playhead.style.left = `${(newStartTime / totalDuration) * 100}%`;
+        }
+      };
+
+      const onMouseUp = () => {
+        if (!isDragging) return;
+
+        isDragging = false;
+        sceneEl.classList.remove('dragging');
+
+        // Stop audio
+        if (this.audioElement) {
+          this.audioElement.pause();
+        }
+
+        // Re-render to update positions
+        this.renderExpandedTimeline();
+        this.setupExpandedTimelineInteractions();
+
+        // Save changes
+        this.saveScenesToSupabase();
+      };
+
+      sceneEl.addEventListener('mousedown', onMouseDown);
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
+  toggleExpandedPlayback() {
+    const playBtn = document.getElementById('expanded-play-btn');
+
+    if (this.expandedPlaybackInterval) {
+      // Stop playback
+      clearInterval(this.expandedPlaybackInterval);
+      this.expandedPlaybackInterval = null;
+      if (this.audioElement) this.audioElement.pause();
+      if (playBtn) playBtn.textContent = '▶️ Play';
+    } else {
+      // Start playback
+      if (!this.audioElement) return;
+
+      this.audioElement.currentTime = 0;
+      this.audioElement.play().catch(() => {});
+      if (playBtn) playBtn.textContent = '⏸️ Pause';
+
+      const totalDuration = this.audioDuration || this.getTotalDuration();
+
+      this.expandedPlaybackInterval = setInterval(() => {
+        if (!this.audioElement) return;
+
+        const currentTime = this.audioElement.currentTime;
+
+        // Update playhead
+        const playhead = document.getElementById('expanded-timeline-playhead');
+        if (playhead) {
+          playhead.style.left = `${(currentTime / totalDuration) * 100}%`;
+        }
+
+        // Update current time display
+        const currentTimeEl = document.getElementById('expanded-current-time');
+        if (currentTimeEl) {
+          currentTimeEl.textContent = `${this.formatTime(currentTime)} / ${this.formatTime(totalDuration)}`;
+        }
+
+        // Find and show current scene
+        const currentScene = this.getSceneAtTime(currentTime);
+        if (currentScene) {
+          const sceneIndex = this.scenes.indexOf(currentScene);
+          this.updateExpandedPreview(sceneIndex);
+        }
+
+        // Stop at end
+        if (currentTime >= totalDuration) {
+          clearInterval(this.expandedPlaybackInterval);
+          this.expandedPlaybackInterval = null;
+          this.audioElement.pause();
+          if (playBtn) playBtn.textContent = '▶️ Play';
+        }
+      }, 50);
+    }
   }
 
   // Update the scene indicator during preview playback
@@ -3353,17 +3732,21 @@ class VideoEditor {
   }
 
   renderTimeline() {
-    const totalDuration = this.getTotalDuration();
+    const totalDuration = this.audioDuration || this.getTotalDuration();
 
     this.timelineScenes.innerHTML = this.scenes.map((scene, index) => {
+      const leftPercent = (scene.startTime / totalDuration) * 100;
       const widthPercent = (scene.duration / totalDuration) * 100;
       return `
-        <div class="timeline-scene" data-index="${index}" style="width: ${widthPercent}%">
+        <div class="timeline-scene" data-index="${index}"
+             style="left: ${leftPercent}%; width: ${widthPercent}%">
+          <div class="drag-handle" title="Drag to reposition">⋮⋮</div>
           <img src="${scene.imageUrl}" alt="Scene ${index + 1}"
                onclick="videoEditor.viewSceneFullscreen(${index})"
                title="Click to view full size" style="cursor: pointer;">
+          <span class="scene-number">${index + 1}</span>
           <span class="scene-duration">${scene.duration.toFixed(1)}s</span>
-          <div class="resize-handle"></div>
+          <div class="resize-handle" title="Drag to resize"></div>
         </div>
       `;
     }).join('');
@@ -3372,39 +3755,160 @@ class VideoEditor {
   }
 
   initTimelineInteractions() {
-    const scenes = this.timelineScenes.querySelectorAll('.timeline-scene');
+    const sceneElements = this.timelineScenes.querySelectorAll('.timeline-scene');
 
-    scenes.forEach(scene => {
-      const handle = scene.querySelector('.resize-handle');
+    // Clean up any existing time indicator
+    const existingIndicator = document.querySelector('.drag-time-indicator');
+    if (existingIndicator) existingIndicator.remove();
+
+    // Remove old event listeners
+    if (this._timelineCleanup) {
+      this._timelineCleanup.forEach(fn => fn());
+    }
+    this._timelineCleanup = [];
+
+    sceneElements.forEach(sceneEl => {
+      const resizeHandle = sceneEl.querySelector('.resize-handle');
+      const dragHandle = sceneEl.querySelector('.drag-handle');
+      const sceneIndex = parseInt(sceneEl.dataset.index);
+
+      // ===== RESIZE FUNCTIONALITY =====
       let isResizing = false;
-      let startX, startWidth, sceneIndex;
+      let resizeStartX, resizeStartWidth;
 
-      handle.addEventListener('mousedown', (e) => {
+      resizeHandle.addEventListener('mousedown', (e) => {
         isResizing = true;
-        startX = e.clientX;
-        startWidth = scene.offsetWidth;
-        sceneIndex = parseInt(scene.dataset.index);
+        resizeStartX = e.clientX;
+        resizeStartWidth = sceneEl.offsetWidth;
         e.preventDefault();
+        e.stopPropagation();
       });
 
-      document.addEventListener('mousemove', (e) => {
-        if (!isResizing) return;
+      // ===== DRAG FUNCTIONALITY =====
+      let isDragging = false;
+      let dragStartX, dragStartLeft;
+      let timeIndicator = null;
+      let lastScrubTime = 0;
 
-        const diff = e.clientX - startX;
+      const startDrag = (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartLeft = sceneEl.offsetLeft;
+        sceneEl.classList.add('dragging');
+
+        // Create time indicator
+        timeIndicator = document.createElement('div');
+        timeIndicator.className = 'drag-time-indicator';
+        document.body.appendChild(timeIndicator);
+
+        // Start audio scrubbing - pause any current playback
+        if (this.audioElement) {
+          this.audioElement.pause();
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      dragHandle.addEventListener('mousedown', startDrag);
+
+      // Also allow dragging from anywhere on the scene (not just drag handle)
+      sceneEl.addEventListener('mousedown', (e) => {
+        // Ignore if clicking on resize handle, drag handle, or image
+        if (e.target === resizeHandle || e.target === dragHandle || e.target.tagName === 'IMG') {
+          return;
+        }
+        startDrag(e);
+      });
+
+      // Shared mousemove handler
+      const onMouseMove = (e) => {
         const timelineWidth = this.timelineScenes.offsetWidth;
-        const totalDuration = this.getTotalDuration();
+        const totalDuration = this.audioDuration || this.getTotalDuration();
 
-        const newWidth = Math.max(40, startWidth + diff);
-        const newDuration = (newWidth / timelineWidth) * totalDuration;
+        if (isResizing) {
+          const diff = e.clientX - resizeStartX;
+          const newWidth = Math.max(40, resizeStartWidth + diff);
+          const newDuration = (newWidth / timelineWidth) * totalDuration;
 
-        this.scenes[sceneIndex].duration = Math.max(0.5, newDuration);
-        this.recalculateTimings();
-        this.renderTimeline();
-        this.updateTotalDuration();
-      });
+          this.scenes[sceneIndex].duration = Math.max(0.5, newDuration);
+          // Don't recalculate timings - allow non-contiguous scenes
+          this.renderTimeline();
+          this.updateTotalDuration();
+        }
 
-      document.addEventListener('mouseup', () => {
-        isResizing = false;
+        if (isDragging) {
+          const diff = e.clientX - dragStartX;
+          const newLeft = Math.max(0, Math.min(timelineWidth - sceneEl.offsetWidth, dragStartLeft + diff));
+          const newStartTime = (newLeft / timelineWidth) * totalDuration;
+
+          // Update scene position
+          this.scenes[sceneIndex].startTime = Math.max(0, newStartTime);
+
+          // Update visual position directly for smoother dragging
+          sceneEl.style.left = `${(newStartTime / totalDuration) * 100}%`;
+
+          // Update time indicator
+          if (timeIndicator) {
+            timeIndicator.textContent = `${this.formatTime(newStartTime)}`;
+            timeIndicator.style.left = `${e.clientX + 10}px`;
+            timeIndicator.style.top = `${e.clientY - 30}px`;
+          }
+
+          // Audio scrubbing - play audio at current position (throttled)
+          const now = Date.now();
+          if (this.audioElement && now - lastScrubTime > 100) {
+            lastScrubTime = now;
+            this.audioElement.currentTime = newStartTime;
+            this.audioElement.play().catch(() => {});
+
+            // Stop after a short moment to create scrubbing effect
+            setTimeout(() => {
+              if (isDragging && this.audioElement) {
+                this.audioElement.pause();
+              }
+            }, 150);
+          }
+        }
+      };
+
+      // Shared mouseup handler
+      const onMouseUp = () => {
+        if (isResizing) {
+          isResizing = false;
+        }
+
+        if (isDragging) {
+          isDragging = false;
+          sceneEl.classList.remove('dragging');
+
+          // Stop audio scrubbing
+          if (this.audioElement) {
+            this.audioElement.pause();
+          }
+
+          // Remove time indicator
+          if (timeIndicator) {
+            timeIndicator.remove();
+            timeIndicator = null;
+          }
+
+          // Re-render to ensure proper ordering
+          this.renderTimeline();
+          this.renderCaptions();
+
+          // Save changes
+          this.saveScenesToSupabase();
+        }
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+
+      // Store cleanup functions
+      this._timelineCleanup.push(() => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
       });
     });
   }

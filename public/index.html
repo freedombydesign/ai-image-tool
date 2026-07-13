@@ -825,6 +825,7 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 <button class="btn secondary small" id="sync-to-speech-btn" title="Set scene durations based on speech pacing">🎤 Sync to Speech</button>
                 <button class="btn secondary small" id="sync-to-audio-btn" title="Transcribe audio and match scenes to spoken words">🎯 Sync to Audio</button>
                 <button class="btn secondary small" id="distribute-evenly-btn">⚖️ Distribute Evenly</button>
+                <button class="btn primary small" id="expand-timeline-btn" title="Open fullscreen timeline editor">🔲 Expand</button>
                 <span class="timeline-duration">Duration: <span id="total-duration">0:00</span></span>
               </div>
               <div id="waveform-container" class="waveform-container"></div>
@@ -2142,6 +2143,38 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
     <footer>
       <p>Powered by GPT Image 2 • Flux • Stable Diffusion • InstantID</p>
     </footer>
+  </div>
+
+  <!-- Expanded Timeline Editor Modal -->
+  <div id="expanded-timeline-modal" class="expanded-timeline-modal" style="display: none;">
+    <div class="expanded-timeline-content">
+      <div class="expanded-timeline-header">
+        <h2>Timeline Editor</h2>
+        <div class="expanded-timeline-controls">
+          <button class="btn secondary small" id="expanded-play-btn">▶️ Play</button>
+          <button class="btn secondary small" id="expanded-sync-audio-btn">🎯 Sync to Audio</button>
+          <button class="btn secondary small" id="expanded-distribute-btn">⚖️ Distribute</button>
+          <span id="expanded-current-time">0:00 / 0:00</span>
+          <button class="btn secondary" id="close-expanded-timeline">✕ Close</button>
+        </div>
+      </div>
+      <div class="expanded-preview-area">
+        <div class="expanded-preview-container">
+          <img id="expanded-preview-image" src="" alt="Scene preview">
+          <div class="expanded-preview-info">
+            <span id="expanded-scene-number">Scene 1</span>
+            <span id="expanded-scene-time">0:00</span>
+          </div>
+        </div>
+      </div>
+      <div class="expanded-waveform-area">
+        <div id="expanded-waveform" class="expanded-waveform"></div>
+      </div>
+      <div class="expanded-timeline-area">
+        <div id="expanded-timeline-playhead" class="expanded-playhead"></div>
+        <div id="expanded-timeline-scenes" class="expanded-scenes"></div>
+      </div>
+    </div>
   </div>
 
   <script src="history.js"></script>
