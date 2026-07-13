@@ -2816,6 +2816,19 @@ class VideoEditor {
       return 0;
     }
 
+    // Log transcription segments for debugging
+    console.log('Transcription segments:', segments.map((s, i) => ({
+      i,
+      start: s.start?.toFixed(1),
+      end: s.end?.toFixed(1),
+      text: s.text?.substring(0, 50)
+    })));
+
+    console.log('Scene texts:', this.scenes.map((s, i) => ({
+      i: i + 1,
+      text: (s.text || s.caption || s.visualDescription || '').substring(0, 50)
+    })));
+
     // Normalize text for comparison
     const normalize = (text) => {
       return (text || '').toLowerCase()
@@ -2860,8 +2873,8 @@ class VideoEditor {
 
       if (bestMatch && bestScore > 0.05) {
         usedSegments.add(bestSegmentIndex);
-        // Show scene 1 second before speech
-        const anticipation = 1.0;
+        // Show scene 3 seconds before speech for better visual anticipation
+        const anticipation = 3.0;
         sceneTimings.push({
           sceneIndex,
           startTime: Math.max(0, bestMatch.start - anticipation),
