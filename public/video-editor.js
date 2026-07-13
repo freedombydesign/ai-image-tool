@@ -2699,10 +2699,19 @@ class VideoEditor {
       else if (mimeType.includes('ogg')) extension = 'ogg';
       else if (mimeType.includes('m4a')) extension = 'm4a';
 
-      // Convert audio blob to base64
+      // Convert audio blob to base64 (chunk-safe for large files)
       showToast('Preparing audio for transcription...', 'info');
-      const arrayBuffer = await this.audioBlob.arrayBuffer();
-      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const base64Audio = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          // Remove the data:audio/xxx;base64, prefix
+          const base64 = dataUrl.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(this.audioBlob);
+      });
 
       // Send scene text/descriptions for matching
       const sceneData = this.scenes.map((scene, index) => ({
@@ -2758,7 +2767,7 @@ class VideoEditor {
       console.error('Sync to audio error:', error);
       const errorMsg = error.details || error.message || 'Unknown error';
       showToast(`Sync failed: ${errorMsg}`, 'error');
-      alert('Sync Error Details:\n\n' + JSON.stringify(error, null, 2));
+      alert('Sync Error:\n\nMessage: ' + (error.message || 'none') + '\nDetails: ' + (error.details || 'none') + '\nName: ' + (error.name || 'none'));
     } finally {
       // Restore button state
       if (this.syncToAudioBtn) {
