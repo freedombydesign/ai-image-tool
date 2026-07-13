@@ -2757,29 +2757,51 @@ class VideoEditor {
       const audioUrl = urlData.publicUrl;
       console.log('Step 4c: Audio uploaded to:', audioUrl);
 
-      // Step 4: Transcribe from URL
-      showToast('Transcribing audio with Whisper...', 'info');
+      // Step 4: Check cache first to avoid re-transcribing
+      const audioHash = await this.generateAudioHash(this.audioBlob);
+      const cacheKey = `transcription_${audioHash}`;
+      let result = null;
 
-      console.log('Step 5: Sending transcribe request to:', audioUrl);
-      const response = await fetch('/api/transcribe-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: audioUrl })
-      });
-
-      console.log('Step 6: Transcribe response status:', response.status);
-      const responseText = await response.text();
-      console.log('Step 7: Response preview:', responseText.substring(0, 100));
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        throw new Error('Invalid transcription response: ' + responseText.substring(0, 100));
+      // Try to get cached transcription
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          result = JSON.parse(cached);
+          console.log('Using CACHED transcription (saving API cost!)', result.segments?.length, 'segments');
+          showToast('Using cached transcription (no API cost)', 'success');
+        } catch (e) {
+          console.log('Cache invalid, will re-transcribe');
+        }
       }
 
-      if (!response.ok || result.error) {
-        throw new Error(result.error || 'Transcription failed');
+      // If no cache, transcribe
+      if (!result) {
+        showToast('Transcribing audio with Whisper...', 'info');
+
+        console.log('Step 5: Sending transcribe request to:', audioUrl);
+        const response = await fetch('/api/transcribe-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrl: audioUrl })
+        });
+
+        console.log('Step 6: Transcribe response status:', response.status);
+        const responseText = await response.text();
+        console.log('Step 7: Response preview:', responseText.substring(0, 100));
+
+        try {
+          result = JSON.parse(responseText);
+        } catch (e) {
+          throw new Error('Invalid transcription response: ' + responseText.substring(0, 100));
+        }
+
+        if (!response.ok || result.error) {
+          throw new Error(result.error || 'Transcription failed');
+        }
+
+        // Cache the result for future syncs
+        localStorage.setItem(cacheKey, JSON.stringify(result));
+        console.log('Transcription cached for future use');
       }
 
       console.log('Step 8: Transcription received:', result.segments?.length, 'segments');
