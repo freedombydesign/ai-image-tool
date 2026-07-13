@@ -2813,11 +2813,9 @@ class VideoEditor {
       this.renderCaptions();
       this.updateTotalDuration();
 
-      if (matchedCount > 0) {
-        showToast(`Synced ${matchedCount}/${this.scenes.length} scenes to audio`, 'success');
-      } else {
-        showToast('Could not match scenes to audio. Try "Distribute Evenly" instead.', 'warning');
-      }
+      // All scenes now get timing (proportional baseline + dialogue refinement)
+      const refinedMsg = matchedCount > 0 ? `, ${matchedCount} refined by dialogue` : '';
+      showToast(`All ${this.scenes.length} scenes synced to ${(result.duration || this.audioDuration).toFixed(0)}s audio${refinedMsg}`, 'success');
 
     } catch (error) {
       console.error('Sync to audio error:', error);
@@ -2841,119 +2839,127 @@ class VideoEditor {
 
     console.log(`Matching ${this.scenes.length} scenes to ${segments.length} segments over ${totalDuration?.toFixed(1)}s`);
 
-    // Extract dialogue (text in quotes) from scene text
+    const numScenes = this.scenes.length;
+    const numSegments = segments.length;
+    const anticipation = 2.0; // Start scene slightly before dialogue
+
+    // === STEP 1: PROPORTIONAL BASELINE ===
+    // Every scene gets a guaranteed time based on position
+    const sceneTimings = this.scenes.map((scene, i) => ({
+      sceneIndex: i,
+      startTime: (i / numScenes) * totalDuration,
+      confidence: 0,
+      matched: false,
+      method: 'proportional'
+    }));
+
+    console.log('Step 1: Assigned proportional times to all', numScenes, 'scenes');
+
+    // === STEP 2: DIALOGUE REFINEMENT ===
+    // For scenes with dialogue, try to snap to matching audio segment
+
+    // Stopwords to ignore in matching
+    const stopwords = new Set(['the', 'a', 'an', 'i', 'you', 'to', 'and', 'of', 'is', 'it', 'in',
+      'that', 'for', 'on', 'with', 'as', 'at', 'by', 'this', 'be', 'are', 'was', 'have', 'has',
+      'had', 'but', 'or', 'not', 'so', 'if', 'my', 'your', 'we', 'they', 'me', 'him', 'her',
+      'its', 'just', 'like', 'dont', 'can', 'will', 'would', 'could', 'should', 'do', 'does',
+      'did', 'been', 'being', 'get', 'got', 'going', 'gonna', 'want', 'know', 'think', 'say',
+      'said', 'let', 'make', 'made', 'take', 'come', 'came', 'look', 'see', 'way', 'well',
+      'back', 'now', 'then', 'here', 'there', 'when', 'what', 'who', 'how', 'why', 'all',
+      'any', 'some', 'one', 'two', 'out', 'about', 'into', 'over', 'after', 'before']);
+
+    // Extract dialogue from scene (text in quotes)
     const getDialogue = (scene) => {
       const text = scene.text || scene.caption || '';
       const quotes = text.match(/"([^"]*)"/g) || [];
       return quotes.map(q => q.replace(/"/g, '')).join(' ').toLowerCase();
     };
 
-    // Normalize text for comparison
-    const normalize = (text) => {
+    // Get meaningful words (no stopwords, 3+ chars)
+    const getMeaningfulWords = (text) => {
       return (text || '').toLowerCase()
         .replace(/[^\w\s]/g, '')
         .split(/\s+/)
-        .filter(w => w.length > 2);
+        .filter(w => w.length >= 3 && !stopwords.has(w));
     };
 
-    // Calculate word overlap between two texts
+    // Calculate similarity (Jaccard with meaningful words only)
     const similarity = (text1, text2) => {
-      const words1 = new Set(normalize(text1));
-      const words2 = new Set(normalize(text2));
+      const words1 = new Set(getMeaningfulWords(text1));
+      const words2 = new Set(getMeaningfulWords(text2));
       if (words1.size === 0 || words2.size === 0) return 0;
       const intersection = [...words1].filter(w => words2.has(w));
+      // Require at least 2 matching meaningful words
+      if (intersection.length < 2) return 0;
       return intersection.length / Math.min(words1.size, words2.size);
     };
 
-    const numScenes = this.scenes.length;
-    const anticipation = 3.0;
-    let matchedCount = 0;
-    const usedSegments = new Set();
-    const sceneTimings = [];
+    // Build a time-indexed lookup of segments for fast searching
+    const segmentsByTime = segments.map((seg, idx) => ({ ...seg, idx }));
 
-    // Track the minimum segment index for the next scene (must go forward)
-    let minSegmentIndex = 0;
+    let refinedCount = 0;
 
-    // For each scene, find the best matching segment (must be in order!)
-    this.scenes.forEach((scene, sceneIndex) => {
+    // For each scene, look for a matching segment near its proportional time
+    sceneTimings.forEach((timing, sceneIndex) => {
+      const scene = this.scenes[sceneIndex];
       const dialogue = getDialogue(scene);
+
+      if (!dialogue || dialogue.length < 5) return; // Skip scenes without dialogue
+
+      const expectedTime = timing.startTime;
+
+      // Search window: ±15% of total duration around expected time
+      const windowSize = totalDuration * 0.15;
+      const windowStart = Math.max(0, expectedTime - windowSize);
+      const windowEnd = Math.min(totalDuration, expectedTime + windowSize);
+
+      // Find segments within the time window
+      const candidateSegments = segmentsByTime.filter(seg =>
+        seg.start >= windowStart && seg.start <= windowEnd
+      );
+
       let bestMatch = null;
       let bestScore = 0;
-      let bestSegmentIndex = -1;
 
-      // Only search segments AFTER the last match (enforce sequential order)
-      for (let segIndex = minSegmentIndex; segIndex < segments.length; segIndex++) {
-        if (usedSegments.has(segIndex)) continue;
-
-        const score = similarity(dialogue, segments[segIndex].text);
-
+      for (const seg of candidateSegments) {
+        const score = similarity(dialogue, seg.text);
         if (score > bestScore) {
           bestScore = score;
-          bestMatch = segments[segIndex];
-          bestSegmentIndex = segIndex;
+          bestMatch = seg;
         }
       }
 
-      if (bestMatch && bestScore > 0.15) {
-        usedSegments.add(bestSegmentIndex);
-        // Move minimum forward to ensure sequential order
-        minSegmentIndex = bestSegmentIndex + 1;
+      // Only refine if we have a CONFIDENT match (>0.5 similarity)
+      if (bestMatch && bestScore >= 0.5) {
+        const newStartTime = Math.max(0, bestMatch.start - anticipation);
 
-        sceneTimings.push({
-          sceneIndex,
-          startTime: Math.max(0, bestMatch.start - anticipation),
-          segmentIndex: bestSegmentIndex,
-          confidence: bestScore,
-          matched: true
-        });
-        matchedCount++;
-        console.log(`Scene ${sceneIndex + 1} matched to segment ${bestSegmentIndex} (${bestScore.toFixed(2)}): "${dialogue.substring(0, 30)}..." -> "${bestMatch.text.substring(0, 30)}..."`);
-      } else {
-        // No good match - will interpolate later
-        sceneTimings.push({
-          sceneIndex,
-          startTime: null,
-          segmentIndex: -1,
-          confidence: 0,
-          matched: false
-        });
+        // Only adjust if the refinement doesn't cause overlap issues
+        const prevTime = sceneIndex > 0 ? sceneTimings[sceneIndex - 1].startTime : -1;
+        if (newStartTime > prevTime) {
+          timing.startTime = newStartTime;
+          timing.confidence = bestScore;
+          timing.matched = true;
+          timing.method = 'dialogue';
+          refinedCount++;
+          console.log(`Scene ${sceneIndex + 1} refined: ${expectedTime.toFixed(1)}s → ${newStartTime.toFixed(1)}s (${(bestScore * 100).toFixed(0)}% match)`);
+        }
       }
     });
 
-    console.log(`Matched ${matchedCount}/${numScenes} scenes by dialogue`);
+    console.log(`Step 2: Refined ${refinedCount}/${numScenes} scenes using dialogue matching`);
 
-    // Fill in unmatched scenes by interpolation
-    let lastKnownTime = 0;
-    let lastKnownIndex = -1;
-
+    // === STEP 3: ENSURE SEQUENTIAL ORDER ===
+    // Make sure all scenes are in order (no overlaps)
+    let lastTime = 0;
     for (let i = 0; i < sceneTimings.length; i++) {
-      if (sceneTimings[i].startTime !== null) {
-        lastKnownTime = sceneTimings[i].startTime;
-        lastKnownIndex = i;
+      if (sceneTimings[i].startTime <= lastTime) {
+        sceneTimings[i].startTime = lastTime + 0.1; // Small gap
       }
+      lastTime = sceneTimings[i].startTime;
     }
 
-    // Second pass: interpolate unmatched scenes
-    lastKnownTime = 0;
-    for (let i = 0; i < sceneTimings.length; i++) {
-      if (sceneTimings[i].startTime === null) {
-        // Find next matched scene
-        let nextMatchedIdx = i + 1;
-        while (nextMatchedIdx < sceneTimings.length && sceneTimings[nextMatchedIdx].startTime === null) {
-          nextMatchedIdx++;
-        }
-
-        const nextTime = nextMatchedIdx < sceneTimings.length ? sceneTimings[nextMatchedIdx].startTime : totalDuration;
-        const gap = nextTime - lastKnownTime;
-        const unmatchedCount = nextMatchedIdx - i;
-
-        // Distribute gap evenly among unmatched scenes
-        for (let j = i; j < nextMatchedIdx && j < sceneTimings.length; j++) {
-          sceneTimings[j].startTime = lastKnownTime + (gap / unmatchedCount) * (j - i + 1) - (gap / unmatchedCount);
-        }
-      }
-      lastKnownTime = sceneTimings[i].startTime;
-    }
+    console.log(`Step 3: All ${numScenes} scenes have valid sequential times`);
+    const matchedCount = refinedCount;
 
     // Make scenes contiguous and apply timings
     for (let i = 0; i < sceneTimings.length; i++) {
@@ -3535,7 +3541,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         throw new Error('No image returned from API');
       }
 
-      // Face swap the generated image with avatar
+      // Face swap the generated image with avatar (with caching)
       if (hasAvatarImage) {
         showToast(`Face swapping scene ${index + 1}...`, 'info');
 
@@ -3543,16 +3549,42 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           const sceneBlob = await fetch(imageUrl).then(r => r.blob());
           const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
 
-          const swapFormData = new FormData();
-          swapFormData.append('sourceImage', sceneBlob, 'scene.png');
-          swapFormData.append('faceImage', avatarBlob, 'avatar.png');
+          // Check cache first
+          const sceneHash = await this.generateAudioHash(sceneBlob);
+          const avatarHash = await this.generateAudioHash(avatarBlob);
+          const cacheKey = `face_swap_${sceneHash}_${avatarHash}`;
+          const cached = localStorage.getItem(cacheKey);
 
-          const swapResponse = await fetch('/api/face-swap', {
-            method: 'POST',
-            body: swapFormData
-          });
+          let swapData;
+          if (cached) {
+            try {
+              const cacheData = JSON.parse(cached);
+              if (cacheData.timestamp && Date.now() - cacheData.timestamp < 7 * 24 * 60 * 60 * 1000) {
+                swapData = cacheData.result;
+                console.log(`Scene ${index + 1}: Using CACHED face swap`);
+              }
+            } catch (e) {}
+          }
 
-          const swapData = await swapResponse.json();
+          if (!swapData) {
+            const swapFormData = new FormData();
+            swapFormData.append('sourceImage', sceneBlob, 'scene.png');
+            swapFormData.append('faceImage', avatarBlob, 'avatar.png');
+
+            const swapResponse = await fetch('/api/face-swap', {
+              method: 'POST',
+              body: swapFormData
+            });
+
+            swapData = await swapResponse.json();
+
+            // Cache successful result
+            if (swapData.success && swapData.image) {
+              try {
+                localStorage.setItem(cacheKey, JSON.stringify({ result: swapData, timestamp: Date.now() }));
+              } catch (e) {}
+            }
+          }
 
           if (swapData.success && swapData.image) {
             imageUrl = swapData.image;

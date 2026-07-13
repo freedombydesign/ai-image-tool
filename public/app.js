@@ -1,3 +1,50 @@
+// ==== CACHING UTILITIES ====
+// Generate hash for caching (works with blobs, strings, or ArrayBuffers)
+async function generateCacheHash(data) {
+  let buffer;
+  if (data instanceof Blob) {
+    buffer = await data.arrayBuffer();
+  } else if (typeof data === 'string') {
+    buffer = new TextEncoder().encode(data);
+  } else if (data instanceof ArrayBuffer) {
+    buffer = data;
+  } else {
+    buffer = new TextEncoder().encode(JSON.stringify(data));
+  }
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+}
+
+// Get cached result from localStorage
+function getCachedResult(cacheKey) {
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const data = JSON.parse(cached);
+      // Check if cache is less than 7 days old
+      if (data.timestamp && Date.now() - data.timestamp < 7 * 24 * 60 * 60 * 1000) {
+        return data.result;
+      }
+    }
+  } catch (e) {
+    console.warn('Cache read error:', e);
+  }
+  return null;
+}
+
+// Save result to localStorage cache
+function setCachedResult(cacheKey, result) {
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify({
+      result,
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    console.warn('Cache write error (storage full?):', e);
+  }
+}
+
 // ==== INDEXEDDB AUDIO STORAGE ====
 // Store audio files for persistence across tabs and sessions
 
@@ -945,23 +992,41 @@ async function handleAvatarUpload(file) {
     }
 
     updateAvatarStatusIndicators();
-    showToast('Analyzing your avatar with AI...');
 
-    // Auto-analyze the avatar with GPT-4 Vision
+    // Auto-analyze the avatar with GPT-4 Vision (with caching)
     try {
-      const formData = new FormData();
-      formData.append('image', file);
+      // Check cache first
+      const avatarHash = await generateCacheHash(file);
+      const cacheKey = `avatar_analysis_${avatarHash}`;
+      const cachedAnalysis = getCachedResult(cacheKey);
 
-      console.log('Sending avatar for analysis, file size:', file.size, 'type:', file.type);
+      let data;
+      if (cachedAnalysis) {
+        console.log('Using CACHED avatar analysis (saving API cost!)');
+        showToast('Using cached avatar analysis (no API cost)', 'success');
+        data = cachedAnalysis;
+      } else {
+        showToast('Analyzing your avatar with AI...');
+        const formData = new FormData();
+        formData.append('image', file);
 
-      const response = await fetch('/api/analyze-avatar', {
-        method: 'POST',
-        body: formData
-      });
+        console.log('Sending avatar for analysis, file size:', file.size, 'type:', file.type);
 
-      console.log('Analysis response status:', response.status);
-      const data = await response.json();
-      console.log('Analysis response data:', data);
+        const response = await fetch('/api/analyze-avatar', {
+          method: 'POST',
+          body: formData
+        });
+
+        console.log('Analysis response status:', response.status);
+        data = await response.json();
+        console.log('Analysis response data:', data);
+
+        // Cache successful result
+        if (data.success && data.description) {
+          setCachedResult(cacheKey, data);
+          console.log('Avatar analysis cached for future use');
+        }
+      }
 
       if (data.success && data.description) {
         // Fill in the description automatically
@@ -1626,22 +1691,41 @@ async function convertScriptToVisualScenes() {
   showLoading('Converting script to visual scenes...', 'AI is analyzing your script');
 
   try {
-    const response = await fetch('/api/script-to-scenes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        script,
-        sceneCount,
-        brandRules,
-        includeAvatarInScenes,
-        avatarDescription: includeAvatarInScenes ? avatarDesc : null
-      })
-    });
+    // Create request payload
+    const requestPayload = {
+      script,
+      sceneCount,
+      brandRules,
+      includeAvatarInScenes,
+      avatarDescription: includeAvatarInScenes ? avatarDesc : null
+    };
 
-    const data = await response.json();
+    // Check cache first
+    const payloadHash = await generateCacheHash(JSON.stringify(requestPayload));
+    const cacheKey = `script_to_scenes_${payloadHash}`;
+    const cachedResult = getCachedResult(cacheKey);
 
-    if (data.error) {
-      throw new Error(data.error);
+    let data;
+    if (cachedResult) {
+      console.log('Using CACHED script-to-scenes (saving API cost!)');
+      showToast('Using cached scene conversion (no API cost)', 'success');
+      data = cachedResult;
+    } else {
+      const response = await fetch('/api/script-to-scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload)
+      });
+
+      data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Cache successful result
+      setCachedResult(cacheKey, data);
+      console.log('Script-to-scenes cached for future use');
     }
 
     // Store the converted scenes
@@ -5269,6 +5353,41 @@ if (thumbnailFeedbackInput) {
   });
 }
 
+// Cached face swap helper - checks cache before calling API
+async function cachedFaceSwap(sceneBlob, avatarBlob, sceneIndex) {
+  // Generate combined hash of source + face images
+  const sceneHash = await generateCacheHash(sceneBlob);
+  const avatarHash = await generateCacheHash(avatarBlob);
+  const cacheKey = `face_swap_${sceneHash}_${avatarHash}`;
+
+  // Check cache first
+  const cachedResult = getCachedResult(cacheKey);
+  if (cachedResult) {
+    console.log(`Scene ${sceneIndex}: Using CACHED face swap (saving API cost!)`);
+    return { ...cachedResult, cached: true };
+  }
+
+  // Not cached - call API
+  const formData = new FormData();
+  formData.append('sourceImage', sceneBlob, 'scene.jpg');
+  formData.append('faceImage', avatarBlob, 'avatar.jpg');
+
+  const response = await fetch('/api/face-swap', {
+    method: 'POST',
+    body: formData
+  });
+
+  const data = await response.json();
+
+  // Cache successful result
+  if (data.success && data.image) {
+    setCachedResult(cacheKey, data);
+    console.log(`Scene ${sceneIndex}: Face swap cached for future use`);
+  }
+
+  return { ...data, cached: false };
+}
+
 // Face Swap All Scenes - swaps avatar face onto all generated scenes
 async function faceSwapAllScenes() {
   // Check if avatar is uploaded
@@ -5288,6 +5407,7 @@ async function faceSwapAllScenes() {
 
   let successCount = 0;
   let failCount = 0;
+  let cachedCount = 0;
 
   // Convert and compress avatar to blob once (reduces payload size for Vercel limits)
   const rawAvatarBlob = await fetch(avatarImageData).then(r => r.blob());
@@ -5304,16 +5424,8 @@ async function faceSwapAllScenes() {
       const sceneBlob = await compressImageBlob(rawSceneBlob, 1024, 0.85);
       console.log(`Scene ${i + 1} compressed: ${(rawSceneBlob.size / 1024).toFixed(1)}KB -> ${(sceneBlob.size / 1024).toFixed(1)}KB`);
 
-      const formData = new FormData();
-      formData.append('sourceImage', sceneBlob, 'scene.jpg');
-      formData.append('faceImage', avatarBlob, 'avatar.jpg');
-
-      const response = await fetch('/api/face-swap', {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
+      // Use cached face swap
+      const data = await cachedFaceSwap(sceneBlob, avatarBlob, i + 1);
 
       if (data.error) {
         throw new Error(data.error);
@@ -5326,22 +5438,24 @@ async function faceSwapAllScenes() {
       // Update the scene card in the UI
       updateSceneCard(scene.index, data.image);
       successCount++;
+      if (data.cached) cachedCount++;
 
     } catch (error) {
       console.error(`Failed to face swap scene ${scene.index + 1}:`, error);
       failCount++;
     }
 
-    // Small delay between requests
+    // Small delay between requests (skip if cached)
     if (i < scenesWithImages.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 
   hideLoading();
 
+  const cacheMsg = cachedCount > 0 ? ` (${cachedCount} from cache)` : '';
   if (failCount === 0) {
-    showToast(`Face swapped ${successCount} scenes successfully!`);
+    showToast(`Face swapped ${successCount} scenes successfully!${cacheMsg}`);
   } else {
     showToast(`Face swapped ${successCount} scenes, ${failCount} failed`);
   }
@@ -5360,6 +5474,7 @@ async function autoFaceSwapNewScenes() {
 
   let successCount = 0;
   let failCount = 0;
+  let cachedCount = 0;
 
   // Convert avatar to blob once
   const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
@@ -5371,16 +5486,8 @@ async function autoFaceSwapNewScenes() {
     try {
       const sceneBlob = await fetch(scene.imageUrl).then(r => r.blob());
 
-      const formData = new FormData();
-      formData.append('sourceImage', sceneBlob, 'scene.png');
-      formData.append('faceImage', avatarBlob, 'avatar.png');
-
-      const response = await fetch('/api/face-swap', {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
+      // Use cached face swap
+      const data = await cachedFaceSwap(sceneBlob, avatarBlob, scene.index + 1);
 
       if (data.error) {
         throw new Error(data.error);
@@ -5390,6 +5497,7 @@ async function autoFaceSwapNewScenes() {
       scene.faceSwapped = true;
       updateSceneCard(scene.index, data.image);
       successCount++;
+      if (data.cached) cachedCount++;
 
     } catch (error) {
       console.error(`Auto face swap failed for scene ${scene.index + 1}:`, error);
@@ -5397,15 +5505,16 @@ async function autoFaceSwapNewScenes() {
     }
 
     if (i < scenesToSwap.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 
   hideLoading();
   saveSceneHistory();
 
+  const cacheMsg = cachedCount > 0 ? ` (${cachedCount} from cache)` : '';
   if (successCount > 0) {
-    showToast(`Auto face-swapped ${successCount} new scenes!`);
+    showToast(`Auto face-swapped ${successCount} new scenes!${cacheMsg}`);
   }
 }
 
