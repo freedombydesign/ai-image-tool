@@ -3119,8 +3119,18 @@ class VideoEditor {
     const stylePrompt = STYLE_PROMPTS[style] || STYLE_PROMPTS['cinematic-2d'];
     prompt = `${prompt}. Style: ${stylePrompt}`;
 
-    // Add content filter
-    prompt = `${prompt}. IMPORTANT: Do NOT include tarot cards, crystals, occult symbols, astrology imagery, or new age spirituality aesthetics. Use professional, modern, relatable imagery instead.`;
+    // Add content filter AND style consistency rules
+    prompt = `${prompt}.
+
+CRITICAL STYLE RULES:
+- Clean, minimal backgrounds with NO text, signs, posters, or motivational quotes
+- Soft, muted color palette (purples, sunset pinks, warm beiges)
+- Cinematic lighting with soft gradients and warm tones
+- NO busy office decor, NO mugs with text, NO wall art with words
+- Character should wear neutral/soft colors, not bright red
+- Elegant, professional aesthetic - NOT "girlboss" or "hustle culture" aesthetic
+
+CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, new age spirituality, text overlays, motivational posters, busy cluttered backgrounds.`;
 
     // Show loading state on the button
     const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
