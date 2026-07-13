@@ -1542,22 +1542,44 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
-    console.log('Transcribing audio:', req.file.path);
+    console.log('Transcribing audio:', req.file.originalname || 'audio file', 'size:', req.file.size);
 
     // Get scene descriptions from request body
     const scenes = req.body.scenes ? JSON.parse(req.body.scenes) : [];
 
+    // Get file buffer (works for both local disk and Vercel memory storage)
+    const fileBuffer = getFileBuffer(req.file);
+
+    // Create a File object for the OpenAI SDK
+    // Determine extension from originalname or mimetype
+    let extension = 'mp3';
+    if (req.file.originalname) {
+      const match = req.file.originalname.match(/\.(\w+)$/);
+      if (match) extension = match[1];
+    } else if (req.file.mimetype) {
+      if (req.file.mimetype.includes('wav')) extension = 'wav';
+      else if (req.file.mimetype.includes('webm')) extension = 'webm';
+      else if (req.file.mimetype.includes('m4a')) extension = 'm4a';
+      else if (req.file.mimetype.includes('ogg')) extension = 'ogg';
+    }
+
+    const audioFile = new File([fileBuffer], `audio.${extension}`, {
+      type: req.file.mimetype || 'audio/mpeg'
+    });
+
     // Transcribe with Whisper - request word-level timestamps, force English
     const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
+      file: audioFile,
       model: 'whisper-1',
       language: 'en',  // Force English
       response_format: 'verbose_json',
       timestamp_granularities: ['segment', 'word']
     });
 
-    // Cleanup audio file
-    fs.unlinkSync(req.file.path);
+    // Cleanup audio file if on disk
+    if (req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
 
     // If no scenes provided, just return the transcription
     if (scenes.length === 0) {
@@ -1581,8 +1603,8 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
 
   } catch (error) {
     console.error('Transcription error:', error);
-    // Cleanup on error
-    if (req.file && fs.existsSync(req.file.path)) {
+    // Cleanup on error (only if disk storage)
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
     res.status(500).json({ error: error.message });
