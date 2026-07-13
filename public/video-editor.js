@@ -697,6 +697,16 @@ class VideoEditor {
     this.closePreviewBtn.addEventListener('click', () => this.closePreview());
     this.previewPlayPauseBtn.addEventListener('click', () => this.togglePlayback());
 
+    // Skip Forward/Back buttons (15 seconds like YouTube)
+    const skipBackBtn = document.getElementById('preview-skip-back');
+    const skipForwardBtn = document.getElementById('preview-skip-forward');
+    if (skipBackBtn) {
+      skipBackBtn.addEventListener('click', () => this.skipTime(-15));
+    }
+    if (skipForwardBtn) {
+      skipForwardBtn.addEventListener('click', () => this.skipTime(15));
+    }
+
     // Scene Reorder Controls
     if (this.previewMoveEarlierBtn) {
       this.previewMoveEarlierBtn.addEventListener('click', () => this.moveSceneEarlier());
@@ -2966,14 +2976,21 @@ class VideoEditor {
       const endTime = i < sceneTimings.length - 1 ? sceneTimings[i + 1].startTime : totalDuration;
       const scene = this.scenes[sceneTimings[i].sceneIndex];
       scene.startTime = sceneTimings[i].startTime;
-      scene.duration = endTime - scene.startTime;
+      scene.duration = Math.max(1, endTime - scene.startTime); // Minimum 1 second per scene
     }
 
-    console.log('Scene timings:', this.scenes.slice(0, 10).map((s, i) => ({
-      scene: i + 1,
-      start: s.startTime?.toFixed(1),
-      duration: s.duration?.toFixed(1)
-    })));
+    // Log first 15 scenes to debug timing issues
+    console.log('=== SCENE TIMINGS (first 15) ===');
+    this.scenes.slice(0, 15).forEach((s, i) => {
+      console.log(`Scene ${i + 1}: ${s.startTime?.toFixed(1)}s - ${(s.startTime + s.duration)?.toFixed(1)}s (${s.duration?.toFixed(1)}s)`);
+    });
+    console.log('=== END SCENE TIMINGS ===');
+
+    // Check for any problematic scenes (very short duration)
+    const shortScenes = this.scenes.filter((s, i) => s.duration < 2);
+    if (shortScenes.length > 0) {
+      console.warn(`Warning: ${shortScenes.length} scenes have duration < 2 seconds`);
+    }
 
     return matchedCount;
   }
@@ -4550,6 +4567,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     this.updateTimeDisplay();
+  }
+
+  // Skip forward or back by given seconds (like YouTube)
+  skipTime(seconds) {
+    const totalDuration = this.getTotalDuration();
+    const newTime = Math.max(0, Math.min(totalDuration, this.playbackTime + seconds));
+    const percent = (newTime / totalDuration) * 100;
+    this.seekPreview(percent);
+    this.updateSceneIndicator(newTime);
+    console.log(`Skipped ${seconds > 0 ? 'forward' : 'back'} to ${this.formatTime(newTime)}`);
   }
 
   // Update scrubber position
