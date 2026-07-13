@@ -4745,24 +4745,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Lightweight animation loop for native layered preview
-  // Only updates scene images and captions - video playback is native
+  // Updates scene images, captions, AND switches avatar videos
   animateNativeLayered() {
     if (!this.isPlaying) return;
 
-    // Sync playback time with audio (master clock)
-    if (this.audioPlayer && !this.audioPlayer.paused && this.audioPlayer.duration > 0) {
-      this.playbackTime = this.audioPlayer.currentTime;
+    // Sync playback time with avatar video (master clock for audio sync)
+    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
+      // Find which segment should be playing based on time
+      const currentSegment = this.avatarVideos?.find(av =>
+        this.playbackTime >= av.startTime && this.playbackTime < av.endTime
+      );
 
-      // Keep avatar video synced to audio - correct if drifted more than 0.3 seconds
-      if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
-        const drift = Math.abs(this.previewAvatarVideo.currentTime - this.playbackTime);
-        if (drift > 0.3) {
-          this.previewAvatarVideo.currentTime = this.playbackTime;
-          console.log(`Avatar sync corrected: drift was ${drift.toFixed(2)}s`);
-        }
+      if (currentSegment && currentSegment.videoUrl !== this.currentAvatarSegmentUrl) {
+        // Switch to new segment
+        console.log(`Switching to avatar segment: ${currentSegment.startTime}s - ${currentSegment.endTime}s`);
+        this.currentAvatarSegmentUrl = currentSegment.videoUrl;
+        this.previewAvatarVideo.src = currentSegment.videoUrl;
+        this.previewAvatarVideo.load();
+        const localTime = this.playbackTime - currentSegment.startTime;
+        this.previewAvatarVideo.currentTime = Math.max(0, localTime);
+        this.previewAvatarVideo.play().catch(e => console.log('Segment switch play error:', e));
       }
-    } else if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
-      this.playbackTime = this.previewAvatarVideo.currentTime;
+
+      // Use avatar video time as playback time (it has the audio)
+      if (currentSegment) {
+        const localVideoTime = this.previewAvatarVideo.currentTime;
+        this.playbackTime = currentSegment.startTime + localVideoTime;
+      }
     }
 
     const totalDuration = this.getTotalDuration();
