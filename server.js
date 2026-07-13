@@ -1543,13 +1543,21 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
-    console.log('Transcribing audio:', req.file.originalname || 'audio file', 'size:', req.file.size);
+    console.log('Transcribing audio:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      hasBuffer: !!req.file.buffer,
+      bufferLength: req.file.buffer?.length,
+      hasPath: !!req.file.path
+    });
 
     // Get scene descriptions from request body
     const scenes = req.body.scenes ? JSON.parse(req.body.scenes) : [];
 
     // Get file buffer (works for both local disk and Vercel memory storage)
     const fileBuffer = getFileBuffer(req.file);
+    console.log('File buffer obtained, length:', fileBuffer.length);
 
     // Determine extension from originalname or mimetype
     let extension = 'mp3';
