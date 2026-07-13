@@ -2701,17 +2701,29 @@ class VideoEditor {
 
       // Convert audio blob to base64 (chunk-safe for large files)
       showToast('Preparing audio for transcription...', 'info');
-      const base64Audio = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result;
-          // Remove the data:audio/xxx;base64, prefix
-          const base64 = dataUrl.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(this.audioBlob);
-      });
+      let base64Audio;
+      try {
+        base64Audio = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result;
+            // Remove the data:audio/xxx;base64, prefix
+            const base64 = dataUrl.split(',')[1];
+            console.log('Base64 audio length:', base64?.length);
+            resolve(base64);
+          };
+          reader.onerror = (e) => reject(new Error('FileReader error: ' + e));
+          reader.readAsDataURL(this.audioBlob);
+        });
+      } catch (b64Error) {
+        throw new Error('Failed to encode audio: ' + b64Error.message);
+      }
+
+      if (!base64Audio || base64Audio.length === 0) {
+        throw new Error('Audio encoding resulted in empty data');
+      }
+
+      console.log('Audio encoded, size:', base64Audio.length, 'chars');
 
       // Send scene text/descriptions for matching
       const sceneData = this.scenes.map((scene, index) => ({
@@ -2732,7 +2744,17 @@ class VideoEditor {
         })
       });
 
-      const result = await response.json();
+      // Get response text first to see what we're getting
+      const responseText = await response.text();
+      console.log('Response status:', response.status, 'Response length:', responseText.length);
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response:', responseText.substring(0, 500));
+        throw new Error('Server returned invalid response: ' + responseText.substring(0, 200));
+      }
 
       if (!response.ok || result.error) {
         const err = new Error(result.error || 'Transcription failed');
