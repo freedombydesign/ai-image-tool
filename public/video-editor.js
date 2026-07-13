@@ -5195,6 +5195,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   getSceneAtTime(time) {
+    // If time is before first scene, return first scene
+    if (this.scenes.length > 0 && time < this.scenes[0].startTime) {
+      return this.scenes[0];
+    }
     for (const scene of this.scenes) {
       if (time >= scene.startTime && time < scene.startTime + scene.duration) {
         return scene;
