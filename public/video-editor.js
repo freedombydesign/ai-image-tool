@@ -3184,15 +3184,46 @@ CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, moti
       }
 
       // Handle different response formats
-      const imageUrl = data.image || data.imageUrl;
+      let imageUrl = data.image || data.imageUrl;
       if (!imageUrl) {
         throw new Error('No image returned from API');
+      }
+
+      // Face swap the generated image with avatar
+      if (hasAvatarImage) {
+        showToast(`Face swapping scene ${index + 1}...`, 'info');
+
+        try {
+          const sceneBlob = await fetch(imageUrl).then(r => r.blob());
+          const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+          const swapFormData = new FormData();
+          swapFormData.append('sourceImage', sceneBlob, 'scene.png');
+          swapFormData.append('faceImage', avatarBlob, 'avatar.png');
+
+          const swapResponse = await fetch('/api/face-swap', {
+            method: 'POST',
+            body: swapFormData
+          });
+
+          const swapData = await swapResponse.json();
+
+          if (swapData.success && swapData.image) {
+            imageUrl = swapData.image;
+            console.log(`Scene ${index + 1} face swapped successfully`);
+          } else {
+            console.warn('Face swap failed, using original generated image:', swapData.error);
+          }
+        } catch (swapError) {
+          console.warn('Face swap error, using original generated image:', swapError);
+        }
       }
 
       // Update the scene with new image
       if (this.scenes[index]) {
         this.scenes[index].imageUrl = imageUrl;
         this.scenes[index].regenerated = true;
+        this.scenes[index].faceSwapped = hasAvatarImage;
 
         // Re-render
         this.renderTimeline();
