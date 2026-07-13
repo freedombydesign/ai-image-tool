@@ -3069,7 +3069,7 @@ class VideoEditor {
     }
   }
 
-  // Regenerate scene image with AI (applies content filter to avoid tarot/crystals)
+  // Regenerate scene image with AI (applies content filter, uses avatar and style)
   async regenerateSceneImage(index) {
     const scene = this.scenes[index];
     if (!scene) return;
@@ -3077,9 +3077,42 @@ class VideoEditor {
     // Get the scene description to regenerate
     const description = scene.visualDescription || scene.text || scene.caption || `Scene ${index + 1}`;
 
-    // Build prompt with content filter
-    const contentFilter = `IMPORTANT: Do NOT include tarot cards, crystals, occult symbols, astrology imagery, or new age spirituality aesthetics. Use professional, modern, relatable imagery instead.`;
-    const prompt = `${description}. ${contentFilter}`;
+    // Get avatar description from global (app.js) or DOM
+    const avatarDesc = (typeof avatarDescription !== 'undefined' && avatarDescription)
+      ? avatarDescription
+      : document.getElementById('avatar-description')?.value?.trim() || '';
+
+    // Get selected style from global (app.js) or default to cinematic-2d
+    const style = (typeof selectedStyle !== 'undefined' && selectedStyle)
+      ? selectedStyle
+      : 'cinematic-2d';
+
+    // Style presets (matching app.js)
+    const STYLE_PROMPTS = {
+      'photorealistic': 'cinematic film scene, professional movie production, dramatic lighting, shallow depth of field, high quality cinematography',
+      'cinematic-2d': 'cinematic 2D animated style, high quality animation, smooth gradients, professional animated movie aesthetic, vibrant colors, clean lines, Disney/Pixar inspired 2D look',
+      'hand-drawn': 'hand-drawn pencil sketch style, artistic sketchy lines, crosshatching shading, illustration on paper texture',
+      'stickman': 'simple stickman figure style, minimalist black line art on white background, stick figure characters',
+      'pixel-art': '8-bit retro pixel art style, pixelated graphics, limited color palette, nostalgic video game aesthetic',
+      'soft-cartoon': 'soft pastel cartoon style, rounded friendly shapes, gentle gradients, explainer video aesthetic, warm colors',
+      'yellow-character': 'yellow-skinned cartoon character style like Simpsons, bold outlines, flat colors, animated sitcom aesthetic',
+      '3d-cinematic': '3D rendered cinematic style, Pixar-quality, volumetric lighting, detailed textures'
+    };
+
+    // Build the full prompt with avatar, style, and content filter
+    let prompt = description;
+
+    // Add avatar description if available
+    if (avatarDesc) {
+      prompt = `${prompt}. MAIN CHARACTER: ${avatarDesc}. Feature this character prominently in the scene.`;
+    }
+
+    // Add style
+    const stylePrompt = STYLE_PROMPTS[style] || STYLE_PROMPTS['cinematic-2d'];
+    prompt = `${prompt}. Style: ${stylePrompt}`;
+
+    // Add content filter
+    prompt = `${prompt}. IMPORTANT: Do NOT include tarot cards, crystals, occult symbols, astrology imagery, or new age spirituality aesthetics. Use professional, modern, relatable imagery instead.`;
 
     // Show loading state on the button
     const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
@@ -3089,7 +3122,7 @@ class VideoEditor {
       btn.disabled = true;
     }
 
-    showToast(`Regenerating scene ${index + 1}...`, 'info');
+    showToast(`Regenerating scene ${index + 1} with your avatar and style...`, 'info');
 
     try {
       const response = await fetch('/api/generate', {
