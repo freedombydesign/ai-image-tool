@@ -2134,10 +2134,10 @@ footer {
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 100%;
+  max-height: calc(90vh - 160px);
   object-fit: contain;
+  object-position: top center;
   display: block;
-  margin: auto;
 }
 
 .preview-avatar-video {
