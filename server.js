@@ -1537,6 +1537,7 @@ app.post('/api/transcribe-url', async (req, res) => {
 
 // Transcribe audio using Whisper API with timestamps
 app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
+  let tempPath = null;
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Audio file is required' });
@@ -1550,7 +1551,6 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
     // Get file buffer (works for both local disk and Vercel memory storage)
     const fileBuffer = getFileBuffer(req.file);
 
-    // Create a File object for the OpenAI SDK
     // Determine extension from originalname or mimetype
     let extension = 'mp3';
     if (req.file.originalname) {
@@ -1563,20 +1563,25 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
       else if (req.file.mimetype.includes('ogg')) extension = 'ogg';
     }
 
-    const audioFile = new File([fileBuffer], `audio.${extension}`, {
-      type: req.file.mimetype || 'audio/mpeg'
-    });
+    // Save to temp file (required for OpenAI SDK on serverless)
+    tempPath = `/tmp/transcribe_${Date.now()}.${extension}`;
+    fs.writeFileSync(tempPath, fileBuffer);
+    console.log('Saved audio to temp file:', tempPath, 'size:', fileBuffer.length);
 
     // Transcribe with Whisper - request word-level timestamps, force English
     const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
+      file: fs.createReadStream(tempPath),
       model: 'whisper-1',
       language: 'en',  // Force English
       response_format: 'verbose_json',
       timestamp_granularities: ['segment', 'word']
     });
 
-    // Cleanup audio file if on disk
+    // Cleanup temp file
+    if (tempPath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+    // Cleanup original upload if on disk
     if (req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
@@ -1603,7 +1608,11 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
 
   } catch (error) {
     console.error('Transcription error:', error);
-    // Cleanup on error (only if disk storage)
+    // Cleanup temp file on error
+    if (tempPath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+    // Cleanup original upload if on disk
     if (req.file && req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
