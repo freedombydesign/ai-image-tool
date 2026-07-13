@@ -5783,6 +5783,9 @@ let videoEditor;
 document.addEventListener('DOMContentLoaded', () => {
   videoEditor = new VideoEditor();
 
+  // Make it globally accessible (must be inside DOMContentLoaded)
+  window.videoEditor = videoEditor;
+
   // Set up video scene duration slider
   const durationSlider = document.getElementById('video-scene-duration');
   const durationDisplay = document.getElementById('video-scene-duration-display');
@@ -5792,9 +5795,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
-
-// Make it globally accessible
-window.videoEditor = videoEditor;
 
 // Update scene duration display
 function updateAllSceneDurations(value) {
