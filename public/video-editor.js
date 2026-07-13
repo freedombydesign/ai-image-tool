@@ -2849,31 +2849,34 @@ class VideoEditor {
     const usedSegments = new Set();
     const sceneTimings = [];
 
-    // For each scene, find the best matching segment
+    // Track the minimum segment index for the next scene (must go forward)
+    let minSegmentIndex = 0;
+
+    // For each scene, find the best matching segment (must be in order!)
     this.scenes.forEach((scene, sceneIndex) => {
       const dialogue = getDialogue(scene);
       let bestMatch = null;
       let bestScore = 0;
       let bestSegmentIndex = -1;
 
-      // Only search segments we haven't used, preferring ones in order
-      segments.forEach((segment, segIndex) => {
-        if (usedSegments.has(segIndex)) return;
+      // Only search segments AFTER the last match (enforce sequential order)
+      for (let segIndex = minSegmentIndex; segIndex < segments.length; segIndex++) {
+        if (usedSegments.has(segIndex)) continue;
 
-        const score = similarity(dialogue, segment.text);
-        // Bonus for segments that come after previous match (maintain order)
-        const lastMatchedIndex = sceneTimings.length > 0 ? sceneTimings[sceneTimings.length - 1].segmentIndex : -1;
-        const orderBonus = segIndex > lastMatchedIndex ? 0.1 : 0;
+        const score = similarity(dialogue, segments[segIndex].text);
 
-        if (score + orderBonus > bestScore) {
-          bestScore = score + orderBonus;
-          bestMatch = segment;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = segments[segIndex];
           bestSegmentIndex = segIndex;
         }
-      });
+      }
 
       if (bestMatch && bestScore > 0.15) {
         usedSegments.add(bestSegmentIndex);
+        // Move minimum forward to ensure sequential order
+        minSegmentIndex = bestSegmentIndex + 1;
+
         sceneTimings.push({
           sceneIndex,
           startTime: Math.max(0, bestMatch.start - anticipation),
