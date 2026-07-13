@@ -3264,6 +3264,104 @@ CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, moti
     }
   }
 
+  // Extend a square image to landscape (outpaint sides)
+  async extendToLandscape(index) {
+    const scene = this.scenes[index];
+    if (!scene || !scene.imageUrl) {
+      showToast('Scene not found');
+      return;
+    }
+
+    showToast(`Extending scene ${index + 1} to landscape...`, 'info');
+
+    try {
+      // Fetch the current image
+      const imgResponse = await fetch(scene.imageUrl);
+      const imgBlob = await imgResponse.blob();
+
+      // Create canvas to add transparent sides (1792x1024 from 1024x1024)
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = URL.createObjectURL(imgBlob);
+      });
+
+      // Create landscape canvas with image centered
+      const canvas = document.createElement('canvas');
+      canvas.width = 1792;
+      canvas.height = 1024;
+      const ctx = canvas.getContext('2d');
+
+      // Scale image to fit height, center horizontally
+      const scale = 1024 / img.height;
+      const scaledWidth = img.width * scale;
+      const offsetX = (1792 - scaledWidth) / 2;
+
+      // Fill with a base color first (will be replaced by AI)
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, 1792, 1024);
+
+      // Draw the original image centered
+      ctx.drawImage(img, offsetX, 0, scaledWidth, 1024);
+
+      // Create mask (white = keep, black = edit)
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width = 1792;
+      maskCanvas.height = 1024;
+      const maskCtx = maskCanvas.getContext('2d');
+
+      // Black sides (areas to generate)
+      maskCtx.fillStyle = '#000';
+      maskCtx.fillRect(0, 0, 1792, 1024);
+
+      // White center (area to keep)
+      maskCtx.fillStyle = '#fff';
+      maskCtx.fillRect(offsetX, 0, scaledWidth, 1024);
+
+      // Convert to blobs
+      const imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const maskBlob = await new Promise(resolve => maskCanvas.toBlob(resolve, 'image/png'));
+
+      // Get scene description for context
+      const description = scene.visualDescription || scene.text || scene.caption || 'Continue the scene naturally';
+
+      // Call edit API
+      const formData = new FormData();
+      formData.append('image', imageBlob, 'image.png');
+      formData.append('mask', maskBlob, 'mask.png');
+      formData.append('prompt', `Extend this scene seamlessly to the sides. ${description}. Match the existing style, lighting, and atmosphere perfectly. Soft pink glam aesthetic with warm lighting.`);
+
+      const response = await fetch('/api/edit', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Update scene with extended image
+      const newImageUrl = data.image || data.imageUrl;
+      if (newImageUrl) {
+        this.scenes[index].imageUrl = newImageUrl;
+        this.renderImportedScenes();
+        this.renderTimeline();
+        this.renderCaptions();
+        this.saveScenesToSupabase();
+        showToast(`Scene ${index + 1} extended to landscape!`, 'success');
+      }
+
+    } catch (error) {
+      console.error('Extend to landscape error:', error);
+      showToast(`Failed to extend: ${error.message}`);
+    }
+  }
+
   // View scene image in fullscreen modal
   viewSceneFullscreen(index) {
     const scene = this.scenes[index];
