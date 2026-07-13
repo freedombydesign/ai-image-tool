@@ -4710,14 +4710,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Canvas mode fallback
-    // Play voiceover - but MUTE if avatar segments have their own audio
+    // In canvas mode, ALWAYS play voiceover (canvas can't play video audio)
+    // The avatar videos were generated from the voiceover, so audio matches
     if (this.audioBlob) {
-      const hasAvatarSegments = this.avatarVideos && this.avatarVideos.some(v => v && v.url);
-
-      if (hasAvatarSegments) {
-        console.log('Avatar segments have audio - muting separate voiceover');
-        this.audioPlayer.pause();
-      } else {
+      console.log('Canvas mode: playing voiceover audio');
+      {
         const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
 
         if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
