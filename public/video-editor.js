@@ -2721,8 +2721,18 @@ class VideoEditor {
       console.log('Step 4: Creating Supabase client...');
       const supabaseClient = window.supabase.createClient(config.url, config.anonKey);
 
-      const fileName = `audio/transcribe_${Date.now()}.mp3`;
-      console.log('Step 4: Uploading to Supabase:', fileName, 'size:', this.audioBlob.size);
+      // Determine correct file extension from blob type
+      const mimeType = this.audioBlob.type || 'audio/mpeg';
+      let extension = 'mp3';
+      if (mimeType.includes('webm')) extension = 'webm';
+      else if (mimeType.includes('wav')) extension = 'wav';
+      else if (mimeType.includes('ogg')) extension = 'ogg';
+      else if (mimeType.includes('m4a') || mimeType.includes('mp4')) extension = 'm4a';
+      else if (mimeType.includes('flac')) extension = 'flac';
+      else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) extension = 'mp3';
+
+      const fileName = `audio/transcribe_${Date.now()}.${extension}`;
+      console.log('Step 4: Uploading to Supabase:', fileName, 'mimeType:', mimeType, 'size:', this.audioBlob.size);
 
       const { data: uploadData, error: uploadError } = await supabaseClient.storage
         .from(config.bucket)
