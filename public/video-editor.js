@@ -31,6 +31,7 @@ class VideoEditor {
 
     // Replaced audio segments (for stitching in export)
     this.replacedAudioSegments = {};
+    this.stitchedAudioBlob = null; // Cached stitched audio for preview
     this.avatarShape = 'circle';
     this.avatarVideos = []; // Generated avatar videos per scene
 
@@ -4458,12 +4459,29 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
       }
 
-      // Start voiceover audio
+      // Start voiceover audio (use stitched audio if there are replacements)
       if (this.audioBlob) {
-        if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
-          const url = URL.createObjectURL(this.audioBlob);
+        // Check if we have replaced segments and need to use stitched audio
+        const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
+
+        if (hasReplacements && !this.stitchedAudioBlob) {
+          // Stitch audio in background for next play
+          this.stitchAudioForExport().then(blob => {
+            if (blob && blob !== this.audioBlob) {
+              this.stitchedAudioBlob = blob;
+              console.log('Stitched audio ready for preview');
+            }
+          });
+        }
+
+        const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
+
+        if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error ||
+            (hasReplacements && this.stitchedAudioBlob && !this.audioPlayer.src.includes('stitched'))) {
+          const url = URL.createObjectURL(audioToPlay);
           this.audioPlayer.src = url;
           this.currentAudioUrl = url;
+          if (this.stitchedAudioBlob) console.log('Playing stitched audio with replacements');
         }
         this.audioPlayer.currentTime = this.playbackTime;
         this.audioPlayer.play().catch(e => console.log('Voiceover play error:', e));
@@ -4482,11 +4500,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Canvas mode fallback
-    // Play voiceover - ensure blob URL is valid
+    // Play voiceover - use stitched audio if there are replacements
     if (this.audioBlob) {
+      const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
+
       // Recreate blob URL if needed (Firefox fix)
       if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
-        const url = URL.createObjectURL(this.audioBlob);
+        const url = URL.createObjectURL(audioToPlay);
         this.audioPlayer.src = url;
         this.currentAudioUrl = url;
       }
@@ -4494,8 +4514,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       this.audioPlayer.play().catch(e => {
         console.log('Voiceover play error:', e);
         // Try reloading the audio
-        if (this.audioBlob) {
-          const url = URL.createObjectURL(this.audioBlob);
+        if (audioToPlay) {
+          const url = URL.createObjectURL(audioToPlay);
           this.audioPlayer.src = url;
           this.audioPlayer.load();
         }
@@ -6903,6 +6923,8 @@ async function generateSegmentWithNewAudio() {
         blob: audioFile,
         url: audioPublicUrl
       };
+      // Clear cached stitched audio so it gets re-generated with new replacement
+      videoEditor.stitchedAudioBlob = null;
       console.log(`Stored replaced audio for segment ${segmentNum}`);
     }
 
