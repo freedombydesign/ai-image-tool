@@ -4358,6 +4358,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     this.previewModal.hidden = false;
     this.playbackTime = 0;
 
+    // Reset segment switching state for clean start
+    this.segmentSwitching = false;
+    this.videoSyncReady = false;
+    this.currentAvatarSegmentUrl = null;
+    this.currentNativeScene = null;
+
     // Reset scrubber
     if (this.previewScrubber) {
       this.previewScrubber.value = 0;
@@ -4768,24 +4774,68 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Handle segment switching (with debounce to prevent rapid switching)
     if (currentSegment && currentSegment.videoUrl !== this.currentAvatarSegmentUrl && !this.segmentSwitching) {
       this.segmentSwitching = true;
+      this.videoSyncReady = false; // Don't sync until video is properly positioned
       console.log(`Switching to avatar segment: ${currentSegment.startTime}s - ${currentSegment.endTime}s`);
       this.currentAvatarSegmentUrl = currentSegment.videoUrl;
+
+      // Store segment reference for the callback
+      const targetSegment = currentSegment;
+      const targetTime = this.playbackTime;
+
+      // Clear any existing handlers
+      this.previewAvatarVideo.oncanplay = null;
+      this.previewAvatarVideo.onerror = null;
+
       this.previewAvatarVideo.src = currentSegment.videoUrl;
 
       // Wait for video to be ready before playing
       this.previewAvatarVideo.oncanplay = () => {
-        const localTime = this.playbackTime - currentSegment.startTime;
-        this.previewAvatarVideo.currentTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
-        this.previewAvatarVideo.play().catch(e => console.log('Segment play error:', e));
-        this.segmentSwitching = false;
+        this.previewAvatarVideo.oncanplay = null; // Clear to prevent multiple fires
+        const localTime = targetTime - targetSegment.startTime;
+        const seekTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
+        this.previewAvatarVideo.currentTime = seekTime;
+        this.previewAvatarVideo.play().then(() => {
+          this.segmentSwitching = false;
+          this.videoSyncReady = true; // NOW we can sync from video
+          console.log(`Segment playing from ${seekTime.toFixed(1)}s`);
+        }).catch(e => {
+          console.log('Segment play error:', e);
+          this.segmentSwitching = false;
+        });
       };
+
+      // Handle errors - don't get stuck
+      this.previewAvatarVideo.onerror = () => {
+        console.log('Segment load error, resetting');
+        this.segmentSwitching = false;
+        this.currentAvatarSegmentUrl = null; // Allow retry
+      };
+
       this.previewAvatarVideo.load();
+
+      // Timeout fallback - don't get stuck if oncanplay never fires
+      setTimeout(() => {
+        if (this.segmentSwitching) {
+          console.log('Segment switch timeout, forcing reset');
+          this.segmentSwitching = false;
+        }
+      }, 3000);
     }
 
     // Sync playback time with avatar video (it has the audio)
-    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused && currentSegment && !this.segmentSwitching) {
+    // ONLY sync when video is properly positioned (videoSyncReady) to avoid jumping to wrong scene
+    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused && currentSegment && !this.segmentSwitching && this.videoSyncReady) {
       const localVideoTime = this.previewAvatarVideo.currentTime;
       this.playbackTime = currentSegment.startTime + localVideoTime;
+      this.lastFrameTime = performance.now(); // Keep lastFrameTime fresh
+    } else if (this.segmentSwitching || !this.videoSyncReady) {
+      // During segment switch, progress time manually so scenes still update
+      const now = performance.now();
+      if (this.lastFrameTime) {
+        const delta = (now - this.lastFrameTime) / 1000;
+        this.playbackTime += delta;
+      }
+      this.lastFrameTime = now;
     }
 
     const totalDuration = this.getTotalDuration();
