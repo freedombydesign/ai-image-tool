@@ -2548,145 +2548,65 @@ class VideoEditor {
     this.waveformContainer.appendChild(canvas);
   }
 
-  // Sync scene durations to speech pacing (keeps order, adjusts timing)
-  async syncToSpeech() {
-    if (!this.audioBlob || this.scenes.length === 0) {
-      showToast('Need both audio and scenes to sync.');
+  // Sync scene durations based on word count (more words = longer scene)
+  syncToSpeech() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first.');
       return;
     }
 
-    // Show processing state
-    this.syncToSpeechBtn.disabled = true;
-    this.syncToSpeechBtn.innerHTML = '⏳ Analyzing...';
-
-    try {
-      // Upload audio to Supabase first to bypass Vercel limit
-      const configResponse = await fetch('/api/supabase-config');
-      if (!configResponse.ok) {
-        throw new Error('Cannot get storage config');
-      }
-      const config = await configResponse.json();
-
-      const mimeType = this.audioBlob.type || 'audio/mpeg';
-      let ext = 'm4a';
-      if (mimeType.includes('wav')) ext = 'wav';
-      else if (mimeType.includes('mp3') || mimeType.includes('mpeg')) ext = 'mp3';
-      else if (mimeType.includes('webm')) ext = 'webm';
-
-      const fileName = `sync-audio-${Date.now()}.${ext}`;
-      const filePath = `audio/${fileName}`;
-      const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.anonKey}`,
-          'apikey': config.anonKey,
-          'Content-Type': mimeType,
-          'x-upsert': 'true'
-        },
-        body: this.audioBlob
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload audio');
-      }
-
-      const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
-
-      this.syncToSpeechBtn.innerHTML = '⏳ Transcribing...';
-
-      // Call transcription API with URL
-      const response = await fetch('/api/transcribe-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: publicUrl })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Transcription failed');
-      }
-
-      // Get segments with timestamps
-      const segments = result.segments || [];
-      if (segments.length === 0) {
-        showToast('No speech segments found in audio.');
-        return;
-      }
-
-      const totalDuration = this.audioDuration || segments[segments.length - 1].end;
-      const numScenes = this.scenes.length;
-
-      // Simple approach: divide audio segments into N groups (one per scene)
-      // Each group's timing determines scene timing
-      // This respects speech pacing without trying to match text
-
-      if (segments.length >= numScenes) {
-        // More segments than scenes - group segments together
-        const segmentsPerScene = segments.length / numScenes;
-
-        this.scenes.forEach((scene, index) => {
-          const startSegIdx = Math.floor(index * segmentsPerScene);
-          const endSegIdx = Math.floor((index + 1) * segmentsPerScene) - 1;
-
-          const startSeg = segments[Math.min(startSegIdx, segments.length - 1)];
-          const endSeg = segments[Math.min(endSegIdx, segments.length - 1)];
-
-          scene.startTime = startSeg.start;
-          scene.duration = endSeg.end - startSeg.start;
-
-          // Minimum 1 second duration
-          if (scene.duration < 1) {
-            scene.duration = 1;
-          }
-        });
-      } else {
-        // Fewer segments than scenes - distribute scenes across segments
-        const scenesPerSegment = numScenes / segments.length;
-
-        let sceneIndex = 0;
-        segments.forEach((segment, segIdx) => {
-          const scenesInThisSegment = Math.ceil((segIdx + 1) * scenesPerSegment) - Math.floor(segIdx * scenesPerSegment);
-          const segmentDuration = segment.end - segment.start;
-          const durationPerScene = segmentDuration / scenesInThisSegment;
-
-          for (let i = 0; i < scenesInThisSegment && sceneIndex < numScenes; i++) {
-            this.scenes[sceneIndex].startTime = segment.start + (i * durationPerScene);
-            this.scenes[sceneIndex].duration = durationPerScene;
-            sceneIndex++;
-          }
-        });
-      }
-
-      // Ensure scenes are contiguous and cover full duration
-      for (let i = 0; i < this.scenes.length - 1; i++) {
-        this.scenes[i].duration = this.scenes[i + 1].startTime - this.scenes[i].startTime;
-      }
-      this.scenes[this.scenes.length - 1].duration = totalDuration - this.scenes[this.scenes.length - 1].startTime;
-
-      // Log timing info
-      console.log('Scene timing after sync:');
-      this.scenes.forEach((s, i) => {
-        console.log(`Scene ${i + 1}: ${s.startTime.toFixed(1)}s - ${(s.startTime + s.duration).toFixed(1)}s (${s.duration.toFixed(1)}s)`);
-      });
-
-      this.renderTimeline();
-      this.renderCaptions();
-      this.updateTotalDuration();
-      this.saveScenesToSupabase();
-
-      const avgDuration = totalDuration / numScenes;
-      showToast(`Synced ${numScenes} scenes to speech pacing! Avg: ${avgDuration.toFixed(1)}s per scene`, 'success');
-
-    } catch (error) {
-      console.error('Sync to speech error:', error);
-      showToast('Failed to sync: ' + error.message, false);
-    } finally {
-      this.syncToSpeechBtn.disabled = false;
-      this.syncToSpeechBtn.innerHTML = '🎤 Sync to Speech';
+    if (!this.audioDuration || this.audioDuration === 0) {
+      showToast('Add audio first.');
+      return;
     }
+
+    // Count words in each scene's text
+    const wordCounts = this.scenes.map(scene => {
+      const text = scene.text || scene.caption || '';
+      // Remove visual cues like [Visual: ...] and count remaining words
+      const cleanText = text.replace(/\[.*?\]/g, '').trim();
+      const words = cleanText.split(/\s+/).filter(w => w.length > 0);
+      return Math.max(1, words.length); // Minimum 1 word
+    });
+
+    const totalWords = wordCounts.reduce((sum, count) => sum + count, 0);
+    const totalDuration = this.audioDuration;
+
+    // Calculate duration proportional to word count
+    let currentTime = 0;
+    this.scenes.forEach((scene, index) => {
+      const proportion = wordCounts[index] / totalWords;
+      scene.startTime = currentTime;
+      scene.duration = totalDuration * proportion;
+
+      // Minimum 2 seconds per scene
+      if (scene.duration < 2) {
+        scene.duration = 2;
+      }
+
+      currentTime += scene.duration;
+    });
+
+    // Adjust to fit exact duration
+    const actualTotal = this.scenes.reduce((sum, s) => sum + s.duration, 0);
+    const scale = totalDuration / actualTotal;
+    currentTime = 0;
+    this.scenes.forEach(scene => {
+      scene.startTime = currentTime;
+      scene.duration *= scale;
+      currentTime += scene.duration;
+    });
+
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateTotalDuration();
+
+    console.log('Word-based timing:');
+    this.scenes.forEach((s, i) => {
+      console.log(`Scene ${i + 1}: ${wordCounts[i]} words → ${s.duration.toFixed(1)}s`);
+    });
+
+    showToast(`Synced based on word count! Scenes with more text get more time.`, 'success');
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)
