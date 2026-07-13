@@ -2691,95 +2691,49 @@ class VideoEditor {
     }
 
     try {
-      // Determine audio file extension from blob type
-      const mimeType = this.audioBlob.type || 'audio/mpeg';
-      let extension = 'mp3';
-      if (mimeType.includes('wav')) extension = 'wav';
-      else if (mimeType.includes('webm')) extension = 'webm';
-      else if (mimeType.includes('ogg')) extension = 'ogg';
-      else if (mimeType.includes('m4a')) extension = 'm4a';
+      // Step 1: Upload audio to Supabase storage
+      showToast('Uploading audio for transcription...', 'info');
 
-      // Convert audio blob to base64 (chunk-safe for large files)
-      showToast('Preparing audio for transcription...', 'info');
-      let base64Audio;
-      try {
-        base64Audio = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result;
-            // Remove the data:audio/xxx;base64, prefix
-            const base64 = dataUrl.split(',')[1];
-            console.log('Base64 audio length:', base64?.length);
-            resolve(base64);
-          };
-          reader.onerror = (e) => reject(new Error('FileReader error: ' + e));
-          reader.readAsDataURL(this.audioBlob);
-        });
-      } catch (b64Error) {
-        throw new Error('Failed to encode audio: ' + b64Error.message);
-      }
+      const uploadFormData = new FormData();
+      uploadFormData.append('audio', this.audioBlob, 'audio.mp3');
 
-      if (!base64Audio || base64Audio.length === 0) {
-        throw new Error('Audio encoding resulted in empty data');
-      }
-
-      console.log('Audio encoded, size:', base64Audio.length, 'chars');
-
-      // Send scene text/descriptions for matching
-      const sceneData = this.scenes.map((scene, index) => ({
-        index,
-        text: scene.text || scene.caption || '',
-        description: scene.visualDescription || ''
-      }));
-
-      showToast('Transcribing audio with Whisper...', 'info');
-
-      const response = await fetch('/api/transcribe-base64', {
+      const uploadResponse = await fetch('/api/upload-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audio: base64Audio,
-          extension: extension,
-          scenes: sceneData
-        })
+        body: uploadFormData
       });
 
-      // Get response text first to see what we're getting
-      const responseText = await response.text();
-      console.log('Response status:', response.status, 'Response length:', responseText.length);
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse response:', responseText.substring(0, 500));
-        throw new Error('Server returned invalid response: ' + responseText.substring(0, 200));
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResponse.ok || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Failed to upload audio');
       }
+
+      console.log('Audio uploaded to:', uploadResult.url);
+
+      // Step 2: Transcribe from URL
+      showToast('Transcribing audio with Whisper...', 'info');
+
+      const response = await fetch('/api/transcribe-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl: uploadResult.url })
+      });
+
+      const result = await response.json();
 
       if (!response.ok || result.error) {
-        const err = new Error(result.error || 'Transcription failed');
-        err.details = result.details;
-        throw err;
+        throw new Error(result.error || 'Transcription failed');
       }
 
-      // Apply the scene timings from transcription
-      if (result.sceneTimings && result.sceneTimings.length > 0) {
-        let matchedCount = 0;
+      console.log('Transcription received:', result.segments?.length, 'segments');
 
-        result.sceneTimings.forEach(timing => {
-          const scene = this.scenes[timing.sceneIndex];
-          if (scene && timing.startTime !== null) {
-            scene.startTime = timing.startTime;
-            scene.duration = timing.duration;
-            if (timing.confidence > 0.1) matchedCount++;
-          }
-        });
+      // Step 3: Match scenes to transcription segments
+      const matchedCount = this.matchScenesToSegments(result.segments || [], result.duration || this.audioDuration);
 
-        this.renderTimeline();
-        this.renderCaptions();
-        this.updateTotalDuration();
+      this.renderTimeline();
+      this.renderCaptions();
+      this.updateTotalDuration();
 
-        console.log('Scene timings applied:', result.sceneTimings);
+      if (matchedCount > 0) {
         showToast(`Synced ${matchedCount}/${this.scenes.length} scenes to audio`, 'success');
       } else {
         showToast('Could not match scenes to audio. Try "Distribute Evenly" instead.', 'warning');
@@ -2797,6 +2751,120 @@ class VideoEditor {
         this.syncToAudioBtn.textContent = '🎯 Sync to Audio';
       }
     }
+  }
+
+  // Match scenes to transcription segments based on text similarity
+  matchScenesToSegments(segments, totalDuration) {
+    if (!segments || segments.length === 0 || this.scenes.length === 0) {
+      return 0;
+    }
+
+    // Normalize text for comparison
+    const normalize = (text) => {
+      return (text || '').toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter(w => w.length > 2);
+    };
+
+    // Calculate similarity between two texts
+    const similarity = (text1, text2) => {
+      const words1 = new Set(normalize(text1));
+      const words2 = new Set(normalize(text2));
+      const intersection = [...words1].filter(w => words2.has(w));
+      const union = new Set([...words1, ...words2]);
+      return union.size > 0 ? intersection.length / union.size : 0;
+    };
+
+    let matchedCount = 0;
+    const usedSegments = new Set();
+    const sceneTimings = [];
+
+    // For each scene, find the best matching segment
+    this.scenes.forEach((scene, sceneIndex) => {
+      const sceneText = scene.text || scene.caption || scene.visualDescription || '';
+      let bestMatch = null;
+      let bestScore = 0;
+      let bestSegmentIndex = -1;
+
+      segments.forEach((segment, segIndex) => {
+        if (usedSegments.has(segIndex)) return;
+
+        const score = similarity(sceneText, segment.text);
+        // Prefer segments in order
+        const orderBonus = segIndex > (sceneTimings[sceneIndex - 1]?.segmentIndex || -1) ? 0.1 : 0;
+
+        if (score + orderBonus > bestScore) {
+          bestScore = score + orderBonus;
+          bestMatch = segment;
+          bestSegmentIndex = segIndex;
+        }
+      });
+
+      if (bestMatch && bestScore > 0.05) {
+        usedSegments.add(bestSegmentIndex);
+        // Show scene 1 second before speech
+        const anticipation = 1.0;
+        sceneTimings.push({
+          sceneIndex,
+          startTime: Math.max(0, bestMatch.start - anticipation),
+          endTime: bestMatch.end,
+          segmentIndex: bestSegmentIndex,
+          confidence: bestScore
+        });
+        matchedCount++;
+      } else {
+        sceneTimings.push({
+          sceneIndex,
+          startTime: null,
+          endTime: null,
+          segmentIndex: -1,
+          confidence: 0
+        });
+      }
+    });
+
+    // Fill in unmatched scenes with interpolated times
+    let lastKnownTime = 0;
+    sceneTimings.forEach((timing, index) => {
+      if (timing.startTime === null) {
+        // Find next matched scene
+        let nextMatchedIndex = index + 1;
+        while (nextMatchedIndex < sceneTimings.length && sceneTimings[nextMatchedIndex].startTime === null) {
+          nextMatchedIndex++;
+        }
+        const nextStartTime = nextMatchedIndex < sceneTimings.length ? sceneTimings[nextMatchedIndex].startTime : totalDuration;
+        const gapDuration = nextStartTime - lastKnownTime;
+        const unmatchedCount = nextMatchedIndex - index;
+        timing.startTime = lastKnownTime + (gapDuration / unmatchedCount) * (index - (nextMatchedIndex - unmatchedCount));
+      }
+      lastKnownTime = timing.startTime;
+    });
+
+    // Make scenes contiguous
+    for (let i = 0; i < sceneTimings.length; i++) {
+      const endTime = i < sceneTimings.length - 1 ? sceneTimings[i + 1].startTime : totalDuration;
+      sceneTimings[i].endTime = endTime;
+      sceneTimings[i].duration = endTime - sceneTimings[i].startTime;
+    }
+
+    // Apply timings to scenes
+    sceneTimings.forEach(timing => {
+      const scene = this.scenes[timing.sceneIndex];
+      if (scene) {
+        scene.startTime = timing.startTime;
+        scene.duration = timing.duration;
+      }
+    });
+
+    console.log('Scene timings:', sceneTimings.map(t => ({
+      scene: t.sceneIndex + 1,
+      start: t.startTime?.toFixed(2),
+      duration: t.duration?.toFixed(2),
+      confidence: t.confidence?.toFixed(2)
+    })));
+
+    return matchedCount;
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)
