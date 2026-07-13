@@ -3183,12 +3183,13 @@ CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, moti
 
     try {
       // Step 1: Generate image with text prompt only (like original flow)
+      // Use landscape format to match original batch scenes
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: prompt,
-          size: '1024x1024',
+          size: '1792x1024',
           quality: 'standard',
           model: 'dall-e-3'
         })
