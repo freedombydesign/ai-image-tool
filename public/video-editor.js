@@ -2810,131 +2810,54 @@ class VideoEditor {
     }
   }
 
-  // Match scenes to transcription segments based on text similarity
+  // Match scenes to transcription segments using proportional timing
+  // This divides the audio into equal chunks per scene, aligned to segment boundaries
   matchScenesToSegments(segments, totalDuration) {
     if (!segments || segments.length === 0 || this.scenes.length === 0) {
       return 0;
     }
 
-    // Log transcription segments for debugging
-    console.log('Transcription segments:', segments.map((s, i) => ({
-      i,
-      start: s.start?.toFixed(1),
-      end: s.end?.toFixed(1),
-      text: s.text?.substring(0, 50)
-    })));
+    console.log(`Matching ${this.scenes.length} scenes to ${segments.length} segments over ${totalDuration?.toFixed(1)}s`);
 
-    console.log('Scene texts:', this.scenes.map((s, i) => ({
-      i: i + 1,
-      text: (s.text || s.caption || s.visualDescription || '').substring(0, 50)
-    })));
+    const numScenes = this.scenes.length;
+    const anticipation = 3.0; // Show scene before words are spoken
 
-    // Normalize text for comparison
-    const normalize = (text) => {
-      return (text || '').toLowerCase()
-        .replace(/[^\w\s]/g, '')
-        .split(/\s+/)
-        .filter(w => w.length > 2);
-    };
+    // Simple approach: divide segments proportionally among scenes
+    const segmentsPerScene = segments.length / numScenes;
 
-    // Calculate similarity between two texts
-    const similarity = (text1, text2) => {
-      const words1 = new Set(normalize(text1));
-      const words2 = new Set(normalize(text2));
-      const intersection = [...words1].filter(w => words2.has(w));
-      const union = new Set([...words1, ...words2]);
-      return union.size > 0 ? intersection.length / union.size : 0;
-    };
-
-    let matchedCount = 0;
-    const usedSegments = new Set();
-    const sceneTimings = [];
-
-    // For each scene, find the best matching segment
     this.scenes.forEach((scene, sceneIndex) => {
-      const sceneText = scene.text || scene.caption || scene.visualDescription || '';
-      let bestMatch = null;
-      let bestScore = 0;
-      let bestSegmentIndex = -1;
+      // Calculate which segment this scene should start at
+      const startSegmentIndex = Math.floor(sceneIndex * segmentsPerScene);
+      const endSegmentIndex = Math.min(
+        Math.floor((sceneIndex + 1) * segmentsPerScene),
+        segments.length - 1
+      );
 
-      segments.forEach((segment, segIndex) => {
-        if (usedSegments.has(segIndex)) return;
+      const startSegment = segments[startSegmentIndex];
+      const endSegment = segments[endSegmentIndex];
 
-        const score = similarity(sceneText, segment.text);
-        // Prefer segments in order
-        const orderBonus = segIndex > (sceneTimings[sceneIndex - 1]?.segmentIndex || -1) ? 0.1 : 0;
+      // Set scene to start 3 seconds before its segment (anticipation)
+      scene.startTime = Math.max(0, startSegment.start - anticipation);
 
-        if (score + orderBonus > bestScore) {
-          bestScore = score + orderBonus;
-          bestMatch = segment;
-          bestSegmentIndex = segIndex;
-        }
-      });
-
-      if (bestMatch && bestScore > 0.05) {
-        usedSegments.add(bestSegmentIndex);
-        // Show scene 3 seconds before speech for better visual anticipation
-        const anticipation = 3.0;
-        sceneTimings.push({
-          sceneIndex,
-          startTime: Math.max(0, bestMatch.start - anticipation),
-          endTime: bestMatch.end,
-          segmentIndex: bestSegmentIndex,
-          confidence: bestScore
-        });
-        matchedCount++;
-      } else {
-        sceneTimings.push({
-          sceneIndex,
-          startTime: null,
-          endTime: null,
-          segmentIndex: -1,
-          confidence: 0
-        });
+      // For the last scene, extend to end of audio
+      if (sceneIndex === numScenes - 1) {
+        scene.duration = totalDuration - scene.startTime;
       }
     });
 
-    // Fill in unmatched scenes with interpolated times
-    let lastKnownTime = 0;
-    sceneTimings.forEach((timing, index) => {
-      if (timing.startTime === null) {
-        // Find next matched scene
-        let nextMatchedIndex = index + 1;
-        while (nextMatchedIndex < sceneTimings.length && sceneTimings[nextMatchedIndex].startTime === null) {
-          nextMatchedIndex++;
-        }
-        const nextStartTime = nextMatchedIndex < sceneTimings.length ? sceneTimings[nextMatchedIndex].startTime : totalDuration;
-        const gapDuration = nextStartTime - lastKnownTime;
-        const unmatchedCount = nextMatchedIndex - index;
-        timing.startTime = lastKnownTime + (gapDuration / unmatchedCount) * (index - (nextMatchedIndex - unmatchedCount));
-      }
-      lastKnownTime = timing.startTime;
-    });
-
-    // Make scenes contiguous
-    for (let i = 0; i < sceneTimings.length; i++) {
-      const endTime = i < sceneTimings.length - 1 ? sceneTimings[i + 1].startTime : totalDuration;
-      sceneTimings[i].endTime = endTime;
-      sceneTimings[i].duration = endTime - sceneTimings[i].startTime;
+    // Make scenes contiguous - each scene ends when next begins
+    for (let i = 0; i < numScenes - 1; i++) {
+      this.scenes[i].duration = this.scenes[i + 1].startTime - this.scenes[i].startTime;
     }
 
-    // Apply timings to scenes
-    sceneTimings.forEach(timing => {
-      const scene = this.scenes[timing.sceneIndex];
-      if (scene) {
-        scene.startTime = timing.startTime;
-        scene.duration = timing.duration;
-      }
-    });
-
-    console.log('Scene timings:', sceneTimings.map(t => ({
-      scene: t.sceneIndex + 1,
-      start: t.startTime?.toFixed(2),
-      duration: t.duration?.toFixed(2),
-      confidence: t.confidence?.toFixed(2)
+    // Log the results
+    console.log('Scene timings:', this.scenes.slice(0, 10).map((s, i) => ({
+      scene: i + 1,
+      start: s.startTime?.toFixed(1),
+      duration: s.duration?.toFixed(1)
     })));
 
-    return matchedCount;
+    return numScenes; // All scenes matched
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)
