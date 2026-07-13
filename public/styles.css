@@ -1834,10 +1834,9 @@ footer {
   display: block;
 }
 
-.caption-item .replace-image-btn {
+.caption-item .replace-image-btn,
+.caption-item .regenerate-image-btn {
   position: absolute;
-  bottom: -4px;
-  right: -4px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -1854,13 +1853,35 @@ footer {
   padding: 0;
 }
 
-.caption-item .caption-scene-wrapper:hover .replace-image-btn {
+.caption-item .replace-image-btn {
+  bottom: -4px;
+  right: -4px;
+}
+
+.caption-item .regenerate-image-btn {
+  top: -4px;
+  right: -4px;
+  background: var(--warning, #f59e0b);
+}
+
+.caption-item .caption-scene-wrapper:hover .replace-image-btn,
+.caption-item .caption-scene-wrapper:hover .regenerate-image-btn {
   opacity: 1;
 }
 
 .caption-item .replace-image-btn:hover {
   background: var(--primary-dark);
   transform: scale(1.1);
+}
+
+.caption-item .regenerate-image-btn:hover {
+  background: var(--warning-dark, #d97706);
+  transform: scale(1.1);
+}
+
+.caption-item .regenerate-image-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .caption-item .caption-input {

@@ -2946,7 +2946,10 @@ class VideoEditor {
         <div class="caption-scene-wrapper">
           <img src="${scene.imageUrl}" class="caption-scene" alt="Scene ${index + 1}"
                onclick="videoEditor.viewSceneFullscreen(${index})" title="Click to view full size">
-          <button class="replace-image-btn" onclick="event.stopPropagation(); videoEditor.triggerReplaceImage(${index})" title="Replace Image">
+          <button class="regenerate-image-btn" onclick="event.stopPropagation(); videoEditor.regenerateSceneImage(${index})" title="Regenerate with AI (removes tarot/crystals)">
+            🔁
+          </button>
+          <button class="replace-image-btn" onclick="event.stopPropagation(); videoEditor.triggerReplaceImage(${index})" title="Upload your own image">
             🔄
           </button>
           <span class="scene-number-label">${index + 1}</span>
@@ -3063,6 +3066,69 @@ class VideoEditor {
     } catch (error) {
       console.error('Error replacing image:', error);
       showToast('Failed to replace image.');
+    }
+  }
+
+  // Regenerate scene image with AI (applies content filter to avoid tarot/crystals)
+  async regenerateSceneImage(index) {
+    const scene = this.scenes[index];
+    if (!scene) return;
+
+    // Get the scene description to regenerate
+    const description = scene.visualDescription || scene.text || scene.caption || `Scene ${index + 1}`;
+
+    // Build prompt with content filter
+    const contentFilter = `IMPORTANT: Do NOT include tarot cards, crystals, occult symbols, astrology imagery, or new age spirituality aesthetics. Use professional, modern, relatable imagery instead.`;
+    const prompt = `${description}. ${contentFilter}`;
+
+    // Show loading state on the button
+    const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
+    const originalText = btn?.textContent;
+    if (btn) {
+      btn.textContent = '⏳';
+      btn.disabled = true;
+    }
+
+    showToast(`Regenerating scene ${index + 1}...`, 'info');
+
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: prompt,
+          size: '1024x1024',
+          quality: 'standard',
+          model: 'dall-e-3'
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Update the scene with new image
+      if (this.scenes[index]) {
+        this.scenes[index].imageUrl = data.image;
+        this.scenes[index].regenerated = true;
+
+        // Re-render
+        this.renderTimeline();
+        this.renderCaptions();
+
+        showToast(`Scene ${index + 1} regenerated!`, 'success');
+      }
+    } catch (error) {
+      console.error('Error regenerating image:', error);
+      showToast(`Failed to regenerate scene ${index + 1}: ${error.message}`);
+    } finally {
+      // Restore button
+      if (btn) {
+        btn.textContent = originalText || '🔁';
+        btn.disabled = false;
+      }
     }
   }
 
