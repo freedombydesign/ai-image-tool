@@ -2811,8 +2811,7 @@ class VideoEditor {
     }
   }
 
-  // Match scenes to transcription segments using proportional timing
-  // This divides the audio into equal chunks per scene, aligned to segment boundaries
+  // Match scenes to transcription segments using dialogue text matching
   matchScenesToSegments(segments, totalDuration) {
     if (!segments || segments.length === 0 || this.scenes.length === 0) {
       return 0;
@@ -2820,45 +2819,132 @@ class VideoEditor {
 
     console.log(`Matching ${this.scenes.length} scenes to ${segments.length} segments over ${totalDuration?.toFixed(1)}s`);
 
+    // Extract dialogue (text in quotes) from scene text
+    const getDialogue = (scene) => {
+      const text = scene.text || scene.caption || '';
+      const quotes = text.match(/"([^"]*)"/g) || [];
+      return quotes.map(q => q.replace(/"/g, '')).join(' ').toLowerCase();
+    };
+
+    // Normalize text for comparison
+    const normalize = (text) => {
+      return (text || '').toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter(w => w.length > 2);
+    };
+
+    // Calculate word overlap between two texts
+    const similarity = (text1, text2) => {
+      const words1 = new Set(normalize(text1));
+      const words2 = new Set(normalize(text2));
+      if (words1.size === 0 || words2.size === 0) return 0;
+      const intersection = [...words1].filter(w => words2.has(w));
+      return intersection.length / Math.min(words1.size, words2.size);
+    };
+
     const numScenes = this.scenes.length;
-    const anticipation = 3.0; // Show scene before words are spoken
+    const anticipation = 3.0;
+    let matchedCount = 0;
+    const usedSegments = new Set();
+    const sceneTimings = [];
 
-    // Simple approach: divide segments proportionally among scenes
-    const segmentsPerScene = segments.length / numScenes;
-
+    // For each scene, find the best matching segment
     this.scenes.forEach((scene, sceneIndex) => {
-      // Calculate which segment this scene should start at
-      const startSegmentIndex = Math.floor(sceneIndex * segmentsPerScene);
-      const endSegmentIndex = Math.min(
-        Math.floor((sceneIndex + 1) * segmentsPerScene),
-        segments.length - 1
-      );
+      const dialogue = getDialogue(scene);
+      let bestMatch = null;
+      let bestScore = 0;
+      let bestSegmentIndex = -1;
 
-      const startSegment = segments[startSegmentIndex];
-      const endSegment = segments[endSegmentIndex];
+      // Only search segments we haven't used, preferring ones in order
+      segments.forEach((segment, segIndex) => {
+        if (usedSegments.has(segIndex)) return;
 
-      // Set scene to start 3 seconds before its segment (anticipation)
-      scene.startTime = Math.max(0, startSegment.start - anticipation);
+        const score = similarity(dialogue, segment.text);
+        // Bonus for segments that come after previous match (maintain order)
+        const lastMatchedIndex = sceneTimings.length > 0 ? sceneTimings[sceneTimings.length - 1].segmentIndex : -1;
+        const orderBonus = segIndex > lastMatchedIndex ? 0.1 : 0;
 
-      // For the last scene, extend to end of audio
-      if (sceneIndex === numScenes - 1) {
-        scene.duration = totalDuration - scene.startTime;
+        if (score + orderBonus > bestScore) {
+          bestScore = score + orderBonus;
+          bestMatch = segment;
+          bestSegmentIndex = segIndex;
+        }
+      });
+
+      if (bestMatch && bestScore > 0.15) {
+        usedSegments.add(bestSegmentIndex);
+        sceneTimings.push({
+          sceneIndex,
+          startTime: Math.max(0, bestMatch.start - anticipation),
+          segmentIndex: bestSegmentIndex,
+          confidence: bestScore,
+          matched: true
+        });
+        matchedCount++;
+        console.log(`Scene ${sceneIndex + 1} matched to segment ${bestSegmentIndex} (${bestScore.toFixed(2)}): "${dialogue.substring(0, 30)}..." -> "${bestMatch.text.substring(0, 30)}..."`);
+      } else {
+        // No good match - will interpolate later
+        sceneTimings.push({
+          sceneIndex,
+          startTime: null,
+          segmentIndex: -1,
+          confidence: 0,
+          matched: false
+        });
       }
     });
 
-    // Make scenes contiguous - each scene ends when next begins
-    for (let i = 0; i < numScenes - 1; i++) {
-      this.scenes[i].duration = this.scenes[i + 1].startTime - this.scenes[i].startTime;
+    console.log(`Matched ${matchedCount}/${numScenes} scenes by dialogue`);
+
+    // Fill in unmatched scenes by interpolation
+    let lastKnownTime = 0;
+    let lastKnownIndex = -1;
+
+    for (let i = 0; i < sceneTimings.length; i++) {
+      if (sceneTimings[i].startTime !== null) {
+        lastKnownTime = sceneTimings[i].startTime;
+        lastKnownIndex = i;
+      }
     }
 
-    // Log the results
+    // Second pass: interpolate unmatched scenes
+    lastKnownTime = 0;
+    for (let i = 0; i < sceneTimings.length; i++) {
+      if (sceneTimings[i].startTime === null) {
+        // Find next matched scene
+        let nextMatchedIdx = i + 1;
+        while (nextMatchedIdx < sceneTimings.length && sceneTimings[nextMatchedIdx].startTime === null) {
+          nextMatchedIdx++;
+        }
+
+        const nextTime = nextMatchedIdx < sceneTimings.length ? sceneTimings[nextMatchedIdx].startTime : totalDuration;
+        const gap = nextTime - lastKnownTime;
+        const unmatchedCount = nextMatchedIdx - i;
+
+        // Distribute gap evenly among unmatched scenes
+        for (let j = i; j < nextMatchedIdx && j < sceneTimings.length; j++) {
+          sceneTimings[j].startTime = lastKnownTime + (gap / unmatchedCount) * (j - i + 1) - (gap / unmatchedCount);
+        }
+      }
+      lastKnownTime = sceneTimings[i].startTime;
+    }
+
+    // Make scenes contiguous and apply timings
+    for (let i = 0; i < sceneTimings.length; i++) {
+      const endTime = i < sceneTimings.length - 1 ? sceneTimings[i + 1].startTime : totalDuration;
+      const scene = this.scenes[sceneTimings[i].sceneIndex];
+      scene.startTime = sceneTimings[i].startTime;
+      scene.duration = endTime - scene.startTime;
+    }
+
     console.log('Scene timings:', this.scenes.slice(0, 10).map((s, i) => ({
       scene: i + 1,
       start: s.startTime?.toFixed(1),
       duration: s.duration?.toFixed(1)
     })));
 
-    return numScenes; // All scenes matched
+    return matchedCount;
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)
