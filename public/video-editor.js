@@ -4459,32 +4459,38 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
       }
 
-      // Start voiceover audio (use stitched audio if there are replacements)
+      // Start voiceover audio - but MUTE it if avatar videos have their own audio
       if (this.audioBlob) {
-        // Check if we have replaced segments and need to use stitched audio
-        const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
+        // Check if we have uploaded avatar segments (they have audio baked in)
+        const hasAvatarSegments = this.avatarVideos && this.avatarVideos.some(v => v && v.url);
 
-        if (hasReplacements && !this.stitchedAudioBlob) {
-          // Stitch audio in background for next play
-          this.stitchAudioForExport().then(blob => {
-            if (blob && blob !== this.audioBlob) {
-              this.stitchedAudioBlob = blob;
-              console.log('Stitched audio ready for preview');
-            }
-          });
+        if (hasAvatarSegments) {
+          // Avatar videos have their own audio - don't play separate voiceover
+          console.log('Avatar segments have audio - muting separate voiceover');
+          this.audioPlayer.pause();
+        } else {
+          // No avatar segments - play voiceover normally
+          const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
+
+          if (hasReplacements && !this.stitchedAudioBlob) {
+            this.stitchAudioForExport().then(blob => {
+              if (blob && blob !== this.audioBlob) {
+                this.stitchedAudioBlob = blob;
+                console.log('Stitched audio ready for preview');
+              }
+            });
+          }
+
+          const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
+
+          if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
+            const url = URL.createObjectURL(audioToPlay);
+            this.audioPlayer.src = url;
+            this.currentAudioUrl = url;
+          }
+          this.audioPlayer.currentTime = this.playbackTime;
+          this.audioPlayer.play().catch(e => console.log('Voiceover play error:', e));
         }
-
-        const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
-
-        if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error ||
-            (hasReplacements && this.stitchedAudioBlob && !this.audioPlayer.src.includes('stitched'))) {
-          const url = URL.createObjectURL(audioToPlay);
-          this.audioPlayer.src = url;
-          this.currentAudioUrl = url;
-          if (this.stitchedAudioBlob) console.log('Playing stitched audio with replacements');
-        }
-        this.audioPlayer.currentTime = this.playbackTime;
-        this.audioPlayer.play().catch(e => console.log('Voiceover play error:', e));
       }
 
       // Start background music
@@ -4500,26 +4506,31 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Canvas mode fallback
-    // Play voiceover - use stitched audio if there are replacements
+    // Play voiceover - but MUTE if avatar segments have their own audio
     if (this.audioBlob) {
-      const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
+      const hasAvatarSegments = this.avatarVideos && this.avatarVideos.some(v => v && v.url);
 
-      // Recreate blob URL if needed (Firefox fix)
-      if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
-        const url = URL.createObjectURL(audioToPlay);
-        this.audioPlayer.src = url;
-        this.currentAudioUrl = url;
-      }
-      this.audioPlayer.currentTime = this.playbackTime;
-      this.audioPlayer.play().catch(e => {
-        console.log('Voiceover play error:', e);
-        // Try reloading the audio
-        if (audioToPlay) {
+      if (hasAvatarSegments) {
+        console.log('Avatar segments have audio - muting separate voiceover');
+        this.audioPlayer.pause();
+      } else {
+        const audioToPlay = this.stitchedAudioBlob || this.audioBlob;
+
+        if (!this.audioPlayer.src || this.audioPlayer.src === '' || this.audioPlayer.error) {
           const url = URL.createObjectURL(audioToPlay);
           this.audioPlayer.src = url;
-          this.audioPlayer.load();
+          this.currentAudioUrl = url;
         }
-      });
+        this.audioPlayer.currentTime = this.playbackTime;
+        this.audioPlayer.play().catch(e => {
+          console.log('Voiceover play error:', e);
+          if (audioToPlay) {
+            const url = URL.createObjectURL(audioToPlay);
+            this.audioPlayer.src = url;
+            this.audioPlayer.load();
+          }
+        });
+      }
     }
 
     // Play background music
