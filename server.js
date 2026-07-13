@@ -1737,7 +1737,16 @@ CRITICAL RULES:
 4. Use professional video/photography terminology
 5. NO text in images - text will be added separately with overlays
 6. Make scenes visually distinct but thematically cohesive
-7. Focus on emotions, body language, and visual metaphors for abstract concepts`;
+7. Focus on emotions, body language, and visual metaphors for abstract concepts
+
+DEFAULT CONTENT TO AVOID (unless specifically requested):
+- Tarot cards, oracle cards, divination tools
+- Crystals, gemstones, healing stones
+- Occult symbols, pentagrams, mystical sigils
+- Astrology symbols, zodiac imagery
+- Magic, witchcraft, spellcasting imagery
+- New age spirituality aesthetics
+Instead use: professional business settings, modern technology, nature metaphors, human connection moments`;
 
     // Add avatar as main character if included
     if (includeAvatarInScenes && avatarDescription) {
