@@ -4760,29 +4760,32 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   animateNativeLayered() {
     if (!this.isPlaying) return;
 
-    // Sync playback time with avatar video (master clock for audio sync)
-    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused) {
-      // Find which segment should be playing based on time
-      const currentSegment = this.avatarVideos?.find(av =>
-        this.playbackTime >= av.startTime && this.playbackTime < av.endTime
-      );
+    // Find which segment should be playing based on time
+    const currentSegment = this.avatarVideos?.find(av =>
+      this.playbackTime >= av.startTime && this.playbackTime < av.endTime
+    );
 
-      if (currentSegment && currentSegment.videoUrl !== this.currentAvatarSegmentUrl) {
-        // Switch to new segment
-        console.log(`Switching to avatar segment: ${currentSegment.startTime}s - ${currentSegment.endTime}s`);
-        this.currentAvatarSegmentUrl = currentSegment.videoUrl;
-        this.previewAvatarVideo.src = currentSegment.videoUrl;
-        this.previewAvatarVideo.load();
+    // Handle segment switching (with debounce to prevent rapid switching)
+    if (currentSegment && currentSegment.videoUrl !== this.currentAvatarSegmentUrl && !this.segmentSwitching) {
+      this.segmentSwitching = true;
+      console.log(`Switching to avatar segment: ${currentSegment.startTime}s - ${currentSegment.endTime}s`);
+      this.currentAvatarSegmentUrl = currentSegment.videoUrl;
+      this.previewAvatarVideo.src = currentSegment.videoUrl;
+
+      // Wait for video to be ready before playing
+      this.previewAvatarVideo.oncanplay = () => {
         const localTime = this.playbackTime - currentSegment.startTime;
-        this.previewAvatarVideo.currentTime = Math.max(0, localTime);
-        this.previewAvatarVideo.play().catch(e => console.log('Segment switch play error:', e));
-      }
+        this.previewAvatarVideo.currentTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
+        this.previewAvatarVideo.play().catch(e => console.log('Segment play error:', e));
+        this.segmentSwitching = false;
+      };
+      this.previewAvatarVideo.load();
+    }
 
-      // Use avatar video time as playback time (it has the audio)
-      if (currentSegment) {
-        const localVideoTime = this.previewAvatarVideo.currentTime;
-        this.playbackTime = currentSegment.startTime + localVideoTime;
-      }
+    // Sync playback time with avatar video (it has the audio)
+    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused && currentSegment && !this.segmentSwitching) {
+      const localVideoTime = this.previewAvatarVideo.currentTime;
+      this.playbackTime = currentSegment.startTime + localVideoTime;
     }
 
     const totalDuration = this.getTotalDuration();
