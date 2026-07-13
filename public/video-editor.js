@@ -3227,7 +3227,8 @@ CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, moti
         this.scenes[index].regenerated = true;
         this.scenes[index].faceSwapped = hasAvatarImage;
 
-        // Re-render
+        // Re-render all views with the new image
+        this.renderImportedScenes();
         this.renderTimeline();
         this.renderCaptions();
 
