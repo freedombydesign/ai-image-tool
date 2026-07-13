@@ -2625,17 +2625,20 @@ class VideoEditor {
     const totalWords = wordCounts.reduce((sum, count) => sum + count, 0);
     const totalDuration = this.audioDuration;
 
-    // Calculate duration proportional to word count
+    // Calculate duration with CAPPED proportional word count
+    // Base: even distribution, then adjust slightly by word count
+    const baseDuration = totalDuration / this.scenes.length;
+    const avgWords = totalWords / this.scenes.length;
+
     let currentTime = 0;
     this.scenes.forEach((scene, index) => {
-      const proportion = wordCounts[index] / totalWords;
+      // Start with even distribution, adjust by word ratio (capped)
+      const wordRatio = Math.min(2, Math.max(0.5, wordCounts[index] / avgWords));
       scene.startTime = currentTime;
-      scene.duration = totalDuration * proportion;
+      scene.duration = baseDuration * wordRatio;
 
-      // Minimum 2 seconds per scene
-      if (scene.duration < 2) {
-        scene.duration = 2;
-      }
+      // Cap between 3 and 25 seconds
+      scene.duration = Math.max(3, Math.min(25, scene.duration));
 
       currentTime += scene.duration;
     });
