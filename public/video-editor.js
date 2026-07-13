@@ -3151,7 +3151,10 @@ class VideoEditor {
         this.renderTimeline();
         this.renderCaptions();
 
-        showToast(`Scene ${index + 1} regenerated!`, 'success');
+        // Save to Supabase so it persists on refresh
+        this.saveScenesToSupabase();
+
+        showToast(`Scene ${index + 1} regenerated and saved!`, 'success');
       }
     } catch (error) {
       console.error('Error regenerating image:', error);
