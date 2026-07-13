@@ -2958,17 +2958,51 @@ class VideoEditor {
 
     console.log(`Step 2: Refined ${refinedCount}/${numScenes} scenes using dialogue matching`);
 
-    // === STEP 3: ENSURE SEQUENTIAL ORDER ===
-    // Make sure all scenes are in order (no overlaps)
+    // === STEP 3: REDISTRIBUTE BETWEEN ANCHORS ===
+    // Find anchor points (refined scenes) and redistribute unrefined scenes between them
+    const anchors = sceneTimings
+      .map((t, i) => ({ index: i, ...t }))
+      .filter(t => t.matched);
+
+    // Add start and end as implicit anchors
+    const allAnchors = [
+      { index: -1, startTime: 0 },
+      ...anchors,
+      { index: numScenes, startTime: totalDuration }
+    ];
+
+    console.log(`Step 3: Found ${anchors.length} anchor points, redistributing scenes between them`);
+
+    // Redistribute scenes between each pair of anchors
+    for (let a = 0; a < allAnchors.length - 1; a++) {
+      const startAnchor = allAnchors[a];
+      const endAnchor = allAnchors[a + 1];
+
+      const startIdx = startAnchor.index + 1;
+      const endIdx = endAnchor.index;
+      const sceneCount = endIdx - startIdx;
+
+      if (sceneCount <= 0) continue;
+
+      const timeSpan = endAnchor.startTime - startAnchor.startTime;
+      const timePerScene = timeSpan / (sceneCount + 1); // +1 because end anchor takes a slot
+
+      for (let i = startIdx; i < endIdx; i++) {
+        const posInSpan = i - startIdx + 1;
+        sceneTimings[i].startTime = startAnchor.startTime + (timePerScene * posInSpan);
+      }
+    }
+
+    // Ensure sequential order (safety check)
     let lastTime = 0;
     for (let i = 0; i < sceneTimings.length; i++) {
       if (sceneTimings[i].startTime <= lastTime) {
-        sceneTimings[i].startTime = lastTime + 0.1; // Small gap
+        sceneTimings[i].startTime = lastTime + 0.5;
       }
       lastTime = sceneTimings[i].startTime;
     }
 
-    console.log(`Step 3: All ${numScenes} scenes have valid sequential times`);
+    console.log(`Step 3: All ${numScenes} scenes redistributed between anchors`);
     const matchedCount = refinedCount;
 
     // Make scenes contiguous and apply timings
