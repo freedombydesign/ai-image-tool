@@ -2722,7 +2722,9 @@ class VideoEditor {
       const result = await response.json();
 
       if (!response.ok || result.error) {
-        throw new Error(result.error || 'Transcription failed');
+        const err = new Error(result.error || 'Transcription failed');
+        err.details = result.details;
+        throw err;
       }
 
       // Apply the scene timings from transcription
@@ -2750,7 +2752,9 @@ class VideoEditor {
 
     } catch (error) {
       console.error('Sync to audio error:', error);
-      showToast(`Sync failed: ${error.message}`, 'error');
+      const errorMsg = error.details || error.message || 'Unknown error';
+      showToast(`Sync failed: ${errorMsg}`, 'error');
+      alert('Sync Error Details:\n\n' + JSON.stringify(error, null, 2));
     } finally {
       // Restore button state
       if (this.syncToAudioBtn) {
