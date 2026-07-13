@@ -3123,14 +3123,14 @@ class VideoEditor {
     prompt = `${prompt}.
 
 CRITICAL STYLE RULES:
-- Clean, minimal backgrounds with NO text, signs, posters, or motivational quotes
-- Soft, muted color palette (purples, sunset pinks, warm beiges)
-- Cinematic lighting with soft gradients and warm tones
-- NO busy office decor, NO mugs with text, NO wall art with words
-- Character should wear neutral/soft colors, not bright red
-- Elegant, professional aesthetic - NOT "girlboss" or "hustle culture" aesthetic
+- Soft, muted color palette (purples, sunset pinks, warm beiges, cream)
+- Cinematic lighting with soft gradients, warm sunset/evening tones
+- Cozy home office or living room setting with subtle decor
+- Abstract art or simple frames OK, but NO motivational quote posters
+- Character should wear neutral/soft colors (white, beige, cream, soft pink, black) - NOT bright red
+- Elegant, warm, approachable aesthetic
 
-CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, new age spirituality, text overlays, motivational posters, busy cluttered backgrounds.`;
+CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, "girlboss" aesthetic, mugs with slogans, busy cluttered backgrounds with lots of text.`;
 
     // Show loading state on the button
     const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
