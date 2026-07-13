@@ -130,13 +130,15 @@ class VideoEditor {
         method: 'DELETE'
       });
 
-      // Now save the current scenes
+      // Now save the current scenes (including audio URL for cross-browser persistence)
       const response = await fetch('/api/db/batch-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: userId,
           batchId: batchId,
+          audioUrl: this.savedAudioUrl || localStorage.getItem('saved_audio_url') || null,
+          audioFileName: this.audioFileName || localStorage.getItem('saved_audio_name') || null,
           scenes: this.scenes.map((scene, index) => ({
             imageUrl: scene.imageUrl,
             text: scene.text || scene.caption || '',
@@ -188,6 +190,19 @@ class VideoEditor {
           this.renderCaptions();
           this.updateTotalDuration();
           console.log(`Loaded ${this.scenes.length} scenes from Supabase (video-editor-main)`);
+
+          // Load audio from Supabase URL if available
+          if (data.audioUrl) {
+            console.log('Found audio URL in Supabase:', data.audioUrl);
+            this.savedAudioUrl = data.audioUrl;
+            localStorage.setItem('saved_audio_url', data.audioUrl);
+            if (data.audioFileName) {
+              localStorage.setItem('saved_audio_name', data.audioFileName);
+            }
+            // Load the audio from URL
+            await this.loadAudioFromUrl(data.audioUrl, data.audioFileName || 'Saved audio');
+          }
+
           showToast(`Restored ${this.scenes.length} scenes`, 'success');
           return;
         }
@@ -1499,6 +1514,36 @@ class VideoEditor {
     }
   }
 
+  // Load audio from a URL (for cross-browser persistence via Supabase)
+  async loadAudioFromUrl(url, fileName) {
+    try {
+      console.log('Loading audio from URL:', url);
+      showToast('Loading saved audio...', 'info');
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const contentType = response.headers.get('content-type') || 'audio/mpeg';
+      this.audioBlob = new Blob([arrayBuffer], { type: contentType });
+      this.audioFileName = fileName;
+
+      // Load the audio for playback
+      this.loadAudioBlob(this.audioBlob);
+
+      // Also save to IndexedDB for faster loading next time
+      this.saveAudioToIndexedDB(fileName, this.audioBlob);
+
+      console.log('Audio loaded from Supabase URL successfully');
+      showToast('Audio restored!', 'success');
+    } catch (error) {
+      console.error('Failed to load audio from URL:', error);
+      showToast('Could not load saved audio. Please re-upload.', 'error');
+    }
+  }
+
   // Save audio to IndexedDB for persistence
   async saveAudioToIndexedDB(fileName, blob) {
     try {
@@ -2766,6 +2811,13 @@ class VideoEditor {
 
       const audioUrl = urlData.publicUrl;
       console.log('Step 4c: Audio uploaded to:', audioUrl);
+
+      // Save audio URL for cross-browser persistence
+      this.savedAudioUrl = audioUrl;
+      localStorage.setItem('saved_audio_url', audioUrl);
+      localStorage.setItem('saved_audio_name', this.audioFileName || 'audio.m4a');
+      // Also save to Supabase with scenes
+      this.saveScenesToSupabase();
 
       // Step 4: Check cache first to avoid re-transcribing
       const audioHash = await this.generateAudioHash(this.audioBlob);

@@ -2606,20 +2606,20 @@ app.post('/api/db/batch-scenes', async (req, res) => {
   }
 
   try {
-    const { userId, batchId, scenes } = req.body;
+    const { userId, batchId, scenes, audioUrl, audioFileName } = req.body;
 
     if (!userId || !batchId || !scenes || !Array.isArray(scenes)) {
       return res.status(400).json({ error: 'userId, batchId, and scenes array required' });
     }
 
-    // Prepare scene records
+    // Prepare scene records (store audioUrl in first scene's style field as JSON for retrieval)
     const sceneRecords = scenes.map((scene, index) => ({
       user_id: userId,
       batch_id: batchId,
       scene_index: index,
       image_url: scene.imageUrl,
       prompt: scene.text || scene.prompt || '',
-      style: scene.style || '',
+      style: index === 0 && audioUrl ? JSON.stringify({ audioUrl, audioFileName, originalStyle: scene.style || '' }) : (scene.style || ''),
       model: scene.model || 'unknown'
     }));
 
@@ -2705,6 +2705,23 @@ app.get('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
 
     if (error) throw error;
 
+    // Extract audioUrl from first scene's style field if it's JSON
+    let audioUrl = null;
+    let audioFileName = null;
+    if (data && data.length > 0 && data[0].style) {
+      try {
+        const styleData = JSON.parse(data[0].style);
+        if (styleData.audioUrl) {
+          audioUrl = styleData.audioUrl;
+          audioFileName = styleData.audioFileName;
+          // Restore original style
+          data[0].style = styleData.originalStyle || '';
+        }
+      } catch (e) {
+        // Not JSON, that's fine - just regular style
+      }
+    }
+
     const scenes = (data || []).map(scene => ({
       index: scene.scene_index,
       imageUrl: scene.image_url,
@@ -2713,7 +2730,7 @@ app.get('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
       model: scene.model
     }));
 
-    res.json({ success: true, scenes });
+    res.json({ success: true, scenes, audioUrl, audioFileName });
   } catch (error) {
     console.error('Get batch error:', error);
     res.status(500).json({ error: error.message });
