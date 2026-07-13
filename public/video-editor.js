@@ -2632,7 +2632,7 @@ class VideoEditor {
     // Adjust to fit exact duration
     const actualTotal = this.scenes.reduce((sum, s) => sum + s.duration, 0);
     const scale = totalDuration / actualTotal;
-    const anticipation = 1.5; // Show scenes 1.5 seconds BEFORE words are spoken
+    const anticipation = 3; // Show scenes 3 seconds BEFORE words are spoken
 
     currentTime = 0;
     this.scenes.forEach(scene => {
@@ -2667,7 +2667,7 @@ class VideoEditor {
     }
 
     const durationPerScene = this.audioDuration / this.scenes.length;
-    const anticipation = 1.5; // Show scenes 1.5 seconds BEFORE words are spoken
+    const anticipation = 3; // Show scenes 3 seconds BEFORE words are spoken
 
     this.scenes.forEach((scene, index) => {
       // Shift each scene earlier by anticipation amount
