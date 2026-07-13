@@ -2691,40 +2691,72 @@ class VideoEditor {
     }
 
     try {
+      console.log('Step 1: Preparing upload...');
+      console.log('Audio blob:', this.audioBlob?.type, this.audioBlob?.size);
+
       // Step 1: Upload audio to Supabase storage
       showToast('Uploading audio for transcription...', 'info');
 
       const uploadFormData = new FormData();
       uploadFormData.append('audio', this.audioBlob, 'audio.mp3');
 
-      const uploadResponse = await fetch('/api/upload-audio', {
-        method: 'POST',
-        body: uploadFormData
-      });
+      console.log('Step 2: Sending upload request...');
+      let uploadResponse;
+      try {
+        uploadResponse = await fetch('/api/upload-audio', {
+          method: 'POST',
+          body: uploadFormData
+        });
+      } catch (fetchError) {
+        throw new Error('Upload fetch failed: ' + fetchError.message);
+      }
 
-      const uploadResult = await uploadResponse.json();
+      console.log('Step 3: Parsing upload response...', uploadResponse.status);
+      let uploadResult;
+      try {
+        const uploadText = await uploadResponse.text();
+        console.log('Upload response text:', uploadText.substring(0, 200));
+        uploadResult = JSON.parse(uploadText);
+      } catch (parseError) {
+        throw new Error('Upload response parse failed: ' + parseError.message);
+      }
+
       if (!uploadResponse.ok || !uploadResult.url) {
         throw new Error(uploadResult.error || 'Failed to upload audio');
       }
 
-      console.log('Audio uploaded to:', uploadResult.url);
+      console.log('Step 4: Audio uploaded to:', uploadResult.url);
 
       // Step 2: Transcribe from URL
       showToast('Transcribing audio with Whisper...', 'info');
 
-      const response = await fetch('/api/transcribe-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: uploadResult.url })
-      });
+      console.log('Step 5: Sending transcribe request...');
+      let response;
+      try {
+        response = await fetch('/api/transcribe-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrl: uploadResult.url })
+        });
+      } catch (fetchError) {
+        throw new Error('Transcribe fetch failed: ' + fetchError.message);
+      }
 
-      const result = await response.json();
+      console.log('Step 6: Parsing transcribe response...', response.status);
+      let result;
+      try {
+        const responseText = await response.text();
+        console.log('Transcribe response text:', responseText.substring(0, 200));
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error('Transcribe response parse failed: ' + parseError.message);
+      }
 
       if (!response.ok || result.error) {
         throw new Error(result.error || 'Transcription failed');
       }
 
-      console.log('Transcription received:', result.segments?.length, 'segments');
+      console.log('Step 7: Transcription received:', result.segments?.length, 'segments');
 
       // Step 3: Match scenes to transcription segments
       const matchedCount = this.matchScenesToSegments(result.segments || [], result.duration || this.audioDuration);
@@ -2741,9 +2773,9 @@ class VideoEditor {
 
     } catch (error) {
       console.error('Sync to audio error:', error);
+      console.error('Error stack:', error.stack);
       const errorMsg = error.details || error.message || 'Unknown error';
       showToast(`Sync failed: ${errorMsg}`, 'error');
-      alert('Sync Error:\n\nMessage: ' + (error.message || 'none') + '\nDetails: ' + (error.details || 'none') + '\nName: ' + (error.name || 'none'));
     } finally {
       // Restore button state
       if (this.syncToAudioBtn) {
