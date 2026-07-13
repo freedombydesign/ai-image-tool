@@ -1568,14 +1568,15 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
     fs.writeFileSync(tempPath, fileBuffer);
     console.log('Saved audio to temp file:', tempPath, 'size:', fileBuffer.length);
 
-    // Transcribe with Whisper - request word-level timestamps, force English
+    // Transcribe with Whisper - request segment timestamps, force English
+    console.log('Calling OpenAI Whisper API...');
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempPath),
       model: 'whisper-1',
-      language: 'en',  // Force English
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment', 'word']
+      language: 'en',
+      response_format: 'verbose_json'
     });
+    console.log('Transcription received, segments:', transcription.segments?.length);
 
     // Cleanup temp file
     if (tempPath && fs.existsSync(tempPath)) {
@@ -1607,7 +1608,8 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Transcription error:', error);
+    console.error('Transcription error:', error.message);
+    console.error('Full error:', JSON.stringify(error, null, 2));
     // Cleanup temp file on error
     if (tempPath && fs.existsSync(tempPath)) {
       fs.unlinkSync(tempPath);
@@ -1616,7 +1618,10 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
     if (req.file && req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      error: error.message,
+      details: error.response?.data || error.code || 'Unknown error'
+    });
   }
 });
 
