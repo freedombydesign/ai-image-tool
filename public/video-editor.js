@@ -3140,29 +3140,58 @@ CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, moti
       btn.disabled = true;
     }
 
+    // Check if we have an avatar image for character reference
+    const hasAvatarImage = typeof avatarImageData !== 'undefined' && avatarImageData;
+
     showToast(`Regenerating scene ${index + 1} with your avatar and style...`, 'info');
 
     try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: prompt,
-          size: '1024x1024',
-          quality: 'standard',
-          model: 'dall-e-3'
-        })
-      });
+      let data;
 
-      const data = await response.json();
+      if (hasAvatarImage) {
+        // Use character reference to match your face
+        const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
+
+        const formData = new FormData();
+        formData.append('referenceImage', avatarBlob, 'avatar.png');
+        formData.append('prompt', prompt);
+        formData.append('width', '1024');
+        formData.append('height', '1024');
+        formData.append('styleStrength', 'high'); // Keep style but match face
+
+        const response = await fetch('/api/generate-with-reference', {
+          method: 'POST',
+          body: formData
+        });
+        data = await response.json();
+      } else {
+        // No avatar image, use text-only generation
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: prompt,
+            size: '1024x1024',
+            quality: 'standard',
+            model: 'dall-e-3'
+          })
+        });
+        data = await response.json();
+      }
 
       if (data.error) {
         throw new Error(data.error);
       }
 
+      // Handle different response formats
+      const imageUrl = data.image || data.imageUrl;
+      if (!imageUrl) {
+        throw new Error('No image returned from API');
+      }
+
       // Update the scene with new image
       if (this.scenes[index]) {
-        this.scenes[index].imageUrl = data.image;
+        this.scenes[index].imageUrl = imageUrl;
         this.scenes[index].regenerated = true;
 
         // Re-render
