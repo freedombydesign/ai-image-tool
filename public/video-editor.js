@@ -176,7 +176,9 @@ class VideoEditor {
               duration: scene.duration || 6,
               startTime: scene.startTime || scene.start_time || 0
             }));
-            this.renderScenes();
+            this.renderImportedScenes();
+            this.renderTimeline();
+            this.renderCaptions();
             this.updateTotalDuration();
             console.log(`Loaded ${this.scenes.length} scenes from Supabase`);
             showToast(`Restored ${this.scenes.length} scenes`, 'success');
