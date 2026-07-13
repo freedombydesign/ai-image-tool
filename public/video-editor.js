@@ -163,13 +163,41 @@ class VideoEditor {
     const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
     if (!userId) return;
 
+    // Use the same batch ID as save
+    const batchId = 'video-editor-main';
+
     try {
-      const response = await fetch(`/api/db/batch-scenes/${userId}`);
+      // First try to load the specific video-editor-main batch
+      let response = await fetch(`/api/db/batch-scenes/${userId}/${batchId}`);
+
       if (response.ok) {
         const data = await response.json();
-        // API returns { batches: [...] }, get the most recent batch's scenes
+        const scenes = data.scenes || [];
+        if (scenes.length > 0) {
+          this.scenes = scenes.map((scene, index) => ({
+            id: `scene-${Date.now()}-${index}`,
+            imageUrl: scene.imageUrl || scene.image_url,
+            text: scene.text || '',
+            caption: scene.text || '',
+            duration: scene.duration || 6,
+            startTime: scene.startTime || scene.start_time || 0
+          }));
+          this.renderImportedScenes();
+          this.renderTimeline();
+          this.renderCaptions();
+          this.updateTotalDuration();
+          console.log(`Loaded ${this.scenes.length} scenes from Supabase (video-editor-main)`);
+          showToast(`Restored ${this.scenes.length} scenes`, 'success');
+          return;
+        }
+      }
+
+      // Fallback: try loading most recent batch
+      response = await fetch(`/api/db/batch-scenes/${userId}`);
+      if (response.ok) {
+        const data = await response.json();
         if (data.batches && data.batches.length > 0) {
-          const mostRecentBatch = data.batches[0]; // Already sorted by created_at desc
+          const mostRecentBatch = data.batches[0];
           const scenes = mostRecentBatch.scenes || [];
           if (scenes.length > 0) {
             this.scenes = scenes.map((scene, index) => ({
@@ -184,7 +212,7 @@ class VideoEditor {
             this.renderTimeline();
             this.renderCaptions();
             this.updateTotalDuration();
-            console.log(`Loaded ${this.scenes.length} scenes from Supabase`);
+            console.log(`Loaded ${this.scenes.length} scenes from Supabase (fallback)`);
             showToast(`Restored ${this.scenes.length} scenes`, 'success');
           }
         }
