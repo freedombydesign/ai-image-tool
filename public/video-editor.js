@@ -2993,6 +2993,20 @@ class VideoEditor {
       this.scenes[i].startTime += diff;
     }
 
+    // Auto-extend last scene to fill remaining audio (so you never run out of scenes)
+    if (this.audioDuration && this.scenes.length > 0) {
+      const lastScene = this.scenes[this.scenes.length - 1];
+      const lastSceneEnd = lastScene.startTime + lastScene.duration;
+
+      if (lastSceneEnd < this.audioDuration) {
+        // Extend last scene to cover remaining audio
+        lastScene.duration = this.audioDuration - lastScene.startTime;
+      } else if (lastSceneEnd > this.audioDuration && index === this.scenes.length - 1) {
+        // If editing last scene made it go past audio, cap it
+        lastScene.duration = Math.max(1, this.audioDuration - lastScene.startTime);
+      }
+    }
+
     this.renderTimeline();
     this.renderCaptions();
     this.updateTotalDuration();
