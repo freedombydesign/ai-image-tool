@@ -2602,13 +2602,24 @@ class VideoEditor {
       return;
     }
 
-    // Count words in each scene's text
+    // Count words in each scene's DIALOGUE (text in quotes) not visual descriptions
     const wordCounts = this.scenes.map(scene => {
       const text = scene.text || scene.caption || '';
-      // Remove visual cues like [Visual: ...] and count remaining words
-      const cleanText = text.replace(/\[.*?\]/g, '').trim();
-      const words = cleanText.split(/\s+/).filter(w => w.length > 0);
-      return Math.max(1, words.length); // Minimum 1 word
+
+      // Extract only dialogue in quotes
+      const dialogueMatches = text.match(/"([^"]*)"/g) || [];
+      const dialogue = dialogueMatches.map(m => m.replace(/"/g, '')).join(' ');
+
+      // If no quoted dialogue, use the whole text but with lower weight
+      let words;
+      if (dialogue.length > 0) {
+        words = dialogue.split(/\s+/).filter(w => w.length > 0);
+      } else {
+        // Visual description scene - give it minimal time
+        words = ['placeholder']; // 1 word = minimum time
+      }
+
+      return Math.max(1, words.length);
     });
 
     const totalWords = wordCounts.reduce((sum, count) => sum + count, 0);
