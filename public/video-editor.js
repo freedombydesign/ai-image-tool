@@ -3116,8 +3116,17 @@ class VideoEditor {
     const scene = this.scenes[index];
     if (!scene) return;
 
-    // Get the scene description to regenerate
-    const description = scene.visualDescription || scene.text || scene.caption || `Scene ${index + 1}`;
+    // Get the scene description to regenerate - prefer visualDescription over text/caption
+    // Remove any quoted dialogue or script text that shouldn't be rendered as image text
+    let description = scene.visualDescription || '';
+
+    // If no visual description, create a generic one (don't use caption/text as it contains dialogue)
+    if (!description) {
+      description = `Professional woman in conversation, warm cozy interior setting, scene ${index + 1}`;
+    }
+
+    // Strip out any quoted text or dialogue markers
+    description = description.replace(/"[^"]*"/g, '').replace(/\[.*?\]/g, '').trim();
 
     // Get avatar description from global (app.js) or DOM
     const avatarDesc = (typeof avatarDescription !== 'undefined' && avatarDescription)
@@ -3166,7 +3175,9 @@ CRITICAL STYLE RULES - SOFT PINK GLAM AESTHETIC:
 - Soft bokeh background, cinematic depth of field
 - Luxurious but cozy interior (velvet, warm wood, soft textures)
 
-CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, harsh lighting, cool/blue tones, bright neon colors, busy cluttered backgrounds.`;
+CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, harsh lighting, cool/blue tones, bright neon colors, busy cluttered backgrounds.
+
+CRITICAL: DO NOT include ANY text, words, letters, signs, labels, speech bubbles, text overlays, or written content in the image. The image must be purely visual with ZERO text of any kind.`;
 
     // Show loading state on the button
     const btn = document.querySelector(`.caption-item:nth-child(${index + 1}) .regenerate-image-btn`);
