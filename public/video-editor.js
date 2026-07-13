@@ -469,6 +469,7 @@ class VideoEditor {
     // Timeline
     this.playPreviewBtn = document.getElementById('play-preview-btn');
     this.syncToSpeechBtn = document.getElementById('sync-to-speech-btn');
+    this.syncToAudioBtn = document.getElementById('sync-to-audio-btn');
     this.distributeEvenlyBtn = document.getElementById('distribute-evenly-btn');
     this.totalDuration = document.getElementById('total-duration');
     this.waveformContainer = document.getElementById('waveform-container');
@@ -619,6 +620,9 @@ class VideoEditor {
     this.playPreviewBtn.addEventListener('click', () => this.openPreview());
     if (this.syncToSpeechBtn) {
       this.syncToSpeechBtn.addEventListener('click', () => this.syncToSpeech());
+    }
+    if (this.syncToAudioBtn) {
+      this.syncToAudioBtn.addEventListener('click', () => this.syncToAudio());
     }
     if (this.distributeEvenlyBtn) {
       this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
@@ -2666,6 +2670,94 @@ class VideoEditor {
     this.updateTotalDuration();
 
     showToast(`Synced based on word count (shifted ${anticipation}s earlier)`, 'success');
+  }
+
+  // Sync scenes to actual audio transcription using Whisper
+  async syncToAudio() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first.');
+      return;
+    }
+
+    if (!this.audioBlob) {
+      showToast('Add audio first.');
+      return;
+    }
+
+    // Show loading state
+    if (this.syncToAudioBtn) {
+      this.syncToAudioBtn.disabled = true;
+      this.syncToAudioBtn.textContent = '⏳ Transcribing...';
+    }
+
+    try {
+      // Prepare form data with audio and scene info
+      const formData = new FormData();
+
+      // Determine audio file extension from blob type
+      const mimeType = this.audioBlob.type || 'audio/mpeg';
+      let extension = 'mp3';
+      if (mimeType.includes('wav')) extension = 'wav';
+      else if (mimeType.includes('webm')) extension = 'webm';
+      else if (mimeType.includes('ogg')) extension = 'ogg';
+      else if (mimeType.includes('m4a')) extension = 'm4a';
+
+      formData.append('audio', this.audioBlob, `audio.${extension}`);
+
+      // Send scene text/descriptions for matching
+      const sceneData = this.scenes.map((scene, index) => ({
+        index,
+        text: scene.text || scene.caption || '',
+        description: scene.visualDescription || ''
+      }));
+      formData.append('scenes', JSON.stringify(sceneData));
+
+      showToast('Transcribing audio with Whisper...', 'info');
+
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Transcription failed');
+      }
+
+      // Apply the scene timings from transcription
+      if (result.sceneTimings && result.sceneTimings.length > 0) {
+        let matchedCount = 0;
+
+        result.sceneTimings.forEach(timing => {
+          const scene = this.scenes[timing.sceneIndex];
+          if (scene && timing.startTime !== null) {
+            scene.startTime = timing.startTime;
+            scene.duration = timing.duration;
+            if (timing.confidence > 0.1) matchedCount++;
+          }
+        });
+
+        this.renderTimeline();
+        this.renderCaptions();
+        this.updateTotalDuration();
+
+        console.log('Scene timings applied:', result.sceneTimings);
+        showToast(`Synced ${matchedCount}/${this.scenes.length} scenes to audio`, 'success');
+      } else {
+        showToast('Could not match scenes to audio. Try "Distribute Evenly" instead.', 'warning');
+      }
+
+    } catch (error) {
+      console.error('Sync to audio error:', error);
+      showToast(`Sync failed: ${error.message}`, 'error');
+    } finally {
+      // Restore button state
+      if (this.syncToAudioBtn) {
+        this.syncToAudioBtn.disabled = false;
+        this.syncToAudioBtn.textContent = '🎯 Sync to Audio';
+      }
+    }
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)
