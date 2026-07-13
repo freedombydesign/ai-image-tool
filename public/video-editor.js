@@ -2691,26 +2691,40 @@ class VideoEditor {
     }
 
     try {
-      console.log('Step 1: Preparing upload...');
-      console.log('Audio blob:', this.audioBlob?.type, this.audioBlob?.size);
+      console.log('Step 1: Checking Supabase SDK...');
+
+      // Check if Supabase SDK is loaded
+      if (!window.supabase || !window.supabase.createClient) {
+        throw new Error('Supabase SDK not loaded. Please refresh the page.');
+      }
+
+      console.log('Step 2: Audio blob:', this.audioBlob?.type, this.audioBlob?.size);
 
       // Step 1: Get Supabase config for direct upload
       showToast('Connecting to storage...', 'info');
       const configResponse = await fetch('/api/supabase-config');
+
+      if (!configResponse.ok) {
+        const errText = await configResponse.text();
+        throw new Error('Config fetch failed: ' + errText.substring(0, 100));
+      }
+
       const config = await configResponse.json();
+      console.log('Step 3: Got config, bucket:', config.bucket);
 
       if (!config.url || !config.anonKey) {
         throw new Error('Supabase not configured');
       }
 
-      // Step 2: Initialize Supabase client and upload directly (bypasses Vercel limit)
+      // Step 3: Initialize Supabase client and upload directly (bypasses Vercel limit)
       showToast('Uploading audio for transcription...', 'info');
-      const supabase = window.supabase.createClient(config.url, config.anonKey);
+      console.log('Step 4: Creating Supabase client...');
+      const supabaseClient = window.supabase.createClient(config.url, config.anonKey);
 
       const fileName = `audio/transcribe_${Date.now()}.mp3`;
-      console.log('Step 2: Uploading to Supabase:', fileName);
+      console.log('Step 4: Uploading to Supabase:', fileName, 'size:', this.audioBlob.size);
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await supabaseClient.storage
         .from(config.bucket)
         .upload(fileName, this.audioBlob, {
           contentType: this.audioBlob.type || 'audio/mpeg',
@@ -2718,34 +2732,46 @@ class VideoEditor {
         });
 
       if (uploadError) {
-        throw new Error('Upload failed: ' + uploadError.message);
+        console.error('Upload error:', uploadError);
+        throw new Error('Upload failed: ' + (uploadError.message || JSON.stringify(uploadError)));
       }
 
+      console.log('Step 4b: Upload successful:', uploadData);
+
       // Get public URL
-      const { data: urlData } = supabase.storage
+      const { data: urlData } = supabaseClient.storage
         .from(config.bucket)
         .getPublicUrl(fileName);
 
       const audioUrl = urlData.publicUrl;
-      console.log('Step 3: Audio uploaded to:', audioUrl);
+      console.log('Step 4c: Audio uploaded to:', audioUrl);
 
-      // Step 3: Transcribe from URL
+      // Step 4: Transcribe from URL
       showToast('Transcribing audio with Whisper...', 'info');
 
-      console.log('Step 4: Sending transcribe request...');
+      console.log('Step 5: Sending transcribe request to:', audioUrl);
       const response = await fetch('/api/transcribe-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audioUrl: audioUrl })
       });
 
-      const result = await response.json();
+      console.log('Step 6: Transcribe response status:', response.status);
+      const responseText = await response.text();
+      console.log('Step 7: Response preview:', responseText.substring(0, 100));
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error('Invalid transcription response: ' + responseText.substring(0, 100));
+      }
 
       if (!response.ok || result.error) {
         throw new Error(result.error || 'Transcription failed');
       }
 
-      console.log('Step 5: Transcription received:', result.segments?.length, 'segments');
+      console.log('Step 8: Transcription received:', result.segments?.length, 'segments');
 
       // Step 3: Match scenes to transcription segments
       const matchedCount = this.matchScenesToSegments(result.segments || [], result.duration || this.audioDuration);
