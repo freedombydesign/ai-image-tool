@@ -2949,16 +2949,53 @@ class VideoEditor {
           <button class="replace-image-btn" onclick="event.stopPropagation(); videoEditor.triggerReplaceImage(${index})" title="Replace Image">
             🔄
           </button>
+          <span class="scene-number-label">${index + 1}</span>
         </div>
         <div class="caption-input">
           <textarea
             placeholder="Enter caption for scene ${index + 1}..."
             onchange="videoEditor.updateCaption(${index}, this.value)"
           >${scene.caption || ''}</textarea>
-          <div class="caption-time">${this.formatTime(scene.startTime)} - ${this.formatTime(scene.startTime + scene.duration)}</div>
+          <div class="caption-timing">
+            <span class="caption-time">${this.formatTime(scene.startTime)} - ${this.formatTime(scene.startTime + scene.duration)}</span>
+            <div class="duration-controls">
+              <button class="duration-btn" onclick="videoEditor.adjustSceneDuration(${index}, -2)" title="Shorten by 2s">-2s</button>
+              <input type="number" class="duration-input" value="${scene.duration.toFixed(1)}"
+                     onchange="videoEditor.setSceneDuration(${index}, parseFloat(this.value))"
+                     min="1" max="60" step="0.5" title="Duration in seconds">
+              <button class="duration-btn" onclick="videoEditor.adjustSceneDuration(${index}, 2)" title="Lengthen by 2s">+2s</button>
+            </div>
+          </div>
         </div>
       </div>
     `).join('');
+  }
+
+  // Adjust scene duration by a delta (positive or negative)
+  adjustSceneDuration(index, delta) {
+    if (!this.scenes[index]) return;
+
+    const newDuration = Math.max(1, this.scenes[index].duration + delta);
+    this.setSceneDuration(index, newDuration);
+  }
+
+  // Set specific duration for a scene and adjust following scenes
+  setSceneDuration(index, duration) {
+    if (!this.scenes[index]) return;
+
+    const oldDuration = this.scenes[index].duration;
+    const diff = duration - oldDuration;
+
+    this.scenes[index].duration = Math.max(1, duration);
+
+    // Shift all following scenes by the difference
+    for (let i = index + 1; i < this.scenes.length; i++) {
+      this.scenes[i].startTime += diff;
+    }
+
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateTotalDuration();
   }
 
   updateCaption(index, text) {
