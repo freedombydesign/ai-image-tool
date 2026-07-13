@@ -4515,7 +4515,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // Each segment is 90 seconds (the length used during avatar generation)
     const SEGMENT_LENGTH = 90;
-    const totalDuration = this.audioDuration || this.getTotalDuration();
+    // Use audio duration, or calculate from scenes, or default to segment count * 90
+    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
 
     // Build avatarVideos array from uploaded segments
     // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
@@ -4657,7 +4658,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // Native Layered Mode (Avatar + Scenes) - smooth native video with scene switching
     if (this.previewNativeLayered && !this.previewNativeLayered.hidden) {
-      // Start avatar video
+      // Reset to first segment if starting from beginning
+      if (this.playbackTime < 1 && this.avatarVideos && this.avatarVideos.length > 0) {
+        const firstSegment = this.avatarVideos[0];
+        if (firstSegment && firstSegment.videoUrl) {
+          this.currentAvatarSegmentUrl = firstSegment.videoUrl;
+          this.previewAvatarVideo.src = firstSegment.videoUrl;
+          this.previewAvatarVideo.load();
+        }
+      }
+
+      // Start avatar video from correct position
       if (this.previewAvatarVideo) {
         this.previewAvatarVideo.currentTime = this.playbackTime;
         this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
