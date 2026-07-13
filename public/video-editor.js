@@ -3005,6 +3005,11 @@ class VideoEditor {
     console.log(`Step 3: All ${numScenes} scenes redistributed between anchors`);
     const matchedCount = refinedCount;
 
+    // IMPORTANT: Ensure Scene 1 always starts at time 0
+    if (sceneTimings.length > 0) {
+      sceneTimings[0].startTime = 0;
+    }
+
     // Make scenes contiguous and apply timings
     for (let i = 0; i < sceneTimings.length; i++) {
       const endTime = i < sceneTimings.length - 1 ? sceneTimings[i + 1].startTime : totalDuration;
@@ -4777,6 +4782,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       this.videoSyncReady = false; // Don't sync until video is properly positioned
       console.log(`Switching to avatar segment: ${currentSegment.startTime}s - ${currentSegment.endTime}s`);
       this.currentAvatarSegmentUrl = currentSegment.videoUrl;
+      this.activeSegment = currentSegment; // Store for reference
 
       // Store segment reference for the callback
       const targetSegment = currentSegment;
@@ -4785,6 +4791,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Clear any existing handlers
       this.previewAvatarVideo.oncanplay = null;
       this.previewAvatarVideo.onerror = null;
+      this.previewAvatarVideo.onplaying = null;
 
       this.previewAvatarVideo.src = currentSegment.videoUrl;
 
@@ -4801,6 +4808,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }).catch(e => {
           console.log('Segment play error:', e);
           this.segmentSwitching = false;
+          this.videoSyncReady = true; // Allow sync even if play failed
         });
       };
 
@@ -4816,10 +4824,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Timeout fallback - don't get stuck if oncanplay never fires
       setTimeout(() => {
         if (this.segmentSwitching) {
-          console.log('Segment switch timeout, forcing reset');
+          console.log('Segment switch timeout, forcing play');
           this.segmentSwitching = false;
+          this.videoSyncReady = true;
+          // Try to play anyway
+          this.previewAvatarVideo.play().catch(() => {});
         }
       }, 3000);
+    }
+
+    // If avatar video paused unexpectedly, restart it
+    if (currentSegment && this.videoSyncReady && !this.segmentSwitching && this.previewAvatarVideo.paused && this.isPlaying) {
+      console.log('Avatar video paused, restarting...');
+      this.previewAvatarVideo.play().catch(e => console.log('Restart error:', e));
     }
 
     // Sync playback time with avatar video (it has the audio)
