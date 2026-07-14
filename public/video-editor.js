@@ -121,6 +121,21 @@ class VideoEditor {
       return;
     }
 
+    // Auto-dedupe before saving to prevent duplicates
+    const seen = new Set();
+    const uniqueScenes = [];
+    for (const scene of this.scenes) {
+      const key = scene.imageUrl || scene.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueScenes.push(scene);
+      }
+    }
+    if (uniqueScenes.length < this.scenes.length) {
+      console.log(`Auto-deduped ${this.scenes.length - uniqueScenes.length} duplicates before save`);
+      this.scenes = uniqueScenes;
+    }
+
     // Use a consistent batch ID for video editor scenes
     const batchId = 'video-editor-main';
 
@@ -7192,6 +7207,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       this.recalculateTimings();
       this.renderImportedScenes();
       this.renderTimeline();
+      // SAVE to Supabase so duplicates don't come back on refresh
+      this.saveScenesToSupabase();
       showToast(`Removed ${removed} duplicate scenes. Now have ${this.scenes.length} scenes.`, 'success');
       console.log(`Deduped: removed ${removed} duplicates, now have ${this.scenes.length} scenes`);
     } else {
