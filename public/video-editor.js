@@ -6814,10 +6814,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`; // 0-20% for video loading
 
             try {
-              // Add 30 second timeout per video
+              // Add 60 second timeout per video (increased for slower connections with 8 segments)
               const videoEl = await Promise.race([
                 this.loadVideoElement(av.videoUrl),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), 30000))
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), 60000))
               ]);
               videoEl.muted = true; // Mute avatar video (we use main audio)
               videoEl.loop = false;
