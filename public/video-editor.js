@@ -2878,8 +2878,13 @@ class VideoEditor {
 
       console.log('Step 8: Transcription received:', result.segments?.length, 'segments');
 
-      // Step 3: Match scenes to transcription segments
-      const matchedCount = this.matchScenesToSegments(result.segments || [], result.duration || this.audioDuration);
+      // Step 3: Use AI-powered scene synchronization (GPT-4o)
+      // This intelligently analyzes scene content and transcript to determine optimal placement
+      if (this.syncToAudioBtn) {
+        this.syncToAudioBtn.textContent = '🤖 AI Analyzing...';
+      }
+
+      const matchedCount = await this.aiSyncScenes(result.segments || [], result.duration || this.audioDuration);
 
       this.renderTimeline();
       this.renderCaptions();
@@ -2888,9 +2893,8 @@ class VideoEditor {
       // Save updated timings to Supabase
       this.saveScenesToSupabase();
 
-      // All scenes now get timing (proportional baseline + dialogue refinement)
-      const refinedMsg = matchedCount > 0 ? `, ${matchedCount} refined by dialogue` : '';
-      showToast(`All ${this.scenes.length} scenes synced to ${(result.duration || this.audioDuration).toFixed(0)}s audio${refinedMsg}`, 'success');
+      // All scenes now get timing via AI placement
+      showToast(`AI synced ${this.scenes.length} scenes to ${(result.duration || this.audioDuration).toFixed(0)}s audio (${matchedCount} placed by GPT-4o)`, 'success');
 
     } catch (error) {
       console.error('Sync to audio error:', error);
@@ -3249,6 +3253,73 @@ class VideoEditor {
     }
 
     return matchedCount;
+  }
+
+  // AI-powered scene synchronization using GPT-4o
+  // This sends scenes + transcript to AI for intelligent placement
+  async aiSyncScenes(segments, totalDuration) {
+    if (!segments || segments.length === 0 || this.scenes.length === 0) {
+      console.log('AI Sync: Missing segments or scenes, falling back to keyword matching');
+      return this.matchScenesToSegments(segments, totalDuration);
+    }
+
+    console.log(`AI Sync: Sending ${this.scenes.length} scenes and ${segments.length} segments to GPT-4o...`);
+
+    try {
+      // Prepare scene data for API (only send relevant fields)
+      const sceneData = this.scenes.map((scene, index) => ({
+        index,
+        text: scene.text || '',
+        caption: scene.caption || '',
+        prompt: scene.prompt || '',
+        description: scene.description || ''
+      }));
+
+      const response = await fetch('/api/ai-sync-scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scenes: sceneData,
+          segments: segments,
+          totalDuration: totalDuration
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        console.error('AI Sync failed:', result.error);
+        console.log('Falling back to keyword matching...');
+        return this.matchScenesToSegments(segments, totalDuration);
+      }
+
+      // Apply AI timings to scenes
+      console.log('AI Sync successful! Applying timings...');
+      const timings = result.timings;
+
+      timings.forEach(timing => {
+        const scene = this.scenes[timing.sceneIndex];
+        if (scene) {
+          scene.startTime = timing.startTime;
+          scene.duration = timing.duration;
+          console.log(`Scene ${timing.sceneIndex + 1}: ${timing.startTime.toFixed(1)}s-${(timing.startTime + timing.duration).toFixed(1)}s | ${timing.reason}`);
+        }
+      });
+
+      // Log first 10 scene timings
+      console.log('=== AI SCENE TIMINGS (first 10) ===');
+      this.scenes.slice(0, 10).forEach((s, i) => {
+        console.log(`Scene ${i + 1}: ${s.startTime?.toFixed(1)}s - ${(s.startTime + s.duration)?.toFixed(1)}s (${s.duration?.toFixed(1)}s)`);
+      });
+      console.log('=== END AI SCENE TIMINGS ===');
+
+      return timings.length; // Return number of AI-placed scenes
+
+    } catch (error) {
+      console.error('AI Sync error:', error);
+      console.log('Falling back to keyword matching...');
+      return this.matchScenesToSegments(segments, totalDuration);
+    }
   }
 
   // Distribute scenes evenly across audio duration (simple, guaranteed to work)

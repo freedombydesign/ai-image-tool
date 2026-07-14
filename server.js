@@ -2027,6 +2027,159 @@ Only output the JSON, no other text.`;
   }
 });
 
+// AI-powered scene-to-audio synchronization using GPT-4o
+// This endpoint analyzes scene descriptions and transcript to intelligently place scenes
+app.post('/api/ai-sync-scenes', async (req, res) => {
+  try {
+    const { scenes, segments, totalDuration } = req.body;
+
+    if (!scenes || !Array.isArray(scenes) || scenes.length === 0) {
+      return res.status(400).json({ error: 'Scenes array is required' });
+    }
+    if (!segments || !Array.isArray(segments) || segments.length === 0) {
+      return res.status(400).json({ error: 'Transcript segments are required' });
+    }
+    if (!totalDuration || totalDuration <= 0) {
+      return res.status(400).json({ error: 'Valid totalDuration is required' });
+    }
+
+    console.log(`AI Sync: ${scenes.length} scenes to ${segments.length} segments over ${totalDuration.toFixed(1)}s`);
+
+    // Build a condensed transcript with timestamps
+    const transcriptSummary = segments.map((seg, i) => {
+      const start = seg.start?.toFixed(1) || '0';
+      const end = seg.end?.toFixed(1) || start;
+      return `[${start}s-${end}s]: "${seg.text?.trim() || ''}"`;
+    }).join('\n');
+
+    // Build scene descriptions
+    const sceneDescriptions = scenes.map((scene, i) => {
+      const text = [
+        scene.text || '',
+        scene.caption || '',
+        scene.prompt || '',
+        scene.description || ''
+      ].filter(t => t).join(' | ');
+      return `Scene ${i + 1}: ${text.substring(0, 200)}`;
+    }).join('\n');
+
+    const systemPrompt = `You are a video editor AI. Your task is to synchronize visual scenes with an audio transcript.
+
+AUDIO TRANSCRIPT (with timestamps):
+${transcriptSummary}
+
+TOTAL DURATION: ${totalDuration.toFixed(1)} seconds
+
+VISUAL SCENES TO PLACE:
+${sceneDescriptions}
+
+TASK:
+Analyze the semantic content of each scene and determine the BEST time to show it based on what's being said in the audio.
+
+RULES:
+1. Each scene should start when its visual content is most relevant to what's being spoken
+2. Consider the narrative flow - scenes should appear in a logical sequence
+3. Start scenes SLIGHTLY BEFORE the relevant dialogue (0.5-2 seconds anticipation)
+4. Spread scenes across the entire duration - don't cluster them
+5. Later scenes should generally appear later in the timeline
+6. Scene duration should be proportional to how much content it represents
+7. Minimum scene duration: ${Math.max(3, totalDuration * 0.008).toFixed(1)} seconds
+8. No two scenes should start at the exact same time
+9. Scenes should not overlap (each scene ends when the next begins)
+
+OUTPUT FORMAT - Return ONLY a JSON array with scene timings:
+[
+  { "sceneIndex": 0, "startTime": 0.0, "duration": 15.5, "reason": "brief explanation" },
+  { "sceneIndex": 1, "startTime": 15.5, "duration": 12.0, "reason": "brief explanation" }
+]
+
+Ensure all ${scenes.length} scenes are included, with startTime + duration not exceeding ${totalDuration.toFixed(1)}s.
+Output ONLY the JSON array, no other text.`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: 'You are a professional video editor with expertise in timing visual content to audio narratives. Always respond with valid JSON only.' },
+        { role: 'user', content: systemPrompt }
+      ],
+      temperature: 0.3, // Lower temperature for more consistent timing
+      max_tokens: 4000
+    });
+
+    let timings;
+    try {
+      const responseText = completion.choices[0].message.content.trim();
+      // Handle potential markdown code blocks
+      const jsonText = responseText.replace(/^```json\n?|\n?```$/g, '').trim();
+      timings = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', completion.choices[0].message.content);
+      throw new Error('Failed to parse scene timings from AI response');
+    }
+
+    // Validate and fix timings
+    if (!Array.isArray(timings) || timings.length === 0) {
+      throw new Error('AI returned invalid timings format');
+    }
+
+    // Ensure all scenes are accounted for
+    const minDuration = Math.max(3, totalDuration * 0.008);
+    const validatedTimings = [];
+
+    for (let i = 0; i < scenes.length; i++) {
+      const timing = timings.find(t => t.sceneIndex === i);
+      if (timing) {
+        validatedTimings.push({
+          sceneIndex: i,
+          startTime: Math.max(0, Math.min(timing.startTime, totalDuration - minDuration)),
+          duration: Math.max(minDuration, timing.duration || minDuration),
+          reason: timing.reason || 'AI placement'
+        });
+      } else {
+        // Scene not in AI response - assign proportionally
+        validatedTimings.push({
+          sceneIndex: i,
+          startTime: (i / scenes.length) * totalDuration,
+          duration: totalDuration / scenes.length,
+          reason: 'Proportional fallback'
+        });
+      }
+    }
+
+    // Sort by startTime and fix overlaps
+    validatedTimings.sort((a, b) => a.startTime - b.startTime);
+    for (let i = 0; i < validatedTimings.length - 1; i++) {
+      const current = validatedTimings[i];
+      const next = validatedTimings[i + 1];
+      const currentEnd = current.startTime + current.duration;
+      if (currentEnd > next.startTime) {
+        // Adjust duration to prevent overlap
+        current.duration = Math.max(minDuration, next.startTime - current.startTime);
+      }
+    }
+
+    // Ensure last scene doesn't exceed total duration
+    const lastScene = validatedTimings[validatedTimings.length - 1];
+    if (lastScene.startTime + lastScene.duration > totalDuration) {
+      lastScene.duration = totalDuration - lastScene.startTime;
+    }
+
+    console.log('AI Sync complete. Sample timings:', validatedTimings.slice(0, 3).map(t =>
+      `Scene ${t.sceneIndex}: ${t.startTime.toFixed(1)}s (${t.reason})`
+    ));
+
+    res.json({
+      success: true,
+      timings: validatedTimings,
+      totalScenes: validatedTimings.length
+    });
+
+  } catch (error) {
+    console.error('AI sync scenes error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================================================
 // SUPABASE API ENDPOINTS
 // ============================================================================
