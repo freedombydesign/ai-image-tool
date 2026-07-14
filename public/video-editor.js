@@ -2871,18 +2871,15 @@ class VideoEditor {
         throw new Error('Supabase SDK not loaded. Please refresh the page.');
       }
 
-      // Use stitched audio if there are AI avatar replacements
+      // Always use ORIGINAL audio for sync/transcription (smaller file, same timing)
+      // The stitched audio is only for playback preview
       let audioToSync = this.audioBlob;
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
 
       if (hasReplacements) {
-        console.log('Found replaced audio segments, stitching combined audio...');
-        showToast('Combining audio with AI avatar segments...', 'info');
-        const stitchedAudio = await this.stitchAudioForExport();
-        if (stitchedAudio) {
-          audioToSync = stitchedAudio;
-          console.log('Using stitched audio with replacements');
-        }
+        console.log('Found replaced audio segments - using ORIGINAL audio for sync (same timing, smaller file)');
+        console.log('Stitched audio will be used for playback preview only');
+        // Don't stitch for sync - use original. Stitching happens on play.
       }
 
       console.log('Step 2: Audio blob:', audioToSync?.type, audioToSync?.size);
