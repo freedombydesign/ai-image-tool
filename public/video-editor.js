@@ -470,6 +470,99 @@ class VideoEditor {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
   }
 
+  // Trim audio blob to specified duration (for test captions - saves API cost)
+  async trimAudioBlob(blob, maxDurationSeconds) {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Calculate samples to keep
+      const sampleRate = audioBuffer.sampleRate;
+      const totalSamples = Math.min(
+        Math.floor(maxDurationSeconds * sampleRate),
+        audioBuffer.length
+      );
+
+      // Create new buffer with trimmed duration
+      const trimmedBuffer = audioContext.createBuffer(
+        audioBuffer.numberOfChannels,
+        totalSamples,
+        sampleRate
+      );
+
+      // Copy samples to new buffer
+      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+        const sourceData = audioBuffer.getChannelData(channel);
+        const destData = trimmedBuffer.getChannelData(channel);
+        for (let i = 0; i < totalSamples; i++) {
+          destData[i] = sourceData[i];
+        }
+      }
+
+      // Encode to WAV (simpler than re-encoding to original format)
+      const wavBlob = this.audioBufferToWav(trimmedBuffer);
+      console.log(`Trimmed audio: ${blob.size} bytes -> ${wavBlob.size} bytes (${maxDurationSeconds}s)`);
+
+      await audioContext.close();
+      return wavBlob;
+    } catch (e) {
+      console.error('Failed to trim audio:', e);
+      // Return original blob if trimming fails
+      return blob;
+    }
+  }
+
+  // Convert AudioBuffer to WAV blob
+  audioBufferToWav(buffer) {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const dataLength = buffer.length * blockAlign;
+    const bufferLength = 44 + dataLength;
+
+    const arrayBuffer = new ArrayBuffer(bufferLength);
+    const view = new DataView(arrayBuffer);
+
+    // WAV header
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, bufferLength - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true); // fmt chunk size
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataLength, true);
+
+    // Write audio data
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        view.setInt16(offset, intSample, true);
+        offset += 2;
+      }
+    }
+
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+  }
+
   // Check cache for existing avatar video
   async getCachedAvatarVideo(audioHash) {
     try {
@@ -732,6 +825,11 @@ class VideoEditor {
     // Captions
     if (this.generateCaptionsBtn) {
       this.generateCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio());
+    }
+    // Test captions - only first 30 seconds (cheaper for testing sync)
+    this.testCaptionsBtn = document.getElementById('test-captions-btn');
+    if (this.testCaptionsBtn) {
+      this.testCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio(30));
     }
     if (this.clearCaptionsBtn) {
       this.clearCaptionsBtn.addEventListener('click', () => this.clearCaptions());
@@ -5022,7 +5120,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Generate captions from audio transcription
-  async generateCaptionsFromAudio() {
+  // maxDuration: optional limit in seconds (e.g., 30 for test captions)
+  async generateCaptionsFromAudio(maxDuration = null) {
     if (!this.audioBlob) {
       showToast('Record or upload audio first to generate captions.');
       return;
@@ -5033,13 +5132,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       return;
     }
 
+    const isTestMode = maxDuration !== null;
+    const activeBtn = isTestMode ? this.testCaptionsBtn : this.generateCaptionsBtn;
+
     // Show generating state
-    this.generateCaptionsBtn.disabled = true;
-    this.generateCaptionsBtn.innerHTML = '⏳ Checking cache...';
+    if (activeBtn) {
+      activeBtn.disabled = true;
+      activeBtn.innerHTML = '⏳ Checking...';
+    }
 
     try {
+      // Trim audio if maxDuration specified (for test mode - saves API cost)
+      let audioToTranscribe = this.audioBlob;
+      if (isTestMode && this.audioDuration > maxDuration) {
+        if (activeBtn) activeBtn.innerHTML = '⏳ Trimming audio...';
+        audioToTranscribe = await this.trimAudioBlob(this.audioBlob, maxDuration);
+        console.log(`Trimmed audio from ${this.audioDuration}s to ${maxDuration}s for test`);
+      }
+
       // Check cache first to avoid API costs
-      const audioHash = await this.generateAudioHash(this.audioBlob);
+      const audioHash = await this.generateAudioHash(audioToTranscribe);
       const cacheKey = `captions_${audioHash}`;
       const cached = localStorage.getItem(cacheKey);
 
@@ -5060,8 +5172,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       if (!result) {
         // Determine file extension based on mime type or filename
         let extension = 'm4a'; // Default to m4a since that's the user's file
-        const mimeType = this.audioBlob.type || '';
-        console.log('Audio blob MIME type:', mimeType, 'size:', this.audioBlob.size);
+        const mimeType = audioToTranscribe.type || '';
+        console.log('Audio blob MIME type:', mimeType, 'size:', audioToTranscribe.size);
 
         if (mimeType.includes('wav') || mimeType.includes('wave')) {
           extension = 'wav';
@@ -5079,7 +5191,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         // If MIME type is empty or generic, keep m4a default
         console.log('Using extension:', extension);
 
-        this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
+        if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
 
         // Step 1: Get Supabase config for direct upload (bypasses Vercel 4.5MB limit)
         const configResponse = await fetch('/api/supabase-config');
@@ -5092,7 +5204,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const fileName = `audio-${Date.now()}.${extension}`;
         const filePath = `audio/${fileName}`;
 
-        this.generateCaptionsBtn.innerHTML = '⏳ Uploading to cloud...';
+        if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
 
         // Direct upload to Supabase Storage REST API
         const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
@@ -5105,7 +5217,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             'Content-Type': mimeType,
             'x-upsert': 'true'
           },
-          body: this.audioBlob
+          body: audioToTranscribe
         });
 
         if (!uploadResponse.ok) {
@@ -5119,7 +5231,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         console.log('Audio uploaded to:', publicUrl);
 
         // Step 3: Transcribe from Supabase URL
-        this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
+        if (activeBtn) activeBtn.innerHTML = '⏳ Transcribing...';
 
         const transcribeResponse = await fetch('/api/transcribe-url', {
           method: 'POST',
@@ -5162,14 +5274,25 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }
 
       this.renderCaptions();
-      showToast('Captions generated from audio!', false);
+      if (isTestMode) {
+        showToast(`Test captions generated (first ${maxDuration}s only)`, false);
+      } else {
+        showToast('Captions generated from audio!', false);
+      }
 
     } catch (error) {
       console.error('Caption generation error:', error);
       showToast('Failed to generate captions: ' + error.message);
     } finally {
-      this.generateCaptionsBtn.disabled = false;
-      this.generateCaptionsBtn.innerHTML = '🎤 Generate from Audio';
+      // Restore button states
+      if (this.generateCaptionsBtn) {
+        this.generateCaptionsBtn.disabled = false;
+        this.generateCaptionsBtn.innerHTML = '🎤 Full Audio';
+      }
+      if (this.testCaptionsBtn) {
+        this.testCaptionsBtn.disabled = false;
+        this.testCaptionsBtn.innerHTML = '🧪 Test 30s';
+      }
     }
   }
 

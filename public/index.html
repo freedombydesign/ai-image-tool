@@ -844,9 +844,10 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 <input type="checkbox" id="captions-enabled-toggle" checked>
                 <span>Show Captions</span>
               </label>
-              <button class="btn secondary small" id="generate-captions-btn">🎤 Generate from Audio</button>
-              <button class="btn secondary small" id="generate-captions-script-btn" onclick="generateCaptionsFromScript()">📝 Generate from Script</button>
-              <button class="btn secondary small" id="clear-captions-btn">🗑️ Clear All</button>
+              <button class="btn secondary small" id="generate-captions-btn">🎤 Full Audio</button>
+              <button class="btn secondary small" id="test-captions-btn" title="Generate captions for first 30s only (cheaper for testing sync)">🧪 Test 30s</button>
+              <button class="btn secondary small" id="generate-captions-script-btn" onclick="generateCaptionsFromScript()">📝 From Script</button>
+              <button class="btn secondary small" id="clear-captions-btn">🗑️ Clear</button>
             </div>
             <div class="form-group" style="margin-top: 0.5rem;">
               <textarea id="caption-script-input" rows="3" placeholder="Paste your script here to auto-generate captions for each scene..."></textarea>
