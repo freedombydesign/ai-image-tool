@@ -2079,8 +2079,8 @@ ${sceneDescriptions}
 
 YOUR TASK - For each scene:
 1. Find where the scene's TEXT appears (or is paraphrased) in the transcript
-2. Note the timestamp where those words are SPOKEN
-3. Start the scene 1-2 seconds BEFORE those words are spoken
+2. Return the EXACT timestamp where those words BEGIN to be spoken
+3. We will automatically shift scenes earlier - just give us the spoken time
 4. Scenes MUST stay in order: Scene 1, then 2, then 3, etc.
 
 MATCHING TIPS:
@@ -2131,25 +2131,62 @@ Return ONLY the JSON array.`;
 
     // ENFORCE SEQUENTIAL ORDER: Scenes must go 0, 1, 2, 3... not reordered
     // minDuration and baseDuration already declared above
+    const ANTICIPATION = 3.0; // Show scene 3 seconds BEFORE words are spoken
     const validatedTimings = [];
 
-    // First pass: collect AI timings but keep scene order
-    let currentTime = 0;
+    // First pass: Use AI's startTime but shift earlier by anticipation
     for (let i = 0; i < scenes.length; i++) {
       const aiTiming = timings.find(t => t.sceneIndex === i);
 
-      // Use AI's suggested duration, but enforce sequential start times
-      let duration = aiTiming?.duration || baseDuration;
-      duration = Math.max(minDuration, Math.min(duration, totalDuration - currentTime));
+      // Get AI's suggested time (when words are spoken) and shift EARLIER
+      let startTime;
+      if (aiTiming && typeof aiTiming.startTime === 'number') {
+        // Shift earlier by anticipation, but not before 0
+        startTime = Math.max(0, aiTiming.startTime - ANTICIPATION);
+      } else {
+        // Fallback to proportional
+        startTime = (i / scenes.length) * totalDuration;
+      }
 
       validatedTimings.push({
         sceneIndex: i,
-        startTime: currentTime,
-        duration: duration,
+        startTime: startTime,
+        duration: aiTiming?.duration || baseDuration,
         reason: aiTiming?.reason || 'Sequential placement'
       });
+    }
 
-      currentTime += duration;
+    // Second pass: Ensure sequential order and fix overlaps
+    // Sort by sceneIndex to maintain order, then adjust startTimes
+    validatedTimings.sort((a, b) => a.sceneIndex - b.sceneIndex);
+
+    let lastEndTime = 0;
+    for (let i = 0; i < validatedTimings.length; i++) {
+      const timing = validatedTimings[i];
+
+      // Scene 0 must start at 0
+      if (i === 0) {
+        timing.startTime = 0;
+      } else {
+        // Each scene starts where the previous ended (or its AI time if later)
+        timing.startTime = Math.max(lastEndTime, timing.startTime);
+      }
+
+      // Ensure minimum duration
+      timing.duration = Math.max(minDuration, timing.duration);
+
+      // Don't exceed total duration
+      if (timing.startTime + timing.duration > totalDuration) {
+        timing.duration = totalDuration - timing.startTime;
+      }
+
+      lastEndTime = timing.startTime + timing.duration;
+    }
+
+    // Ensure last scene reaches the end
+    const lastTiming = validatedTimings[validatedTimings.length - 1];
+    if (lastTiming) {
+      lastTiming.duration = totalDuration - lastTiming.startTime;
     }
 
     // Adjust if we exceed total duration
