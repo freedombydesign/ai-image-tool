@@ -7079,24 +7079,55 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
 
-        // Draw scene image with Ken Burns (same logic as preview's applyKenBurnsEffect)
+        // Draw scene image with Ken Burns - use same logic as preview's applyKenBurnsEffect
         if (sceneImg) {
+          const effect = this.zoomEffect ? this.zoomEffect.value : 'zoom-in';
           const progress = (currentTime - scene.startTime) / scene.duration;
-          const scale = 1 + progress * 0.1;
 
-          // Get image dimensions - check both width/height and naturalWidth/naturalHeight
+          // Calculate scale and offset based on effect (match preview exactly)
+          let scale = 1;
+          let offsetX = 0;
+          let offsetY = 0;
+
+          switch (effect) {
+            case 'zoom-in':
+              scale = 1 + (progress * 0.1);
+              break;
+            case 'zoom-out':
+              scale = 1.1 - (progress * 0.1);
+              break;
+            case 'pan-left':
+              offsetX = -progress * 50;
+              break;
+            case 'pan-right':
+              offsetX = progress * 50;
+              break;
+            case 'random':
+              // Use scene index to determine effect (same as preview)
+              const effects = ['zoom-in', 'zoom-out', 'pan-left', 'pan-right'];
+              const randomEffect = effects[sceneIndex % effects.length];
+              switch (randomEffect) {
+                case 'zoom-in': scale = 1 + (progress * 0.1); break;
+                case 'zoom-out': scale = 1.1 - (progress * 0.1); break;
+                case 'pan-left': offsetX = -progress * 50; break;
+                case 'pan-right': offsetX = progress * 50; break;
+              }
+              break;
+            // 'none' - scale stays at 1, no offsets
+          }
+
+          // Get image dimensions
           const imgW = sceneImg.naturalWidth || sceneImg.width || 1;
           const imgH = sceneImg.naturalHeight || sceneImg.height || 1;
 
           // Debug first frame
           if (frameCount === 1) {
-            console.log(`Scene ${sceneIndex}: image ${imgW}x${imgH}, canvas ${width}x${height}`);
+            console.log(`Scene ${sceneIndex}: image ${imgW}x${imgH}, canvas ${width}x${height}, effect: ${effect}`);
           }
 
-          // Skip if image isn't loaded (dimensions are 0 or 1)
+          // Skip if image isn't loaded
           if (imgW <= 1 || imgH <= 1) {
             console.warn(`Scene ${sceneIndex} image not loaded properly: ${imgW}x${imgH}`);
-            // Just fill with placeholder color
             ctx.fillStyle = '#333';
             ctx.fillRect(0, 0, width, height);
           } else {
@@ -7114,9 +7145,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               drawH = drawW / imgRatio;
             }
 
-            // Center the image (may extend beyond canvas edges for "cover" effect)
-            const x = (width - drawW) / 2;
-            const y = (height - drawH) / 2;
+            // Center the image with offset (matches preview exactly)
+            const x = (width - drawW) / 2 + offsetX;
+            const y = (height - drawH) / 2 + offsetY;
 
             ctx.drawImage(sceneImg, x, y, drawW, drawH);
           }
