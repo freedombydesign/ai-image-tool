@@ -320,7 +320,18 @@ class VideoEditor {
     for (const seg of segments) {
       if (seg.video_url) {
         try {
-          const response = await fetch(seg.video_url);
+          // Fetch with timeout to avoid hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
+          const response = await fetch(seg.video_url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            console.warn(`✗ Segment ${seg.segment_num} fetch failed: HTTP ${response.status}`);
+            continue;
+          }
+
           const blob = await response.blob();
           const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
           const audioBlob = await extractAudioFromVideo(file);
@@ -328,7 +339,11 @@ class VideoEditor {
           extracted++;
           console.log(`✓ Auto-extracted audio from segment ${seg.segment_num}`);
         } catch (e) {
-          console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
+          if (e.name === 'AbortError') {
+            console.warn(`✗ Segment ${seg.segment_num} fetch timed out`);
+          } else {
+            console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
+          }
         }
       }
     }
