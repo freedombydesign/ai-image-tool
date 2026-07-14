@@ -1881,7 +1881,7 @@ class VideoEditor {
       }
 
       const saved = await loadAudioFromDB('previewAudio');
-      if (saved && saved.audioData) {
+      if (saved && saved.audioData && typeof saved.audioData === 'string' && saved.audioData.startsWith('data:')) {
         console.log('Found saved audio from Batch Scenes:', saved.fileName);
 
         // Convert base64 data URL to blob
@@ -1892,6 +1892,8 @@ class VideoEditor {
         await this.loadAudioBlob(blob);
 
         showToast(`Loaded voiceover: ${saved.fileName}`, 'success');
+      } else if (saved) {
+        console.log('Invalid saved audio data, skipping:', typeof saved.audioData);
       }
     } catch (err) {
       console.warn('Could not load saved audio:', err);
