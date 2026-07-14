@@ -6600,10 +6600,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }
       }
 
-      // Add audio if available
+      // Add audio if available (use stitched audio with AI avatar segments)
       if (this.audioBlob) {
-        this.exportStatus.textContent = 'Adding audio...';
-        zip.file('voiceover.mp3', this.audioBlob);
+        this.exportStatus.textContent = 'Preparing audio (stitching clean segments)...';
+        const audioToExport = await this.stitchAudioForExport();
+        zip.file('voiceover.mp3', audioToExport);
       }
 
       // Add captions as SRT file
@@ -7081,10 +7082,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.exportStatus.textContent = `Generating frames: ${frame + 1}/${totalFrames}`;
       }
 
-      // Write voiceover audio if available
+      // Write voiceover audio if available (use stitched audio with AI avatar segments)
       const hasVoiceover = !!this.audioBlob;
       if (hasVoiceover) {
-        const audioData = new Uint8Array(await this.audioBlob.arrayBuffer());
+        this.exportStatus.textContent = 'Preparing audio (stitching clean segments)...';
+        const audioToExport = await this.stitchAudioForExport();
+        const audioData = new Uint8Array(await audioToExport.arrayBuffer());
         await this.ffmpeg.writeFile('voiceover.webm', audioData);
       }
 
