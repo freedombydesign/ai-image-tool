@@ -470,39 +470,55 @@ class VideoEditor {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
   }
 
-  // Trim audio blob to specified duration (for test captions - saves API cost)
-  async trimAudioBlob(blob, maxDurationSeconds) {
+  // Trim audio blob to specified duration starting at startSeconds
+  // startSeconds: where to start extracting (default 0)
+  // maxDurationSeconds: how many seconds to extract
+  async trimAudioBlob(blob, maxDurationSeconds, startSeconds = 0) {
     try {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const arrayBuffer = await blob.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-      // Calculate samples to keep
       const sampleRate = audioBuffer.sampleRate;
-      const totalSamples = Math.min(
-        Math.floor(maxDurationSeconds * sampleRate),
-        audioBuffer.length
-      );
+      const totalAudioSamples = audioBuffer.length;
 
-      // Create new buffer with trimmed duration
+      // Calculate start and end sample positions
+      const startSample = Math.min(
+        Math.floor(startSeconds * sampleRate),
+        totalAudioSamples
+      );
+      const endSample = Math.min(
+        startSample + Math.floor(maxDurationSeconds * sampleRate),
+        totalAudioSamples
+      );
+      const samplesToExtract = endSample - startSample;
+
+      if (samplesToExtract <= 0) {
+        console.warn('No samples to extract - start time beyond audio length');
+        await audioContext.close();
+        return blob;
+      }
+
+      // Create new buffer with extracted section
       const trimmedBuffer = audioContext.createBuffer(
         audioBuffer.numberOfChannels,
-        totalSamples,
+        samplesToExtract,
         sampleRate
       );
 
-      // Copy samples to new buffer
+      // Copy samples from the specified range
       for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
         const sourceData = audioBuffer.getChannelData(channel);
         const destData = trimmedBuffer.getChannelData(channel);
-        for (let i = 0; i < totalSamples; i++) {
-          destData[i] = sourceData[i];
+        for (let i = 0; i < samplesToExtract; i++) {
+          destData[i] = sourceData[startSample + i];
         }
       }
 
       // Encode to WAV (simpler than re-encoding to original format)
       const wavBlob = this.audioBufferToWav(trimmedBuffer);
-      console.log(`Trimmed audio: ${blob.size} bytes -> ${wavBlob.size} bytes (${maxDurationSeconds}s)`);
+      const actualDuration = samplesToExtract / sampleRate;
+      console.log(`Extracted audio: ${startSeconds}s to ${startSeconds + actualDuration}s (${wavBlob.size} bytes)`);
 
       await audioContext.close();
       return wavBlob;
@@ -826,10 +842,14 @@ class VideoEditor {
     if (this.generateCaptionsBtn) {
       this.generateCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio());
     }
-    // Test captions - only first 30 seconds (cheaper for testing sync)
+    // Test captions - 30 seconds starting at specified time (cheaper for testing sync)
     this.testCaptionsBtn = document.getElementById('test-captions-btn');
+    this.testCaptionsStartInput = document.getElementById('test-captions-start');
     if (this.testCaptionsBtn) {
-      this.testCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio(30));
+      this.testCaptionsBtn.addEventListener('click', () => {
+        const startTime = this.parseTime(this.testCaptionsStartInput?.value || '0');
+        this.generateCaptionsFromAudio(30, startTime);
+      });
     }
     if (this.clearCaptionsBtn) {
       this.clearCaptionsBtn.addEventListener('click', () => this.clearCaptions());
@@ -5121,7 +5141,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
   // Generate captions from audio transcription
   // maxDuration: optional limit in seconds (e.g., 30 for test captions)
-  async generateCaptionsFromAudio(maxDuration = null) {
+  // startOffset: where to start extracting audio (for testing middle sections)
+  async generateCaptionsFromAudio(maxDuration = null, startOffset = 0) {
     if (!this.audioBlob) {
       showToast('Record or upload audio first to generate captions.');
       return;
@@ -5135,6 +5156,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const isTestMode = maxDuration !== null;
     const activeBtn = isTestMode ? this.testCaptionsBtn : this.generateCaptionsBtn;
 
+    // Validate start offset
+    if (startOffset > 0 && startOffset >= this.audioDuration) {
+      showToast(`Start time ${this.formatTime(startOffset)} is beyond audio length (${this.formatTime(this.audioDuration)})`);
+      return;
+    }
+
     // Show generating state
     if (activeBtn) {
       activeBtn.disabled = true;
@@ -5144,10 +5171,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     try {
       // Trim audio if maxDuration specified (for test mode - saves API cost)
       let audioToTranscribe = this.audioBlob;
-      if (isTestMode && this.audioDuration > maxDuration) {
-        if (activeBtn) activeBtn.innerHTML = '⏳ Trimming audio...';
-        audioToTranscribe = await this.trimAudioBlob(this.audioBlob, maxDuration);
-        console.log(`Trimmed audio from ${this.audioDuration}s to ${maxDuration}s for test`);
+      if (isTestMode) {
+        const effectiveEnd = Math.min(startOffset + maxDuration, this.audioDuration);
+        const effectiveDuration = effectiveEnd - startOffset;
+        if (effectiveDuration > 0) {
+          if (activeBtn) activeBtn.innerHTML = '⏳ Trimming audio...';
+          audioToTranscribe = await this.trimAudioBlob(this.audioBlob, effectiveDuration, startOffset);
+          console.log(`Extracted audio from ${this.formatTime(startOffset)} to ${this.formatTime(effectiveEnd)} for test`);
+        }
       }
 
       // Check cache first to avoid API costs
@@ -5257,6 +5288,24 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       console.log('Transcription for captions:', result);
       console.log('Word-level timestamps available:', result.words?.length || 0);
 
+      // Offset timestamps if we extracted from a middle section
+      if (startOffset > 0 && result.words) {
+        result.words = result.words.map(w => ({
+          ...w,
+          start: w.start + startOffset,
+          end: w.end + startOffset
+        }));
+        console.log(`Offset ${result.words.length} word timestamps by ${startOffset}s`);
+      }
+      if (startOffset > 0 && result.segments) {
+        result.segments = result.segments.map(s => ({
+          ...s,
+          start: s.start + startOffset,
+          end: s.end + startOffset
+        }));
+        console.log(`Offset ${result.segments.length} segment timestamps by ${startOffset}s`);
+      }
+
       // Store word-level timestamps for accurate caption sync
       if (result.words && result.words.length > 0) {
         this.transcriptionWords = result.words;
@@ -5275,7 +5324,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       this.renderCaptions();
       if (isTestMode) {
-        showToast(`Test captions generated (first ${maxDuration}s only)`, false);
+        const endTime = Math.min(startOffset + maxDuration, this.audioDuration);
+        showToast(`Test captions: ${this.formatTime(startOffset)} to ${this.formatTime(endTime)}`, false);
       } else {
         showToast('Captions generated from audio!', false);
       }

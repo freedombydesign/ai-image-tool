@@ -845,7 +845,11 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 <span>Show Captions</span>
               </label>
               <button class="btn secondary small" id="generate-captions-btn">🎤 Full Audio</button>
-              <button class="btn secondary small" id="test-captions-btn" title="Generate captions for first 30s only (cheaper for testing sync)">🧪 Test 30s</button>
+              <button class="btn secondary small" id="test-captions-btn" title="Generate captions for 30s starting at the specified time">🧪 Test 30s</button>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <label style="font-size: 12px; white-space: nowrap;">from</label>
+                <input type="text" id="test-captions-start" placeholder="0:00" style="width: 50px; padding: 4px 6px; font-size: 12px; border-radius: 4px; border: 1px solid var(--border);" title="Start time (e.g., 1:30 or 90)">
+              </div>
               <button class="btn secondary small" id="generate-captions-script-btn" onclick="generateCaptionsFromScript()">📝 From Script</button>
               <button class="btn secondary small" id="clear-captions-btn">🗑️ Clear</button>
             </div>
