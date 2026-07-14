@@ -3474,19 +3474,25 @@ class VideoEditor {
       // Show and play the avatar video
       if (expandedAvatarVideo.src !== avatarVideo.videoUrl) {
         expandedAvatarVideo.src = avatarVideo.videoUrl;
+        // Wait for video to be ready before seeking and playing
+        expandedAvatarVideo.onloadeddata = () => {
+          const avatarTime = currentTime - avatarVideo.startTime;
+          expandedAvatarVideo.currentTime = avatarTime;
+          expandedAvatarVideo.play().catch(() => {});
+        };
         expandedAvatarVideo.load();
+      } else {
+        // Same video, just sync time - tighter threshold (50ms)
+        const avatarTime = currentTime - avatarVideo.startTime;
+        if (Math.abs(expandedAvatarVideo.currentTime - avatarTime) > 0.05) {
+          expandedAvatarVideo.currentTime = avatarTime;
+        }
+
+        if (expandedAvatarVideo.paused) {
+          expandedAvatarVideo.play().catch(() => {});
+        }
       }
       expandedAvatarVideo.classList.add('active');
-
-      // Sync avatar video time with audio
-      const avatarTime = currentTime - avatarVideo.startTime;
-      if (Math.abs(expandedAvatarVideo.currentTime - avatarTime) > 0.1) {
-        expandedAvatarVideo.currentTime = avatarTime;
-      }
-
-      if (expandedAvatarVideo.paused) {
-        expandedAvatarVideo.play().catch(() => {});
-      }
     } else {
       // No avatar for this time, hide it
       expandedAvatarVideo.classList.remove('active');
