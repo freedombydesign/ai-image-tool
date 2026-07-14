@@ -2878,10 +2878,19 @@ class VideoEditor {
       const audioUrl = urlData.publicUrl;
       console.log('Step 4c: Audio uploaded to:', audioUrl);
 
+      // If we used stitched audio with replacements, make it the new primary audio
+      if (hasReplacements) {
+        console.log('Replacing primary audio blob with stitched audio (includes AI avatar segments)');
+        this.audioBlob = audioToSync;
+        // Clear replaced segments since they're now baked into the main audio
+        this.replacedAudioSegments = {};
+        showToast('Combined audio with AI segments saved as primary', 'success');
+      }
+
       // Save audio URL for cross-browser persistence
       this.savedAudioUrl = audioUrl;
       localStorage.setItem('saved_audio_url', audioUrl);
-      localStorage.setItem('saved_audio_name', this.audioFileName || 'audio.m4a');
+      localStorage.setItem('saved_audio_name', this.audioFileName || 'combined-audio.m4a');
       // Also save to Supabase with scenes
       this.saveScenesToSupabase();
 
