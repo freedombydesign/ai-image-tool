@@ -6877,6 +6877,18 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const canvasW = this.previewCanvas.width;
     const canvasH = this.previewCanvas.height;
 
+    // Get timing info first to check scene boundaries
+    const sceneStartTime = scene.startTime || 0;
+    const sceneDuration = scene.duration || 6;
+    const currentTime = this.playbackTime;
+    const sceneEndTime = sceneStartTime + sceneDuration;
+
+    // Don't draw caption if we're outside this scene's time range
+    // This prevents captions from repeating/bleeding into the next scene
+    if (currentTime < sceneStartTime || currentTime >= sceneEndTime) {
+      return;
+    }
+
     // Get all caption settings
     const position = document.getElementById('caption-style')?.value || 'bottom-center';
     const fontSize = parseInt(document.getElementById('caption-font-size')?.value || 48);
@@ -6891,11 +6903,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     this.ctx.font = `bold ${fontSize}px ${fontFamily}, Impact, sans-serif`;
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
-
-    // Get timing info
-    const sceneStartTime = scene.startTime || 0;
-    const sceneDuration = scene.duration || 6;
-    const currentTime = this.playbackTime;
 
     // Get words from captionWords if available, otherwise split caption text
     let allWords;
@@ -8131,6 +8138,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Clean the caption text (remove visual cues)
     const cleanCaption = this.cleanCaptionText(scene.caption);
     if (!cleanCaption) return;
+
+    // Check scene boundaries - don't draw caption if we're outside this scene's time range
+    // This prevents captions from repeating/bleeding into the next scene
+    const sceneStart = scene.startTime || 0;
+    const sceneDuration = scene.duration || 6;
+    const sceneEnd = sceneStart + sceneDuration;
+    if (currentTime < sceneStart || currentTime >= sceneEnd) {
+      return;
+    }
 
     // Get caption settings
     const fontSize = parseInt(document.getElementById('caption-font-size')?.value || 48);
