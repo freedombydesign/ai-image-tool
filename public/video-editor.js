@@ -1079,10 +1079,9 @@ class VideoEditor {
   }
 
   async initFFmpeg() {
-    // CDN options to try
+    // CDN options to try (jsdelivr has better CORS support)
     const cdnOptions = [
       'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-      'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
     ];
 
     // Check for FFmpeg library - it may be exposed as FFmpegWASM or FFmpeg
@@ -1129,7 +1128,8 @@ class VideoEditor {
   async loadFFmpegScript() {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js';
+      script.src = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js';
+      script.crossOrigin = 'anonymous';
       script.onload = async () => {
         console.log('FFmpeg script loaded dynamically');
         // Wait a moment for the library to initialize
