@@ -7410,6 +7410,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       let lastActiveAvatar = null;
       let frameCount = 0;
       let lastSceneIndex = -1;
+      let lastAvatarResyncTime = 0; // Track when we last resynced to prevent feedback loop
 
       const renderFrame = () => {
         frameCount++;
@@ -7562,11 +7563,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const expectedLocalTime = currentTime - avatarData.startTime;
             const actualVideoTime = avatarData.element.currentTime;
             const drift = Math.abs(actualVideoTime - expectedLocalTime);
+            const now = performance.now();
 
-            // If drift > 0.15 seconds, resync (allows some tolerance for natural playback)
-            if (drift > 0.15 && !avatarData.element.seeking) {
+            // If drift > 0.25 seconds, resync (allows some tolerance for natural playback)
+            // Add 500ms cooldown after resync to prevent feedback loop
+            const cooldownElapsed = now - lastAvatarResyncTime > 500;
+            if (drift > 0.25 && !avatarData.element.seeking && cooldownElapsed) {
               console.log(`Avatar drift detected: ${drift.toFixed(3)}s, resyncing`);
               avatarData.element.currentTime = expectedLocalTime;
+              lastAvatarResyncTime = now;
             }
 
             const rect = this.getAvatarOverlayRect(width, height);
