@@ -7299,53 +7299,55 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           this.exportProgressBar.style.width = '55%';
           console.log('Stitched audio ready for export, duration:', audioElement.duration);
         } else {
-          // No stitched audio - try existing player or fallback
-          const existingPlayer = document.getElementById('audio-player');
-          if (existingPlayer && existingPlayer.duration > 0 && existingPlayer.readyState >= 2) {
-            console.log('Using existing audio player (no stitching needed), duration:', existingPlayer.duration);
-            audioElement = existingPlayer.cloneNode(true);
-            audioElement.currentTime = 0;
-            this.exportProgressBar.style.width = '55%';
-            console.log('Audio ready for export (cloned player)');
+          // No stitched audio - use original audio (TTS audio which is clean)
+          console.log('Using original TTS audio for export (no stitched segments)');
+
+          // Create audio from the best available source
+          const supabaseUrl = this.audioUrl;
+          if (supabaseUrl) {
+            console.log('Loading audio from Supabase URL:', supabaseUrl);
+            audioElement = new Audio(supabaseUrl);
+          } else if (audioToUse) {
+            console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
+            audioElement = new Audio(URL.createObjectURL(audioToUse));
           } else {
-            // Try Supabase URL if available
-            const supabaseUrl = this.audioUrl;
-            if (supabaseUrl) {
-              console.log('Loading audio from Supabase URL:', supabaseUrl);
-              audioElement = new Audio(supabaseUrl);
-            } else {
-              console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
-              audioElement = new Audio(URL.createObjectURL(audioToUse));
+            // Last resort - try existing player's src
+            const existingPlayer = document.getElementById('audio-player');
+            if (existingPlayer && existingPlayer.src) {
+              console.log('Using existing player src:', existingPlayer.src.substring(0, 50));
+              audioElement = new Audio(existingPlayer.src);
             }
+          }
 
-          audioElement.muted = false;
-          audioElement.preload = 'auto';
-          audioElement.crossOrigin = 'anonymous';
+          if (audioElement) {
+            audioElement.muted = false;
+            audioElement.preload = 'auto';
+            audioElement.crossOrigin = 'anonymous';
 
-          // Add error handler
-          audioElement.onerror = (e) => {
-            console.error('Audio element error:', audioElement.error?.code, audioElement.error?.message);
-          };
+            // Add error handler
+            audioElement.onerror = (e) => {
+              console.error('Audio element error:', audioElement.error?.code, audioElement.error?.message);
+            };
 
-          // Wait for audio to be ready with 15 second timeout (shorter since we have fallbacks)
-          const audioLoaded = await Promise.race([
-            new Promise(resolve => {
-              audioElement.oncanplaythrough = () => resolve(true);
-              audioElement.onloadedmetadata = () => {
-                console.log('Audio metadata loaded, duration:', audioElement.duration);
-                resolve(true); // Proceed once metadata is loaded
-              };
-              audioElement.load();
-            }),
-            new Promise(resolve => setTimeout(() => resolve(false), 15000))
-          ]);
+            // Wait for audio to be ready with 15 second timeout
+            const audioLoaded = await Promise.race([
+              new Promise(resolve => {
+                audioElement.oncanplaythrough = () => resolve(true);
+                audioElement.onloadedmetadata = () => {
+                  console.log('Audio metadata loaded, duration:', audioElement.duration);
+                  resolve(true);
+                };
+                audioElement.load();
+              }),
+              new Promise(resolve => setTimeout(() => resolve(false), 15000))
+            ]);
 
-          if (!audioLoaded) {
-            console.warn('Audio load timeout - trying to proceed anyway');
+            if (!audioLoaded) {
+              console.warn('Audio load timeout - trying to proceed anyway');
+            }
+            console.log('Audio ready for export, duration:', audioElement.duration);
           }
           this.exportProgressBar.style.width = '55%';
-          console.log('Audio ready for export, duration:', audioElement.duration);
-          }
         }
       }
 
@@ -8319,35 +8321,70 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   // Load a video element from URL
   loadVideoElement(url) {
     return new Promise((resolve, reject) => {
+      // Validate URL
+      if (!url || typeof url !== 'string') {
+        console.error('Invalid video URL:', url, typeof url);
+        return reject(new Error(`Invalid video URL: ${url}`));
+      }
+
+      console.log('Loading video from URL:', url.substring(0, 100) + '...');
+
       const video = document.createElement('video');
+      // Only use crossOrigin for non-Replicate URLs (Replicate doesn't support CORS anonymous)
+      // But we need it for canvas drawing, so try with it first
       video.crossOrigin = 'anonymous';
       video.muted = true; // Mute to allow auto-play
       video.preload = 'auto';
       video.playsInline = true;
 
+      let resolved = false;
+
       // Wait for video to be fully ready to play
       video.oncanplaythrough = () => {
-        console.log('Video ready:', url, 'duration:', video.duration);
+        if (resolved) return;
+        resolved = true;
+        console.log('Video ready:', url.substring(0, 50), 'duration:', video.duration);
         resolve(video);
       };
 
       video.onloadeddata = () => {
         // Fallback if canplaythrough doesn't fire
-        if (video.readyState >= 3) {
-          console.log('Video loaded (fallback):', url, 'duration:', video.duration);
+        if (!resolved && video.readyState >= 3) {
+          resolved = true;
+          console.log('Video loaded (fallback):', url.substring(0, 50), 'duration:', video.duration);
           resolve(video);
         }
       };
 
-      video.onerror = (e) => {
-        console.error('Failed to load video:', url, e);
-        reject(new Error(`Failed to load video: ${url}`));
+      video.onloadedmetadata = () => {
+        console.log('Video metadata loaded:', url.substring(0, 50), 'duration:', video.duration, 'readyState:', video.readyState);
       };
 
-      // Timeout fallback
+      video.onerror = (e) => {
+        if (resolved) return;
+        const errorCode = video.error ? video.error.code : 'unknown';
+        const errorMessage = video.error ? video.error.message : 'unknown error';
+        console.error('Failed to load video:', url.substring(0, 80), 'error code:', errorCode, errorMessage);
+
+        // If CORS failed, try without crossOrigin (won't work for canvas but at least we know)
+        if (!video.dataset.retried && url.includes('replicate.delivery')) {
+          console.log('Retrying without crossOrigin...');
+          video.dataset.retried = 'true';
+          video.crossOrigin = null;
+          video.src = url;
+          video.load();
+          return;
+        }
+
+        resolved = true;
+        reject(new Error(`Failed to load video: ${errorMessage}`));
+      };
+
+      // Timeout fallback - resolve if we have at least some data
       setTimeout(() => {
-        if (video.readyState >= 2) {
-          console.log('Video loaded (timeout):', url);
+        if (!resolved && video.readyState >= 2) {
+          resolved = true;
+          console.log('Video loaded (timeout fallback):', url.substring(0, 50));
           resolve(video);
         }
       }, 5000);
