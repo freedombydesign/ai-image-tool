@@ -282,10 +282,42 @@ class VideoEditor {
 
           // Update the UI slots if they exist
           this.updateAvatarSegmentSlots();
+
+          // Auto-extract audio from avatar segments for clean audio playback
+          this.extractAudioFromAvatarSegments(data.segments);
         }
       }
     } catch (e) {
       console.error('Failed to load avatar segments from Supabase:', e);
+    }
+  }
+
+  // Extract audio from avatar video segments and store for stitching
+  async extractAudioFromAvatarSegments(segments) {
+    if (!segments || segments.length === 0) return;
+
+    console.log(`Auto-extracting audio from ${segments.length} avatar segments...`);
+    let extracted = 0;
+
+    for (const seg of segments) {
+      if (seg.video_url) {
+        try {
+          const response = await fetch(seg.video_url);
+          const blob = await response.blob();
+          const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
+          const audioBlob = await extractAudioFromVideo(file);
+          this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
+          extracted++;
+          console.log(`✓ Auto-extracted audio from segment ${seg.segment_num}`);
+        } catch (e) {
+          console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
+        }
+      }
+    }
+
+    if (extracted > 0) {
+      this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
+      console.log(`✓ Auto-extracted audio from ${extracted}/${segments.length} avatar segments. Clean audio ready!`);
     }
   }
 
