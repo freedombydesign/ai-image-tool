@@ -6714,51 +6714,87 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Sync uploaded avatar segments
       this.syncUploadedAvatarSegments();
 
-      // Load avatar video elements
-      this.exportStatus.textContent = 'Loading avatar videos...';
+      // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
       if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
+        const totalVideos = this.avatarVideos.filter(av => av.videoUrl).length;
+        let loadedCount = 0;
+
         for (const av of this.avatarVideos) {
           if (av.videoUrl) {
+            this.exportStatus.textContent = `Loading avatar video ${loadedCount + 1}/${totalVideos}...`;
+            this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`; // 0-20% for video loading
+
             try {
-              const videoEl = await this.loadVideoElement(av.videoUrl);
+              // Add 30 second timeout per video
+              const videoEl = await Promise.race([
+                this.loadVideoElement(av.videoUrl),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), 30000))
+              ]);
               videoEl.muted = true; // Mute avatar video (we use main audio)
               videoEl.loop = false;
               avatarVideoElements.push({ element: videoEl, ...av });
+              loadedCount++;
+              console.log(`Loaded avatar video ${loadedCount}/${totalVideos}`);
             } catch (e) {
               console.error('Failed to load avatar video:', e);
               avatarVideoElements.push(null);
+              loadedCount++;
             }
           }
         }
+        this.exportProgressBar.style.width = '20%';
       }
 
-      // Preload scene images
+      // Preload scene images with progress
       this.exportStatus.textContent = 'Loading scene images...';
+      this.exportProgressBar.style.width = '25%';
+      let imagesLoaded = 0;
+      const totalImages = this.scenes.length;
       const sceneImages = await Promise.all(this.scenes.map(scene => {
         return new Promise(resolve => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          img.onload = () => resolve(img);
-          img.onerror = () => resolve(null);
+          img.onload = () => {
+            imagesLoaded++;
+            this.exportStatus.textContent = `Loading images ${imagesLoaded}/${totalImages}...`;
+            this.exportProgressBar.style.width = `${25 + (imagesLoaded / totalImages) * 15}%`; // 25-40%
+            resolve(img);
+          };
+          img.onerror = () => {
+            imagesLoaded++;
+            resolve(null);
+          };
           img.src = scene.imageUrl;
         });
       }));
+      this.exportProgressBar.style.width = '40%';
 
       // Create audio element with stitched audio (using replaced segments)
       let audioElement = null;
       let audioContext = null;
       if (this.audioBlob) {
         this.exportStatus.textContent = 'Preparing audio (stitching segments)...';
+        this.exportProgressBar.style.width = '45%';
+        console.log('Stitching audio for export...');
         const audioToUse = await this.stitchAudioForExport();
+        console.log('Audio stitched, size:', audioToUse?.size);
+        this.exportProgressBar.style.width = '50%';
+
+        this.exportStatus.textContent = 'Loading stitched audio...';
         audioElement = new Audio(URL.createObjectURL(audioToUse));
         audioElement.muted = false;
         audioElement.preload = 'auto';
-        // Wait for audio to be ready
-        await new Promise(resolve => {
-          audioElement.oncanplaythrough = resolve;
-          audioElement.load();
-        });
+        // Wait for audio to be ready with timeout
+        await Promise.race([
+          new Promise(resolve => {
+            audioElement.oncanplaythrough = resolve;
+            audioElement.load();
+          }),
+          new Promise(resolve => setTimeout(resolve, 15000)) // 15 second timeout
+        ]);
+        this.exportProgressBar.style.width = '55%';
+        console.log('Audio ready for export');
       }
 
       // Set up MediaRecorder
@@ -6922,10 +6958,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.ctx = originalCtx;
         this.previewCanvas = originalCanvas;
 
-        // Update progress
-        const percent = Math.round((currentTime / totalDuration) * 100);
-        this.exportProgressBar.style.width = `${percent}%`;
-        this.exportStatus.textContent = `Recording: ${percent}%`;
+        // Update progress (recording is 55-95% of total progress)
+        const recordingPercent = Math.round((currentTime / totalDuration) * 100);
+        const overallPercent = 55 + Math.round((currentTime / totalDuration) * 40); // 55-95%
+        this.exportProgressBar.style.width = `${overallPercent}%`;
+        this.exportStatus.textContent = `Recording: ${recordingPercent}% (${Math.floor(currentTime)}s / ${Math.floor(totalDuration)}s)`;
 
         // Use requestAnimationFrame for smooth real-time rendering
         requestAnimationFrame(renderFrame);
