@@ -3678,7 +3678,8 @@ class VideoEditor {
 
       console.log('Audio src:', this.audioPlayer.src, 'readyState:', this.audioPlayer.readyState);
 
-      this.audioPlayer.currentTime = 0;
+      // Don't reset to 0 - resume from current position (after skip/rewind)
+      // this.audioPlayer.currentTime = 0;
       this.audioPlayer.play().then(() => {
         console.log('Audio started playing successfully');
       }).catch((err) => {
