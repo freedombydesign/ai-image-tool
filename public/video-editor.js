@@ -3593,6 +3593,32 @@ class VideoEditor {
     return matchedCount;
   }
 
+  // Clean script text for AI sync - removes visual cues and stage directions
+  // that aren't spoken in the audio
+  cleanScriptForAiSync(text) {
+    if (!text) return '';
+
+    let cleaned = text;
+
+    // Remove [Visual: ...] cues (case insensitive)
+    cleaned = cleaned.replace(/\[Visual:[^\]]*\]/gi, '');
+
+    // Remove [Beat...] stage directions
+    cleaned = cleaned.replace(/\[Beat[^\]]*\]/gi, '');
+
+    // Remove other common stage directions in brackets
+    // e.g., [pause], [laughs], [sighs], [whispers], [shifts tone], etc.
+    cleaned = cleaned.replace(/\[(pause|laughs?|sighs?|whispers?|shifts?[^\]]*|quietly|louder|softly|angrily|sadly|excitedly)[^\]]*\]/gi, '');
+
+    // Remove empty brackets that might remain
+    cleaned = cleaned.replace(/\[\s*\]/g, '');
+
+    // Clean up multiple spaces and trim
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+    return cleaned;
+  }
+
   // AI-powered scene synchronization using GPT-4o
   // This sends scenes + transcript to AI for intelligent placement
   async aiSyncScenes(segments, totalDuration) {
@@ -3602,9 +3628,10 @@ class VideoEditor {
     }
 
     // Prepare scene data for API (only send relevant fields)
+    // Clean text to remove visual cues/stage directions that aren't spoken
     const sceneData = this.scenes.map((scene, index) => ({
       index,
-      text: scene.text || '',
+      text: this.cleanScriptForAiSync(scene.text || ''),
       caption: scene.caption || '',
       prompt: scene.prompt || '',
       description: scene.description || ''
@@ -3641,10 +3668,16 @@ class VideoEditor {
 
     console.log(`AI Sync: Sending ${this.scenes.length} scenes and ${segments.length} segments to GPT-4o...`);
 
-    // Debug: Log scene texts being sent
-    console.log('=== SCENE TEXTS BEING SENT TO AI ===');
+    // Debug: Log scene texts being sent (cleaned vs original)
+    console.log('=== SCENE TEXTS BEING SENT TO AI (cleaned) ===');
     sceneData.forEach((s, i) => {
-      console.log(`Scene ${i + 1}: "${(s.text || s.caption || 'NO TEXT').substring(0, 80)}..."`);
+      const original = this.scenes[i]?.text || '';
+      const cleaned = s.text || s.caption || 'NO TEXT';
+      const wasCleaned = original !== cleaned && original.includes('[');
+      console.log(`Scene ${i + 1}${wasCleaned ? ' (CLEANED)' : ''}: "${cleaned.substring(0, 100)}..."`);
+      if (wasCleaned) {
+        console.log(`  └─ Original had visual cues/stage directions removed`);
+      }
     });
     console.log('=== END SCENE TEXTS ===');
 
