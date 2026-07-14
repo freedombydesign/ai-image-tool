@@ -5034,80 +5034,111 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // Show generating state
     this.generateCaptionsBtn.disabled = true;
-    this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
+    this.generateCaptionsBtn.innerHTML = '⏳ Checking cache...';
 
     try {
-      // Determine file extension based on mime type or filename
-      let extension = 'm4a'; // Default to m4a since that's the user's file
-      const mimeType = this.audioBlob.type || '';
-      console.log('Audio blob MIME type:', mimeType, 'size:', this.audioBlob.size);
+      // Check cache first to avoid API costs
+      const audioHash = await this.generateAudioHash(this.audioBlob);
+      const cacheKey = `captions_${audioHash}`;
+      const cached = localStorage.getItem(cacheKey);
 
-      if (mimeType.includes('wav') || mimeType.includes('wave')) {
-        extension = 'wav';
-      } else if (mimeType.includes('m4a') || mimeType.includes('mp4') || mimeType.includes('x-m4a') || mimeType === 'audio/mp4') {
-        extension = 'm4a';
-      } else if (mimeType.includes('ogg') || mimeType.includes('oga')) {
-        extension = 'ogg';
-      } else if (mimeType.includes('webm')) {
-        extension = 'webm';
-      } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
-        extension = 'mp3';
-      } else if (mimeType.includes('flac')) {
-        extension = 'flac';
-      }
-      // If MIME type is empty or generic, keep m4a default
-      console.log('Using extension:', extension);
+      let result = null;
 
-      // Step 1: Get Supabase config for direct upload (bypasses Vercel 4.5MB limit)
-      const configResponse = await fetch('/api/supabase-config');
-      if (!configResponse.ok) {
-        throw new Error('Cannot get storage config');
-      }
-      const config = await configResponse.json();
-
-      // Step 2: Upload directly to Supabase Storage (bypasses Vercel completely)
-      const fileName = `audio-${Date.now()}.${extension}`;
-      const filePath = `audio/${fileName}`;
-
-      this.generateCaptionsBtn.innerHTML = '⏳ Uploading to cloud...';
-
-      // Direct upload to Supabase Storage REST API
-      const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.anonKey}`,
-          'apikey': config.anonKey,
-          'Content-Type': mimeType,
-          'x-upsert': 'true'
-        },
-        body: this.audioBlob
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error('Supabase upload error:', errorText);
-        throw new Error('Failed to upload audio to cloud storage');
+      if (cached) {
+        try {
+          result = JSON.parse(cached);
+          console.log('Caption transcription loaded from cache (FREE!)');
+          showToast('Using cached transcription (no API cost)', false);
+        } catch (e) {
+          console.log('Cache invalid, will call API');
+          localStorage.removeItem(cacheKey);
+        }
       }
 
-      // Get the public URL
-      const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
-      console.log('Audio uploaded to:', publicUrl);
+      // Only call API if not cached
+      if (!result) {
+        // Determine file extension based on mime type or filename
+        let extension = 'm4a'; // Default to m4a since that's the user's file
+        const mimeType = this.audioBlob.type || '';
+        console.log('Audio blob MIME type:', mimeType, 'size:', this.audioBlob.size);
 
-      // Step 3: Transcribe from Supabase URL
-      this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
+        if (mimeType.includes('wav') || mimeType.includes('wave')) {
+          extension = 'wav';
+        } else if (mimeType.includes('m4a') || mimeType.includes('mp4') || mimeType.includes('x-m4a') || mimeType === 'audio/mp4') {
+          extension = 'm4a';
+        } else if (mimeType.includes('ogg') || mimeType.includes('oga')) {
+          extension = 'ogg';
+        } else if (mimeType.includes('webm')) {
+          extension = 'webm';
+        } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+          extension = 'mp3';
+        } else if (mimeType.includes('flac')) {
+          extension = 'flac';
+        }
+        // If MIME type is empty or generic, keep m4a default
+        console.log('Using extension:', extension);
 
-      const transcribeResponse = await fetch('/api/transcribe-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: publicUrl })
-      });
+        this.generateCaptionsBtn.innerHTML = '⏳ Uploading audio...';
 
-      const result = await transcribeResponse.json();
+        // Step 1: Get Supabase config for direct upload (bypasses Vercel 4.5MB limit)
+        const configResponse = await fetch('/api/supabase-config');
+        if (!configResponse.ok) {
+          throw new Error('Cannot get storage config');
+        }
+        const config = await configResponse.json();
 
-      if (!transcribeResponse.ok || result.error) {
-        throw new Error(result.error || 'Transcription failed');
+        // Step 2: Upload directly to Supabase Storage (bypasses Vercel completely)
+        const fileName = `audio-${Date.now()}.${extension}`;
+        const filePath = `audio/${fileName}`;
+
+        this.generateCaptionsBtn.innerHTML = '⏳ Uploading to cloud...';
+
+        // Direct upload to Supabase Storage REST API
+        const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
+
+        const uploadResponse = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.anonKey}`,
+            'apikey': config.anonKey,
+            'Content-Type': mimeType,
+            'x-upsert': 'true'
+          },
+          body: this.audioBlob
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          console.error('Supabase upload error:', errorText);
+          throw new Error('Failed to upload audio to cloud storage');
+        }
+
+        // Get the public URL
+        const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
+        console.log('Audio uploaded to:', publicUrl);
+
+        // Step 3: Transcribe from Supabase URL
+        this.generateCaptionsBtn.innerHTML = '⏳ Transcribing...';
+
+        const transcribeResponse = await fetch('/api/transcribe-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrl: publicUrl })
+        });
+
+        result = await transcribeResponse.json();
+
+        if (!transcribeResponse.ok || result.error) {
+          throw new Error(result.error || 'Transcription failed');
+        }
+
+        // Cache the result to avoid future API costs
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(result));
+          console.log('Caption transcription cached for future use');
+        } catch (e) {
+          console.log('Could not cache transcription');
+        }
       }
 
       console.log('Transcription for captions:', result);
@@ -6591,22 +6622,25 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const sceneDuration = scene.duration || 6;
     const currentTime = this.playbackTime;
 
-    // Split caption into words (use cleaned version)
-    const allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
-
-    // Calculate current word index - use actual word timestamps if available
+    // Use captionWords array directly if available (matches Whisper timestamps)
+    // Otherwise fall back to splitting caption text
+    let allWords;
     let currentWordIndex = 0;
+
     if (scene.captionWords && scene.captionWords.length > 0) {
-      // Use actual word timestamps from transcription
+      // Use words from Whisper transcription - ensures sync with timestamps
+      allWords = scene.captionWords.map(w => w.word.trim()).filter(w => w.length > 0);
+
+      // Find current word based on actual timestamps
       currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
       if (currentWordIndex === -1) {
         // Past all words - show last word
-        currentWordIndex = scene.captionWords.length - 1;
+        currentWordIndex = allWords.length - 1;
       }
-      // Clamp to displayed words array length
       currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
     } else {
-      // Fallback: divide evenly (less accurate)
+      // Fallback: split caption text and divide evenly (less accurate)
+      allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
       const timeInScene = Math.max(0, currentTime - sceneStartTime);
       const wordDuration = sceneDuration / allWords.length;
       const rawWordIndex = Math.floor(timeInScene / wordDuration);
@@ -7766,22 +7800,25 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
     ctx.textAlign = textAlign;
 
-    // Split caption into words (use cleaned version)
-    const allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
-
-    // Calculate current word index - use actual word timestamps if available
+    // Use captionWords array directly if available (matches Whisper timestamps)
+    // Otherwise fall back to splitting caption text
+    let allWords;
     let currentWordIndex = 0;
+
     if (scene.captionWords && scene.captionWords.length > 0) {
-      // Use actual word timestamps from transcription
+      // Use words from Whisper transcription - ensures sync with timestamps
+      allWords = scene.captionWords.map(w => w.word.trim()).filter(w => w.length > 0);
+
+      // Find current word based on actual timestamps
       currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
       if (currentWordIndex === -1) {
         // Past all words - show last word
-        currentWordIndex = scene.captionWords.length - 1;
+        currentWordIndex = allWords.length - 1;
       }
-      // Clamp to displayed words array length
       currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
     } else {
-      // Fallback: divide evenly by scene progress (less accurate)
+      // Fallback: split caption text and divide evenly (less accurate)
+      allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
       const sceneProgress = (currentTime - scene.startTime) / scene.duration;
       currentWordIndex = Math.floor(sceneProgress * allWords.length);
       currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
