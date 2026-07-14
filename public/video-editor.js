@@ -3294,6 +3294,53 @@ class VideoEditor {
         this.setupExpandedTimelineInteractions();
       });
     }
+
+    // Skip back 15s button
+    const skipBackBtn = document.getElementById('expanded-skip-back');
+    if (skipBackBtn) {
+      skipBackBtn.replaceWith(skipBackBtn.cloneNode(true));
+      const newSkipBackBtn = document.getElementById('expanded-skip-back');
+      newSkipBackBtn.addEventListener('click', () => {
+        this.expandedSkip(-15);
+      });
+    }
+
+    // Skip forward 15s button
+    const skipForwardBtn = document.getElementById('expanded-skip-forward');
+    if (skipForwardBtn) {
+      skipForwardBtn.replaceWith(skipForwardBtn.cloneNode(true));
+      const newSkipForwardBtn = document.getElementById('expanded-skip-forward');
+      newSkipForwardBtn.addEventListener('click', () => {
+        this.expandedSkip(15);
+      });
+    }
+  }
+
+  // Skip forward/back in expanded timeline
+  expandedSkip(seconds) {
+    if (!this.audioPlayer) return;
+
+    const totalDuration = this.audioDuration || this.getTotalDuration();
+    const newTime = Math.max(0, Math.min(totalDuration, this.audioPlayer.currentTime + seconds));
+    this.audioPlayer.currentTime = newTime;
+
+    // Update playhead and preview
+    const playhead = document.getElementById('expanded-timeline-playhead');
+    if (playhead) {
+      playhead.style.left = `${(newTime / totalDuration) * 100}%`;
+    }
+
+    const currentTimeEl = document.getElementById('expanded-current-time');
+    if (currentTimeEl) {
+      currentTimeEl.textContent = `${this.formatTime(newTime)} / ${this.formatTime(totalDuration)}`;
+    }
+
+    // Update scene preview
+    const currentScene = this.getSceneAtTime(newTime);
+    if (currentScene) {
+      const sceneIndex = this.scenes.indexOf(currentScene);
+      this.updateExpandedPreview(sceneIndex, newTime);
+    }
   }
 
   closeExpandedTimeline() {
@@ -3357,10 +3404,18 @@ class VideoEditor {
     const previewImg = document.getElementById('expanded-preview-image');
     const sceneNumber = document.getElementById('expanded-scene-number');
     const sceneTime = document.getElementById('expanded-scene-time');
+    const sceneDesc = document.getElementById('expanded-scene-desc');
 
     if (previewImg) previewImg.src = scene.imageUrl;
-    if (sceneNumber) sceneNumber.textContent = `Scene ${sceneIndex + 1}`;
+    if (sceneNumber) sceneNumber.textContent = `Scene ${sceneIndex + 1} of ${this.scenes.length}`;
     if (sceneTime) sceneTime.textContent = this.formatTime(currentTime !== null ? currentTime : scene.startTime);
+
+    // Show scene description/text
+    if (sceneDesc) {
+      const descText = scene.text || scene.caption || scene.description || '';
+      sceneDesc.textContent = descText;
+      sceneDesc.style.display = descText ? 'block' : 'none';
+    }
   }
 
   // Update avatar video in expanded timeline

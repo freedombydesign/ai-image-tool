@@ -2151,10 +2151,12 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
       <div class="expanded-timeline-header">
         <h2>Timeline Editor</h2>
         <div class="expanded-timeline-controls">
+          <button class="btn secondary small" id="expanded-skip-back" title="Rewind 15 seconds">⏪ 15s</button>
           <button class="btn secondary small" id="expanded-play-btn">▶️ Play</button>
+          <button class="btn secondary small" id="expanded-skip-forward" title="Forward 15 seconds">15s ⏩</button>
+          <span id="expanded-current-time">0:00 / 0:00</span>
           <button class="btn secondary small" id="expanded-sync-audio-btn">🎯 Sync to Audio</button>
           <button class="btn secondary small" id="expanded-distribute-btn">⚖️ Distribute</button>
-          <span id="expanded-current-time">0:00 / 0:00</span>
           <button class="btn secondary" id="close-expanded-timeline">✕ Close</button>
         </div>
       </div>
@@ -2163,8 +2165,11 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
           <img id="expanded-preview-image" src="" alt="Scene preview">
           <video id="expanded-avatar-video" class="expanded-avatar-video" playsinline muted></video>
           <div class="expanded-preview-info">
-            <span id="expanded-scene-number">Scene 1</span>
-            <span id="expanded-scene-time">0:00</span>
+            <div class="expanded-scene-header">
+              <span id="expanded-scene-number">Scene 1</span>
+              <span id="expanded-scene-time">0:00</span>
+            </div>
+            <div id="expanded-scene-desc" class="expanded-scene-desc"></div>
           </div>
         </div>
       </div>
