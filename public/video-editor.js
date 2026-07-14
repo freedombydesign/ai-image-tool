@@ -4724,11 +4724,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           .join(' ')
           .trim();
       } else {
-        // No overlapping segment - find the closest one
+        // No overlapping segment - find the closest one within 3 seconds
         const closestSegment = segments.reduce((closest, seg) => {
           const segMidpoint = (seg.start + seg.end) / 2;
           const sceneMidpoint = (sceneStart + sceneEnd) / 2;
           const distance = Math.abs(segMidpoint - sceneMidpoint);
+
+          // Only consider segments within 3 seconds
+          if (distance > 3) return closest;
 
           if (!closest || distance < closest.distance) {
             return { segment: seg, distance };
@@ -4738,6 +4741,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         if (closestSegment) {
           scene.caption = closestSegment.segment.text.trim();
+        } else {
+          // No nearby segment - use scene text as fallback
+          scene.caption = scene.text || '';
         }
       }
     });
