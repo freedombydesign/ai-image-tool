@@ -190,8 +190,17 @@ class VideoEditor {
 
       if (response.ok) {
         const data = await response.json();
-        const scenes = data.scenes || [];
+        let scenes = data.scenes || [];
         if (scenes.length > 0) {
+          // Dedupe scenes by imageUrl during load to prevent duplicates
+          const seen = new Set();
+          scenes = scenes.filter(scene => {
+            const key = scene.imageUrl || scene.image_url;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
           this.scenes = scenes.map((scene, index) => ({
             id: `scene-${Date.now()}-${index}`,
             imageUrl: scene.imageUrl || scene.image_url,
@@ -229,8 +238,17 @@ class VideoEditor {
         const data = await response.json();
         if (data.batches && data.batches.length > 0) {
           const mostRecentBatch = data.batches[0];
-          const scenes = mostRecentBatch.scenes || [];
+          let scenes = mostRecentBatch.scenes || [];
           if (scenes.length > 0) {
+            // Dedupe scenes by imageUrl during load
+            const seen = new Set();
+            scenes = scenes.filter(scene => {
+              const key = scene.imageUrl || scene.image_url;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+
             this.scenes = scenes.map((scene, index) => ({
               id: `scene-${Date.now()}-${index}`,
               imageUrl: scene.imageUrl || scene.image_url,
