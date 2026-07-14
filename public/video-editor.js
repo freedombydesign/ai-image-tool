@@ -6861,34 +6861,54 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.exportProgressBar.style.width = '50%';
 
         this.exportStatus.textContent = 'Loading audio for export...';
-        console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
-        const audioUrl = URL.createObjectURL(audioToUse);
-        audioElement = new Audio(audioUrl);
-        audioElement.muted = false;
-        audioElement.preload = 'auto';
 
-        // Add error handler
-        audioElement.onerror = (e) => {
-          console.error('Audio element error:', audioElement.error?.code, audioElement.error?.message);
-        };
+        // Try to use existing audio player first (already loaded and working)
+        const existingPlayer = document.getElementById('audio-player');
+        if (existingPlayer && existingPlayer.duration > 0 && existingPlayer.readyState >= 2) {
+          console.log('Using existing audio player, duration:', existingPlayer.duration);
+          audioElement = existingPlayer.cloneNode(true);
+          audioElement.currentTime = 0;
+          this.exportProgressBar.style.width = '55%';
+          console.log('Audio ready for export (cloned player)');
+        } else {
+          // Try Supabase URL if available
+          const supabaseUrl = this.audioUrl;
+          if (supabaseUrl) {
+            console.log('Loading audio from Supabase URL:', supabaseUrl);
+            audioElement = new Audio(supabaseUrl);
+          } else {
+            console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
+            audioElement = new Audio(URL.createObjectURL(audioToUse));
+          }
 
-        // Wait for audio to be ready with 30 second timeout
-        const audioLoaded = await Promise.race([
-          new Promise(resolve => {
-            audioElement.oncanplaythrough = () => resolve(true);
-            audioElement.onloadedmetadata = () => {
-              console.log('Audio metadata loaded, duration:', audioElement.duration);
-            };
-            audioElement.load();
-          }),
-          new Promise(resolve => setTimeout(() => resolve(false), 30000))
-        ]);
+          audioElement.muted = false;
+          audioElement.preload = 'auto';
+          audioElement.crossOrigin = 'anonymous';
 
-        if (!audioLoaded) {
-          console.warn('Audio load timeout - proceeding anyway');
+          // Add error handler
+          audioElement.onerror = (e) => {
+            console.error('Audio element error:', audioElement.error?.code, audioElement.error?.message);
+          };
+
+          // Wait for audio to be ready with 15 second timeout (shorter since we have fallbacks)
+          const audioLoaded = await Promise.race([
+            new Promise(resolve => {
+              audioElement.oncanplaythrough = () => resolve(true);
+              audioElement.onloadedmetadata = () => {
+                console.log('Audio metadata loaded, duration:', audioElement.duration);
+                resolve(true); // Proceed once metadata is loaded
+              };
+              audioElement.load();
+            }),
+            new Promise(resolve => setTimeout(() => resolve(false), 15000))
+          ]);
+
+          if (!audioLoaded) {
+            console.warn('Audio load timeout - trying to proceed anyway');
+          }
+          this.exportProgressBar.style.width = '55%';
+          console.log('Audio ready for export, duration:', audioElement.duration);
         }
-        this.exportProgressBar.style.width = '55%';
-        console.log('Audio ready for export, duration:', audioElement.duration);
       }
 
       // Set up MediaRecorder
