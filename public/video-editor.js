@@ -310,49 +310,32 @@ class VideoEditor {
     }
   }
 
-  // Extract audio from avatar video segments and store for stitching
+  // Load audio for avatar segments (from saved URLs only - extraction from Replicate videos blocked by CORS)
   async extractAudioFromAvatarSegments(segments) {
     if (!segments || segments.length === 0) return;
 
-    console.log(`Auto-extracting audio from ${segments.length} avatar segments...`);
-    let extracted = 0;
-
+    let loaded = 0;
     for (const seg of segments) {
-      // If we have a saved audio URL, use it directly (fast path)
+      // Only load if we have a saved audio URL (extraction from video won't work - CORS blocked)
       if (seg.audio_url) {
         try {
           const response = await fetch(seg.audio_url);
           if (response.ok) {
             const audioBlob = await response.blob();
             this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
-            extracted++;
-            console.log(`✓ Loaded audio for segment ${seg.segment_num} from saved URL`);
-            continue;
+            loaded++;
           }
         } catch (e) {
-          console.warn(`Failed to fetch saved audio for segment ${seg.segment_num}, trying extraction`);
-        }
-      }
-
-      // Fallback: extract audio from video using Web Audio API
-      if (seg.video_url) {
-        try {
-          const response = await fetch(seg.video_url);
-          const blob = await response.blob();
-          const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
-          const audioBlob = await extractAudioFromVideo(file);
-          this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
-          extracted++;
-          console.log(`✓ Auto-extracted audio from segment ${seg.segment_num}`);
-        } catch (e) {
-          console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
+          // Ignore - will use original audio fallback
         }
       }
     }
 
-    if (extracted > 0) {
-      this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
-      console.log(`✓ Auto-extracted audio from ${extracted}/${segments.length} avatar segments. Clean audio ready!`);
+    if (loaded > 0) {
+      this.stitchedAudioBlob = null;
+      console.log(`Loaded ${loaded} segment audio files. Clean audio ready!`);
+    } else {
+      console.log('Avatar segments loaded. Export will use original TTS audio (clean).');
     }
   }
 
