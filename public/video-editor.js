@@ -7110,16 +7110,22 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
+      const exportEndTime = startTime + totalDuration;
       if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
-        // For test exports, only load videos within the test duration
+        // For test exports, only load videos that overlap with the export time range
         const videosToLoad = isTestExport
-          ? this.avatarVideos.filter(av => av.videoUrl && av.startTime < totalDuration)
+          ? this.avatarVideos.filter(av => {
+              if (!av.videoUrl) return false;
+              const segmentEnd = av.startTime + 90; // Each segment is 90 seconds
+              // Check if segment overlaps with export range [startTime, exportEndTime]
+              return av.startTime < exportEndTime && segmentEnd > startTime;
+            })
           : this.avatarVideos.filter(av => av.videoUrl);
 
         const totalVideos = videosToLoad.length;
         let loadedCount = 0;
 
-        console.log(`Loading ${totalVideos} avatar videos${isTestExport ? ` (test mode: first ${totalDuration}s)` : ''}`);
+        console.log(`Loading ${totalVideos} avatar videos${isTestExport ? ` (test mode: ${startTime}s to ${exportEndTime}s)` : ''}`);
 
         for (const av of videosToLoad) {
           this.exportStatus.textContent = `Loading avatar video ${loadedCount + 1}/${totalVideos}...`;
@@ -7332,9 +7338,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           av.element.pause();
         }
       }
-
-      // Calculate end time for this export
-      const exportEndTime = startTime + totalDuration;
 
       // Render frames synced to real time (driven by audio)
       this.exportStatus.textContent = 'Recording video...';
