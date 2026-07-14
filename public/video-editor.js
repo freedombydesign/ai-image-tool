@@ -8194,8 +8194,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Use scene-relative timing for word highlighting (prevents drift with stitched audio)
     // Add small offset (0.15s) to compensate for render latency - makes captions appear slightly ahead
     const renderOffset = 0.15;
-    const sceneStart = scene.startTime || 0;
-    const sceneDuration = scene.duration || 6;
+    // sceneStart and sceneDuration already declared above for boundary check
     const timeInScene = Math.max(0, (currentTime + renderOffset) - sceneStart);
     const wordDuration = sceneDuration / allWords.length;
     const rawWordIndex = Math.floor(timeInScene / wordDuration);
