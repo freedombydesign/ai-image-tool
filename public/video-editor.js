@@ -6861,10 +6861,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Create audio element with stitched audio (using replaced segments)
       let audioElement = null;
       let audioContext = null;
+      const hasReplacedSegments = this.replacedAudioSegments && Object.keys(this.replacedAudioSegments).length > 0;
+
       if (this.audioBlob) {
         this.exportStatus.textContent = 'Preparing audio (stitching segments)...';
         this.exportProgressBar.style.width = '45%';
-        console.log('Stitching audio for export...');
+        console.log('Stitching audio for export, hasReplacedSegments:', hasReplacedSegments);
 
         // Try stitching with 45 second timeout, fall back to original if it fails
         let audioToUse;
