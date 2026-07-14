@@ -3602,6 +3602,7 @@ class VideoEditor {
       try {
         const cachedTimings = JSON.parse(cached);
         console.log('AI Sync: Using cached timings (saved $$ on GPT-4o call)');
+        console.log('⚠️ To force fresh AI analysis, use Shift+Click on "Sync to Audio" button');
 
         // Apply cached timings
         cachedTimings.forEach(timing => {
@@ -3620,6 +3621,13 @@ class VideoEditor {
     }
 
     console.log(`AI Sync: Sending ${this.scenes.length} scenes and ${segments.length} segments to GPT-4o...`);
+
+    // Debug: Log scene texts being sent
+    console.log('=== SCENE TEXTS BEING SENT TO AI ===');
+    sceneData.forEach((s, i) => {
+      console.log(`Scene ${i + 1}: "${(s.text || s.caption || 'NO TEXT').substring(0, 80)}..."`);
+    });
+    console.log('=== END SCENE TEXTS ===');
 
     try {
       const response = await fetch('/api/ai-sync-scenes', {
@@ -4457,12 +4465,16 @@ class VideoEditor {
     this.timelineScenes.innerHTML = this.scenes.map((scene, index) => {
       const leftPercent = (scene.startTime / totalDuration) * 100;
       const widthPercent = (scene.duration / totalDuration) * 100;
+      // Show first 60 chars of script text in tooltip
+      const scriptPreview = (scene.text || '').substring(0, 60).replace(/"/g, '&quot;');
+      const fullTooltip = scriptPreview ? `Script: "${scriptPreview}..."` : 'No script text';
       return `
         <div class="timeline-scene" data-index="${index}"
-             style="left: ${leftPercent}%; width: ${widthPercent}%">
+             style="left: ${leftPercent}%; width: ${widthPercent}%"
+             title="${fullTooltip}">
           <div class="drag-handle" title="Drag to reposition">⋮⋮</div>
           <img src="${scene.imageUrl}" alt="Scene ${index + 1}"
-               title="Drag to move, click to view full size" style="cursor: grab;">
+               style="cursor: grab;">
           <span class="scene-number">${index + 1}</span>
           <span class="scene-duration">${scene.duration.toFixed(1)}s</span>
           <div class="resize-handle" title="Drag to resize"></div>

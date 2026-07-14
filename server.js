@@ -2045,6 +2045,14 @@ app.post('/api/ai-sync-scenes', async (req, res) => {
 
     console.log(`AI Sync: ${scenes.length} scenes to ${segments.length} segments over ${totalDuration.toFixed(1)}s`);
 
+    // Debug: Log scene texts received from frontend
+    console.log('=== SCENE TEXTS RECEIVED FROM FRONTEND ===');
+    scenes.forEach((scene, i) => {
+      const text = scene.text || scene.caption || 'NO TEXT';
+      console.log(`Scene ${i + 1}: "${text.substring(0, 80)}..."`);
+    });
+    console.log('=== END SCENE TEXTS ===');
+
     // Build a condensed transcript with timestamps
     const transcriptSummary = segments.map((seg, i) => {
       const start = seg.start?.toFixed(1) || '0';
