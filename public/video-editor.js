@@ -5111,10 +5111,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }
 
       console.log('Transcription for captions:', result);
+      console.log('Word-level timestamps available:', result.words?.length || 0);
+
+      // Store word-level timestamps for accurate caption sync
+      if (result.words && result.words.length > 0) {
+        this.transcriptionWords = result.words;
+        console.log('Stored', this.transcriptionWords.length, 'word timestamps');
+      }
 
       // Distribute transcription segments across scenes
       if (result.segments && result.segments.length > 0) {
-        this.applyCaptionsFromSegments(result.segments);
+        this.applyCaptionsFromSegments(result.segments, result.words);
       } else if (result.transcription) {
         // Fallback: split transcription evenly across scenes
         this.applyCaptionsFromText(result.transcription);
@@ -5134,8 +5141,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
   }
 
-  // Apply captions from transcription segments
-  applyCaptionsFromSegments(segments) {
+  // Apply captions from transcription segments with word-level timestamps
+  applyCaptionsFromSegments(segments, words = []) {
     const totalDuration = this.audioDuration || segments[segments.length - 1].end;
 
     this.scenes.forEach((scene, index) => {
@@ -5153,6 +5160,18 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           .map(seg => seg.text.trim())
           .join(' ')
           .trim();
+
+        // Store word-level timestamps for this scene
+        if (words && words.length > 0) {
+          scene.captionWords = words.filter(w =>
+            w.start >= sceneStart && w.start < sceneEnd
+          ).map(w => ({
+            word: w.word,
+            start: w.start,
+            end: w.end
+          }));
+          console.log(`Scene ${index}: stored ${scene.captionWords.length} word timestamps`);
+        }
       } else {
         // No overlapping segment - find the closest one within 3 seconds
         const closestSegment = segments.reduce((closest, seg) => {
@@ -5171,9 +5190,21 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         if (closestSegment) {
           scene.caption = closestSegment.segment.text.trim();
+          // Also get words for the closest segment
+          if (words && words.length > 0) {
+            const seg = closestSegment.segment;
+            scene.captionWords = words.filter(w =>
+              w.start >= seg.start && w.start < seg.end
+            ).map(w => ({
+              word: w.word,
+              start: w.start,
+              end: w.end
+            }));
+          }
         } else {
           // No nearby segment - use scene text as fallback
           scene.caption = scene.text || '';
+          scene.captionWords = null; // No timestamps available
         }
       }
     });
@@ -6559,14 +6590,28 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const sceneStartTime = scene.startTime || 0;
     const sceneDuration = scene.duration || 6;
     const currentTime = this.playbackTime;
-    const timeInScene = currentTime - sceneStartTime;
 
     // Split caption into words (use cleaned version)
     const allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
 
-    // Calculate current word index based on time
-    const wordDuration = sceneDuration / allWords.length;
-    const currentWordIndex = Math.floor(timeInScene / wordDuration);
+    // Calculate current word index - use actual word timestamps if available
+    let currentWordIndex = 0;
+    if (scene.captionWords && scene.captionWords.length > 0) {
+      // Use actual word timestamps from transcription
+      currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
+      if (currentWordIndex === -1) {
+        // Past all words - show last word
+        currentWordIndex = scene.captionWords.length - 1;
+      }
+      // Clamp to displayed words array length
+      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
+    } else {
+      // Fallback: divide evenly (less accurate)
+      const timeInScene = Math.max(0, currentTime - sceneStartTime);
+      const wordDuration = sceneDuration / allWords.length;
+      const rawWordIndex = Math.floor(timeInScene / wordDuration);
+      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
+    }
 
     // Only show a sliding window of words (2 lines worth)
     const totalWordsToShow = wordsPerLine * 2; // Show 2 lines at a time
@@ -7197,6 +7242,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           }
 
           if (avatarData && avatarData.element) {
+            // Continuously check for drift and resync if needed
+            const expectedLocalTime = currentTime - avatarData.startTime;
+            const actualVideoTime = avatarData.element.currentTime;
+            const drift = Math.abs(actualVideoTime - expectedLocalTime);
+
+            // If drift > 0.15 seconds, resync (allows some tolerance for natural playback)
+            if (drift > 0.15 && !avatarData.element.seeking) {
+              console.log(`Avatar drift detected: ${drift.toFixed(3)}s, resyncing`);
+              avatarData.element.currentTime = expectedLocalTime;
+            }
+
             const rect = this.getAvatarOverlayRect(width, height);
 
             // Match preview exactly - simple stretch to fit, no aspect ratio preservation
@@ -7713,10 +7769,23 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Split caption into words (use cleaned version)
     const allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
 
-    // Calculate which word should be highlighted based on time within scene
-    const sceneProgress = (currentTime - scene.startTime) / scene.duration;
-    const totalWords = allWords.length;
-    const currentWordIndex = Math.floor(sceneProgress * totalWords);
+    // Calculate current word index - use actual word timestamps if available
+    let currentWordIndex = 0;
+    if (scene.captionWords && scene.captionWords.length > 0) {
+      // Use actual word timestamps from transcription
+      currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
+      if (currentWordIndex === -1) {
+        // Past all words - show last word
+        currentWordIndex = scene.captionWords.length - 1;
+      }
+      // Clamp to displayed words array length
+      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
+    } else {
+      // Fallback: divide evenly by scene progress (less accurate)
+      const sceneProgress = (currentTime - scene.startTime) / scene.duration;
+      currentWordIndex = Math.floor(sceneProgress * allWords.length);
+      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
+    }
 
     // Only show a sliding window of words (2 lines worth) - same as preview
     const totalWordsToShow = wordsPerLine * 2;
@@ -7890,21 +7959,25 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const videoElement = avatarVideoElements[avatarIndex];
 
     // Calculate time within this avatar video segment
-    const localTime = time - avatarVideo.startTime;
+    // Clamp to valid range to prevent seeking past video end
+    const videoDuration = videoElement.duration || (avatarVideo.endTime - avatarVideo.startTime);
+    const localTime = Math.max(0, Math.min(time - avatarVideo.startTime, videoDuration - 0.01));
 
-    // Seek video to the correct time
-    if (Math.abs(videoElement.currentTime - localTime) > 0.1) {
+    // Always seek to exact time to prevent drift (use tight threshold of 0.016s = 1 frame at 60fps)
+    if (Math.abs(videoElement.currentTime - localTime) > 0.016) {
       videoElement.currentTime = localTime;
-      // Wait for seek to complete
+      // Wait for seek to actually complete using seeked event
       await new Promise(resolve => {
-        const checkSeek = () => {
-          if (videoElement.readyState >= 2) {
-            resolve();
-          } else {
-            requestAnimationFrame(checkSeek);
-          }
+        const onSeeked = () => {
+          videoElement.removeEventListener('seeked', onSeeked);
+          resolve();
         };
-        checkSeek();
+        videoElement.addEventListener('seeked', onSeeked);
+        // Fallback timeout in case seeked doesn't fire
+        setTimeout(() => {
+          videoElement.removeEventListener('seeked', onSeeked);
+          resolve();
+        }, 100);
       });
     }
 
