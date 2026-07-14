@@ -2156,38 +2156,39 @@ Return ONLY the JSON array.`;
       });
     }
 
-    // Second pass: Ensure sequential order and fix overlaps
-    // Sort by sceneIndex to maintain order, then adjust startTimes
+    // Second pass: FORCE strictly sequential - each scene starts where previous ends
+    // Sort by sceneIndex to maintain order
     validatedTimings.sort((a, b) => a.sceneIndex - b.sceneIndex);
 
-    let lastEndTime = 0;
+    let currentTime = 0;
     for (let i = 0; i < validatedTimings.length; i++) {
       const timing = validatedTimings[i];
 
-      // Scene 0 must start at 0
-      if (i === 0) {
-        timing.startTime = 0;
-      } else {
-        // Each scene starts where the previous ended (or its AI time if later)
-        timing.startTime = Math.max(lastEndTime, timing.startTime);
-      }
+      // FORCE: Each scene starts exactly where the previous ended
+      timing.startTime = currentTime;
 
-      // Ensure minimum duration
+      // Use AI's suggested duration, but ensure minimum
       timing.duration = Math.max(minDuration, timing.duration);
 
-      // Don't exceed total duration
-      if (timing.startTime + timing.duration > totalDuration) {
-        timing.duration = totalDuration - timing.startTime;
-      }
+      // Don't exceed remaining time
+      const remainingTime = totalDuration - currentTime;
+      const remainingScenes = validatedTimings.length - i;
+      const maxDuration = remainingTime - (remainingScenes - 1) * minDuration;
+      timing.duration = Math.min(timing.duration, maxDuration);
 
-      lastEndTime = timing.startTime + timing.duration;
+      currentTime += timing.duration;
     }
 
-    // Ensure last scene reaches the end
+    // Ensure last scene reaches exactly the end
     const lastTiming = validatedTimings[validatedTimings.length - 1];
     if (lastTiming) {
       lastTiming.duration = totalDuration - lastTiming.startTime;
     }
+
+    // Log to verify order
+    console.log('Scene order check:', validatedTimings.slice(0, 5).map(t =>
+      `S${t.sceneIndex}@${t.startTime.toFixed(1)}s`
+    ).join(' → '));
 
     // Adjust if we exceed total duration
     const totalUsed = validatedTimings.reduce((sum, t) => sum + t.duration, 0);
