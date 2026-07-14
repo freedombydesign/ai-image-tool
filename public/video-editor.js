@@ -3314,6 +3314,32 @@ class VideoEditor {
         this.expandedSkip(15);
       });
     }
+
+    // Captions toggle button
+    const captionsBtn = document.getElementById('expanded-captions-btn');
+    if (captionsBtn) {
+      captionsBtn.replaceWith(captionsBtn.cloneNode(true));
+      const newCaptionsBtn = document.getElementById('expanded-captions-btn');
+      // Initialize captions enabled (default true)
+      if (this.expandedCaptionsEnabled === undefined) {
+        this.expandedCaptionsEnabled = true;
+      }
+      // Update button state
+      if (this.expandedCaptionsEnabled) {
+        newCaptionsBtn.classList.add('active');
+      }
+      newCaptionsBtn.addEventListener('click', () => {
+        this.expandedCaptionsEnabled = !this.expandedCaptionsEnabled;
+        newCaptionsBtn.classList.toggle('active', this.expandedCaptionsEnabled);
+        // Update preview to show/hide caption
+        const currentScene = this.getSceneAtTime(this.audioPlayer?.currentTime || 0);
+        if (currentScene) {
+          const sceneIndex = this.scenes.indexOf(currentScene);
+          this.updateExpandedPreview(sceneIndex, this.audioPlayer?.currentTime);
+        }
+        showToast(this.expandedCaptionsEnabled ? 'Captions enabled' : 'Captions disabled');
+      });
+    }
   }
 
   // Skip forward/back in expanded timeline
@@ -3405,6 +3431,7 @@ class VideoEditor {
     const sceneNumber = document.getElementById('expanded-scene-number');
     const sceneTime = document.getElementById('expanded-scene-time');
     const sceneDesc = document.getElementById('expanded-scene-desc');
+    const captionOverlay = document.getElementById('expanded-caption-overlay');
 
     if (previewImg) previewImg.src = scene.imageUrl;
     if (sceneNumber) sceneNumber.textContent = `Scene ${sceneIndex + 1} of ${this.scenes.length}`;
@@ -3415,6 +3442,17 @@ class VideoEditor {
       const descText = scene.text || scene.caption || scene.description || '';
       sceneDesc.textContent = descText;
       sceneDesc.style.display = descText ? 'block' : 'none';
+    }
+
+    // Show caption overlay if enabled
+    if (captionOverlay) {
+      const captionText = scene.caption || '';
+      if (captionText && this.expandedCaptionsEnabled) {
+        captionOverlay.textContent = captionText;
+        captionOverlay.classList.add('visible');
+      } else {
+        captionOverlay.classList.remove('visible');
+      }
     }
   }
 
