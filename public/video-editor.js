@@ -3507,8 +3507,11 @@ class VideoEditor {
     const playBtn = document.getElementById('expanded-play-btn');
     const expandedAvatarVideo = document.getElementById('expanded-avatar-video');
 
+    console.log('toggleExpandedPlayback called, interval:', this.expandedPlaybackInterval, 'audioElement:', this.audioElement);
+
     if (this.expandedPlaybackInterval) {
       // Stop playback
+      console.log('Stopping playback');
       clearInterval(this.expandedPlaybackInterval);
       this.expandedPlaybackInterval = null;
       if (this.audioElement) this.audioElement.pause();
@@ -3519,13 +3522,20 @@ class VideoEditor {
       if (playBtn) playBtn.textContent = '▶️ Play';
     } else {
       // Start playback
+      console.log('Starting playback, audioElement:', this.audioElement);
+
       if (!this.audioElement) {
+        console.error('No audioElement!');
         showToast('No audio loaded. Upload audio first to preview.', true);
         return;
       }
 
+      console.log('Audio src:', this.audioElement.src, 'readyState:', this.audioElement.readyState);
+
       this.audioElement.currentTime = 0;
-      this.audioElement.play().catch((err) => {
+      this.audioElement.play().then(() => {
+        console.log('Audio started playing successfully');
+      }).catch((err) => {
         console.error('Audio play error:', err);
         showToast('Could not play audio: ' + err.message, true);
       });
