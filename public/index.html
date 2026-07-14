@@ -839,7 +839,11 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
           <!-- Step 5: Captions -->
           <div class="editor-section">
             <h3>5. Captions</h3>
-            <div class="caption-toolbar">
+            <div class="caption-toolbar" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="captions-enabled-toggle" checked>
+                <span>Show Captions</span>
+              </label>
               <button class="btn secondary small" id="generate-captions-btn">🎤 Generate from Audio</button>
               <button class="btn secondary small" id="generate-captions-script-btn" onclick="generateCaptionsFromScript()">📝 Generate from Script</button>
               <button class="btn secondary small" id="clear-captions-btn">🗑️ Clear All</button>

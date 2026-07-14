@@ -565,6 +565,7 @@ class VideoEditor {
     this.generateCaptionsBtn = document.getElementById('generate-captions-btn');
     this.clearCaptionsBtn = document.getElementById('clear-captions-btn');
     this.previewCaptionBtn = document.getElementById('preview-caption-btn');
+    this.captionsEnabledToggle = document.getElementById('captions-enabled-toggle');
 
     // Effects
     this.transitionType = document.getElementById('transition-type');
@@ -6593,6 +6594,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   drawCaption(scene) {
+    // Check if captions are enabled
+    if (this.captionsEnabledToggle && !this.captionsEnabledToggle.checked) return;
+
     if (!scene.caption) return;
 
     // Clean the caption text (remove visual cues)
@@ -7759,6 +7763,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   drawCaptionOnCanvas(ctx, scene, width, height, currentTime = 0) {
+    // Check if captions are enabled
+    if (this.captionsEnabledToggle && !this.captionsEnabledToggle.checked) return;
+
     if (!scene.caption) return;
 
     // Clean the caption text (remove visual cues)
