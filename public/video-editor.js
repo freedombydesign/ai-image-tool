@@ -2772,8 +2772,8 @@ class VideoEditor {
 
     // If force refresh, clear all sync-related caches
     if (forceRefresh) {
-      console.log('Force refresh: Clearing transcription and AI sync caches...');
-      // Clear transcription caches
+      console.log('Force refresh: Clearing ALL audio and sync caches...');
+      // Clear transcription and AI sync caches
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -2782,7 +2782,14 @@ class VideoEditor {
         }
       }
       keysToRemove.forEach(key => localStorage.removeItem(key));
-      console.log(`Cleared ${keysToRemove.length} cached items`);
+
+      // Also clear saved audio URL to force re-upload
+      localStorage.removeItem('saved_audio_url');
+      localStorage.removeItem('saved_audio_name');
+      this.savedAudioUrl = null;
+
+      console.log(`Cleared ${keysToRemove.length} cached items + saved audio URL`);
+      showToast('Cleared all caches - will use current audio file', 'info');
     }
 
     // Show loading state
