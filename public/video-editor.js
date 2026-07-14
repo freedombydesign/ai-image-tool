@@ -6905,8 +6905,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
     }
 
-    // Use scene-relative timing for word highlighting (prevents drift with stitched audio)
-    const timeInScene = Math.max(0, currentTime - sceneStartTime);
+    // Use scene-relative timing for word highlighting
+    // Add small offset (0.15s) to compensate for render latency - makes captions appear slightly ahead
+    const renderOffset = 0.15;
+    const timeInScene = Math.max(0, (currentTime + renderOffset) - sceneStartTime);
     const wordDuration = sceneDuration / allWords.length;
     const rawWordIndex = Math.floor(timeInScene / wordDuration);
     const currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
@@ -8114,9 +8116,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Use scene-relative timing for word highlighting (prevents drift with stitched audio)
+    // Add small offset (0.15s) to compensate for render latency - makes captions appear slightly ahead
+    const renderOffset = 0.15;
     const sceneStart = scene.startTime || 0;
     const sceneDuration = scene.duration || 6;
-    const timeInScene = Math.max(0, currentTime - sceneStart);
+    const timeInScene = Math.max(0, (currentTime + renderOffset) - sceneStart);
     const wordDuration = sceneDuration / allWords.length;
     const rawWordIndex = Math.floor(timeInScene / wordDuration);
     const currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
