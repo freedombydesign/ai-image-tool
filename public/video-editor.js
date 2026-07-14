@@ -7258,116 +7258,45 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }));
       this.exportProgressBar.style.width = '40%';
 
-      // Create audio element with stitched audio (using replaced segments)
+      // SIMPLE AUDIO SETUP: Use the existing audio player that's already loaded
       let audioElement = null;
       let audioContext = null;
-      const hasReplacedSegments = this.replacedAudioSegments && Object.keys(this.replacedAudioSegments).length > 0;
 
-      if (this.audioBlob) {
-        this.exportStatus.textContent = 'Preparing audio (stitching segments)...';
-        this.exportProgressBar.style.width = '45%';
-        console.log('Stitching audio for export, hasReplacedSegments:', hasReplacedSegments);
+      this.exportStatus.textContent = 'Setting up audio...';
+      this.exportProgressBar.style.width = '50%';
 
-        // Try stitching with 45 second timeout, fall back to original if it fails
-        let audioToUse;
-        try {
-          audioToUse = await Promise.race([
-            this.stitchAudioForExport(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Stitching timeout')), 45000))
-          ]);
-          console.log('Audio stitched, size:', audioToUse?.size);
-        } catch (e) {
-          console.warn('Audio stitching failed or timed out, using original audio:', e.message);
-          this.exportStatus.textContent = 'Using original audio (stitching timed out)...';
-          audioToUse = this.audioBlob;
-        }
-        this.exportProgressBar.style.width = '50%';
+      // Just use the audio that's already playing in the UI - it works!
+      if (this.audioPlayer && this.audioPlayer.src) {
+        console.log('Using existing audio player src:', this.audioPlayer.src.substring(0, 80));
+        audioElement = new Audio(this.audioPlayer.src);
+        audioElement.preload = 'auto';
 
-        this.exportStatus.textContent = 'Loading audio for export...';
-
-        // IMPORTANT: If we have stitched audio (with AI avatar audio), use it!
-        // Don't fall back to the existing player which has original audio
-        if (hasReplacedSegments && audioToUse && audioToUse !== this.audioBlob) {
-          console.log('Using STITCHED audio for export:', audioToUse.size, 'bytes');
-          const stitchedUrl = URL.createObjectURL(audioToUse);
-          audioElement = new Audio(stitchedUrl);
-          audioElement.muted = false;
-          audioElement.preload = 'auto';
-
-          // Wait for stitched audio to load
-          await Promise.race([
-            new Promise(resolve => {
-              audioElement.oncanplaythrough = () => resolve(true);
-              audioElement.onloadedmetadata = () => {
-                console.log('Stitched audio loaded, duration:', audioElement.duration);
-                resolve(true);
-              };
-              audioElement.load();
-            }),
-            new Promise(resolve => setTimeout(() => {
-              console.warn('Stitched audio load timeout, proceeding anyway');
-              resolve(false);
-            }, 20000))
-          ]);
-
-          this.exportProgressBar.style.width = '55%';
-          console.log('Stitched audio ready for export, duration:', audioElement.duration);
-        } else {
-          // No stitched audio - use original audio (TTS audio which is clean)
-          console.log('Using original TTS audio for export (no stitched segments)');
-
-          // Create audio from the best available source
-          const supabaseUrl = this.audioUrl;
-          if (supabaseUrl) {
-            console.log('Loading audio from Supabase URL:', supabaseUrl);
-            audioElement = new Audio(supabaseUrl);
-          } else if (audioToUse) {
-            console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
-            audioElement = new Audio(URL.createObjectURL(audioToUse));
-          } else {
-            // Last resort - try existing player's src
-            const existingPlayer = document.getElementById('audio-player');
-            if (existingPlayer && existingPlayer.src) {
-              console.log('Using existing player src:', existingPlayer.src.substring(0, 50));
-              audioElement = new Audio(existingPlayer.src);
-            }
-          }
-
-          if (audioElement) {
-            audioElement.muted = false;
-            audioElement.preload = 'auto';
-            // Only set crossOrigin for external URLs (Supabase), not blob URLs
-            // Blob URLs don't need CORS and setting it can cause MediaElementSource issues
-            if (supabaseUrl && !supabaseUrl.startsWith('blob:')) {
-              audioElement.crossOrigin = 'anonymous';
-            }
-
-            // Add error handler
-            audioElement.onerror = (e) => {
-              console.error('Audio element error:', audioElement.error?.code, audioElement.error?.message);
-            };
-
-            // Wait for audio to be ready with 15 second timeout
-            const audioLoaded = await Promise.race([
-              new Promise(resolve => {
-                audioElement.oncanplaythrough = () => resolve(true);
-                audioElement.onloadedmetadata = () => {
-                  console.log('Audio metadata loaded, duration:', audioElement.duration);
-                  resolve(true);
-                };
-                audioElement.load();
-              }),
-              new Promise(resolve => setTimeout(() => resolve(false), 15000))
-            ]);
-
-            if (!audioLoaded) {
-              console.warn('Audio load timeout - trying to proceed anyway');
-            }
-            console.log('Audio ready for export, duration:', audioElement.duration);
-          }
-          this.exportProgressBar.style.width = '55%';
-        }
+        // Wait for it to load
+        await new Promise((resolve) => {
+          audioElement.onloadedmetadata = () => {
+            console.log('Export audio loaded, duration:', audioElement.duration);
+            resolve();
+          };
+          audioElement.onerror = () => {
+            console.error('Export audio failed to load');
+            resolve();
+          };
+          setTimeout(resolve, 10000); // 10s timeout
+          audioElement.load();
+        });
+      } else if (this.audioUrl) {
+        console.log('Using audioUrl:', this.audioUrl.substring(0, 80));
+        audioElement = new Audio(this.audioUrl);
+        audioElement.preload = 'auto';
+        await new Promise((resolve) => {
+          audioElement.onloadedmetadata = () => resolve();
+          audioElement.onerror = () => resolve();
+          setTimeout(resolve, 10000);
+          audioElement.load();
+        });
       }
+
+      this.exportProgressBar.style.width = '55%';
 
       // Set up MediaRecorder
       const stream = exportCanvas.captureStream(fps);
