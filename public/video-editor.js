@@ -9406,6 +9406,80 @@ async function generateSegmentWithNewAudio() {
 }
 window.generateSegmentWithNewAudio = generateSegmentWithNewAudio;
 
+// Repair existing segment by adding audio URL (no regeneration needed)
+async function repairSegmentAudio(segmentNum, audioFile) {
+  if (!audioFile) {
+    showToast('Please select an audio file');
+    return;
+  }
+
+  try {
+    showToast(`Uploading audio for segment ${segmentNum}...`, 'info');
+
+    // Get Supabase config
+    const configResponse = await fetch('/api/supabase-config');
+    const config = await configResponse.json();
+
+    // Upload audio file to Supabase
+    const audioPath = `audio/segment-${segmentNum}-${Date.now()}.${audioFile.name.split('.').pop()}`;
+    const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
+
+    await fetch(audioUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.anonKey}`,
+        'apikey': config.anonKey,
+        'Content-Type': audioFile.type || 'audio/mpeg',
+        'x-upsert': 'true'
+      },
+      body: audioFile
+    });
+
+    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+    console.log(`Audio uploaded for segment ${segmentNum}:`, audioPublicUrl);
+
+    // Update database with audio URL
+    const userId = localStorage.getItem('ai_tool_user_id') || videoEditor?.userId;
+    if (userId) {
+      // Get existing segment data
+      const existingResponse = await fetch(`/api/db/avatar-segments/${userId}`);
+      const existingData = await existingResponse.json();
+      const existingSegment = existingData.segments?.find(s => s.segment_num === segmentNum);
+
+      if (existingSegment) {
+        // Re-save with audio URL
+        await fetch('/api/db/avatar-segments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            segmentNum,
+            videoUrl: existingSegment.video_url,
+            fileName: existingSegment.file_name,
+            audioUrl: audioPublicUrl
+          })
+        });
+        console.log(`Database updated with audio URL for segment ${segmentNum}`);
+      }
+    }
+
+    // Store in memory for immediate use
+    if (typeof videoEditor !== 'undefined') {
+      videoEditor.replacedAudioSegments[segmentNum] = {
+        blob: audioFile,
+        url: audioPublicUrl
+      };
+      videoEditor.stitchedAudioBlob = null;
+    }
+
+    showToast(`✅ Audio added to segment ${segmentNum}! Will persist across refreshes.`, 'success');
+  } catch (error) {
+    console.error('Repair error:', error);
+    showToast(`Failed: ${error.message}`);
+  }
+}
+window.repairSegmentAudio = repairSegmentAudio;
+
 // Handle individual segment video upload
 async function handleSegmentUpload(segmentNum, file) {
   if (!file) return;
