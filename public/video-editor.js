@@ -342,9 +342,42 @@ class VideoEditor {
           const blob = await response.blob();
           console.log(`  Segment ${seg.segment_num} blob size: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
 
-          const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
           console.log(`  Segment ${seg.segment_num} extracting audio...`);
-          const audioBlob = await extractAudioFromVideo(file);
+
+          // Use FFmpeg if available, fallback to Web Audio API
+          let audioBlob;
+          if (this.ffmpeg && this.ffmpegLoaded) {
+            try {
+              const inputName = `segment${seg.segment_num}.mp4`;
+              const outputName = `audio${seg.segment_num}.mp3`;
+
+              // Write video to FFmpeg filesystem
+              const uint8Array = new Uint8Array(await blob.arrayBuffer());
+              await this.ffmpeg.writeFile(inputName, uint8Array);
+
+              // Extract audio to MP3
+              await this.ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-q:a', '2', outputName]);
+
+              // Read the output
+              const data = await this.ffmpeg.readFile(outputName);
+              audioBlob = new Blob([data.buffer], { type: 'audio/mp3' });
+
+              // Clean up
+              await this.ffmpeg.deleteFile(inputName);
+              await this.ffmpeg.deleteFile(outputName);
+
+              console.log(`  Segment ${seg.segment_num} audio extracted via FFmpeg: ${(audioBlob.size / 1024).toFixed(0)}KB`);
+            } catch (ffmpegErr) {
+              console.warn(`  FFmpeg extraction failed for segment ${seg.segment_num}, trying Web Audio API:`, ffmpegErr.message);
+              const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
+              audioBlob = await extractAudioFromVideo(file);
+            }
+          } else {
+            console.log(`  FFmpeg not loaded, using Web Audio API for segment ${seg.segment_num}`);
+            const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
+            audioBlob = await extractAudioFromVideo(file);
+          }
+
           console.log(`  Segment ${seg.segment_num} audio extracted: ${(audioBlob.size / 1024).toFixed(0)}KB`);
           this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
           extracted++;
