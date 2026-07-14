@@ -6346,12 +6346,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }
     }
 
-    // Update caption
+    // Update caption with word-by-word highlighting (matches export style)
     if (this.previewCaptionOverlay && currentScene) {
       const caption = currentScene.caption || '';
       const captionsEnabled = this.captionsEnabledToggle?.checked ?? true;
       if (caption && captionsEnabled) {
-        this.previewCaptionOverlay.textContent = caption;
+        this.renderStyledCaption(currentScene, this.playbackTime);
         this.previewCaptionOverlay.classList.add('visible');
       } else {
         this.previewCaptionOverlay.classList.remove('visible');
@@ -6367,6 +6367,46 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // Continue loop
     this.animationFrame = requestAnimationFrame(() => this.animateNativeLayered());
+  }
+
+  // Render styled caption with word highlighting in preview (matches export style)
+  renderStyledCaption(scene, currentTime) {
+    if (!this.previewCaptionOverlay || !scene.caption) return;
+
+    // Get caption style settings
+    const textColor = document.getElementById('caption-text-color')?.value || '#FFFFFF';
+    const highlightColor = document.getElementById('caption-highlight-color')?.value || '#FFFF00';
+    const fontSize = document.getElementById('caption-font-size')?.value || '32';
+    const fontFamily = document.getElementById('caption-font-family')?.value || 'Arial Black';
+
+    // Get words and find current word
+    let allWords, currentWordIndex = 0;
+
+    if (scene.captionWords && scene.captionWords.length > 0) {
+      allWords = scene.captionWords.map(w => w.word.trim()).filter(w => w.length > 0);
+      currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
+      if (currentWordIndex === -1) currentWordIndex = allWords.length - 1;
+      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
+    } else {
+      // Fallback: split caption into words
+      allWords = scene.caption.split(/\s+/).filter(w => w.length > 0);
+      const sceneProgress = (currentTime - scene.startTime) / scene.duration;
+      currentWordIndex = Math.floor(sceneProgress * allWords.length);
+      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
+    }
+
+    // Build HTML with highlighted current word
+    const wordsHtml = allWords.map((word, i) => {
+      const color = i === currentWordIndex ? highlightColor : textColor;
+      return `<span style="color: ${color}; ${i === currentWordIndex ? 'transform: scale(1.05);' : ''}">${word}</span>`;
+    }).join(' ');
+
+    // Apply styles to overlay
+    this.previewCaptionOverlay.style.fontFamily = fontFamily;
+    this.previewCaptionOverlay.style.fontSize = `${Math.round(parseInt(fontSize) * 0.6)}px`; // Scale for preview
+    this.previewCaptionOverlay.style.textShadow = '2px 2px 4px rgba(0,0,0,0.8)';
+    this.previewCaptionOverlay.style.fontWeight = 'bold';
+    this.previewCaptionOverlay.innerHTML = wordsHtml;
   }
 
   stopPlayback() {
