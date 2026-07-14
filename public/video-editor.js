@@ -320,15 +320,37 @@ class VideoEditor {
     for (const seg of segments) {
       if (seg.video_url) {
         try {
-          const response = await fetch(seg.video_url);
-          const blob = await response.blob();
-          const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
-          const audioBlob = await extractAudioFromVideo(file);
-          this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
-          extracted++;
-          console.log(`✓ Auto-extracted audio from segment ${seg.segment_num}`);
+          console.log(`Fetching segment ${seg.segment_num} from: ${seg.video_url.substring(0, 80)}...`);
+
+          // Try fetch with no-cors mode as fallback
+          let response;
+          try {
+            response = await fetch(seg.video_url, { mode: 'cors' });
+          } catch (corsError) {
+            console.warn(`CORS blocked for segment ${seg.segment_num}, trying no-cors...`);
+            // For no-cors, we can't read the response but we can try via video element
+            response = null;
+          }
+
+          let audioBlob;
+          if (response && response.ok) {
+            const blob = await response.blob();
+            console.log(`Segment ${seg.segment_num} fetched: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+            const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
+            audioBlob = await extractAudioFromVideo(file);
+          } else {
+            // Fallback: extract audio via video element (works for cross-origin videos)
+            console.log(`Using video element fallback for segment ${seg.segment_num}...`);
+            audioBlob = await this.extractAudioViaVideoElement(seg.video_url, seg.segment_num);
+          }
+
+          if (audioBlob) {
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
+            extracted++;
+            console.log(`✓ Auto-extracted audio from segment ${seg.segment_num} (${(audioBlob.size / 1024).toFixed(1)} KB)`);
+          }
         } catch (e) {
-          console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
+          console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message, e);
         }
       }
     }
@@ -336,7 +358,77 @@ class VideoEditor {
     if (extracted > 0) {
       this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
       console.log(`✓ Auto-extracted audio from ${extracted}/${segments.length} avatar segments. Clean audio ready!`);
+    } else {
+      console.warn(`⚠ Could not extract audio from any segments. Clean audio not available.`);
     }
+  }
+
+  // Extract audio from a video URL using MediaRecorder (fallback for CORS-blocked URLs)
+  async extractAudioViaVideoElement(videoUrl, segmentNum) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.crossOrigin = 'anonymous';
+      video.muted = false;
+      video.preload = 'auto';
+
+      const timeout = setTimeout(() => {
+        video.remove();
+        reject(new Error('Video load timeout'));
+      }, 30000);
+
+      video.onloadedmetadata = async () => {
+        try {
+          clearTimeout(timeout);
+          const audioContext = new AudioContext();
+          const source = audioContext.createMediaElementSource(video);
+          const destination = audioContext.createMediaStreamDestination();
+          source.connect(destination);
+
+          const mediaRecorder = new MediaRecorder(destination.stream, { mimeType: 'audio/webm' });
+          const chunks = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            video.remove();
+            audioContext.close();
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            resolve(blob);
+          };
+
+          mediaRecorder.start();
+          video.play();
+
+          video.onended = () => {
+            mediaRecorder.stop();
+          };
+
+          // Safety timeout
+          setTimeout(() => {
+            if (mediaRecorder.state === 'recording') {
+              mediaRecorder.stop();
+              video.pause();
+            }
+          }, (video.duration + 2) * 1000);
+
+        } catch (e) {
+          clearTimeout(timeout);
+          video.remove();
+          reject(e);
+        }
+      };
+
+      video.onerror = (e) => {
+        clearTimeout(timeout);
+        video.remove();
+        reject(new Error(`Video load error: ${video.error?.message || 'unknown'}`));
+      };
+
+      video.src = videoUrl;
+      video.load();
+    });
   }
 
   // Update avatar segment UI slots to show loaded segments
