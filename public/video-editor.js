@@ -8431,6 +8431,21 @@ async function handleSegmentUpload(segmentNum, file) {
       fileName: file.name
     };
 
+    // Extract audio from uploaded video and store for stitching
+    try {
+      const audioBlob = await extractAudioFromVideo(file);
+      if (audioBlob && typeof videoEditor !== 'undefined') {
+        videoEditor.replacedAudioSegments[segmentNum] = {
+          blob: audioBlob,
+          url: permanentUrl
+        };
+        videoEditor.stitchedAudioBlob = null; // Clear cache
+        console.log(`Extracted and stored audio from uploaded segment ${segmentNum}`);
+      }
+    } catch (audioErr) {
+      console.warn(`Could not extract audio from segment ${segmentNum}:`, audioErr);
+    }
+
     // Save to database for persistence across refreshes
     await fetch('/api/db/avatar-segments', {
       method: 'POST',
@@ -8493,9 +8508,96 @@ async function handleSegmentUpload(segmentNum, file) {
   }
 }
 
+// Extract audio from a video file using Web Audio API
+async function extractAudioFromVideo(videoFile) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.muted = false;
+    video.src = URL.createObjectURL(videoFile);
+
+    video.onloadedmetadata = async () => {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await videoFile.arrayBuffer();
+
+        // Try to decode audio from video
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        // Convert AudioBuffer to WAV blob
+        const wavBlob = audioBufferToWav(audioBuffer);
+        URL.revokeObjectURL(video.src);
+        resolve(wavBlob);
+      } catch (err) {
+        URL.revokeObjectURL(video.src);
+        reject(err);
+      }
+    };
+
+    video.onerror = () => {
+      URL.revokeObjectURL(video.src);
+      reject(new Error('Failed to load video'));
+    };
+  });
+}
+
+// Convert AudioBuffer to WAV Blob
+function audioBufferToWav(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataLength = buffer.length * blockAlign;
+  const bufferLength = 44 + dataLength;
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const view = new DataView(arrayBuffer);
+
+  // WAV header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  // Interleave channels and write samples
+  const offset = 44;
+  const channels = [];
+  for (let i = 0; i < numChannels; i++) {
+    channels.push(buffer.getChannelData(i));
+  }
+
+  let pos = offset;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+      view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      pos += 2;
+    }
+  }
+
+  function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
 // Make functions globally available
 window.showUploadSegmentsPanel = showUploadSegmentsPanel;
 window.handleSegmentUpload = handleSegmentUpload;
+window.extractAudioFromVideo = extractAudioFromVideo;
 
 // Regenerate a single segment with new audio
 async function regenerateSegment(segmentIndex, audioFile, avatarUrl, config) {
