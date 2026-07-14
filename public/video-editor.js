@@ -7254,10 +7254,49 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       });
 
       // Create video blob
-      const videoBlob = new Blob(chunks, { type: selectedMimeType });
-      const extension = selectedMimeType.includes('mp4') ? 'mp4' : 'webm';
+      let videoBlob = new Blob(chunks, { type: selectedMimeType });
+      let extension = selectedMimeType.includes('mp4') ? 'mp4' : 'webm';
+
+      // If we recorded WebM but FFmpeg is available, convert to MP4
+      if (extension === 'webm' && this.ffmpegLoaded && this.ffmpeg) {
+        try {
+          this.exportStatus.textContent = 'Converting to MP4...';
+          this.exportProgressBar.style.width = '96%';
+
+          // Write WebM to FFmpeg
+          const webmData = new Uint8Array(await videoBlob.arrayBuffer());
+          await this.ffmpeg.writeFile('input.webm', webmData);
+
+          // Convert to MP4 with H.264/AAC
+          await this.ffmpeg.exec([
+            '-i', 'input.webm',
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-movflags', '+faststart',
+            'output.mp4'
+          ]);
+
+          // Read the MP4
+          const mp4Data = await this.ffmpeg.readFile('output.mp4');
+          videoBlob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+          extension = 'mp4';
+
+          // Cleanup
+          await this.ffmpeg.deleteFile('input.webm');
+          await this.ffmpeg.deleteFile('output.mp4');
+
+          console.log('Converted WebM to MP4 successfully');
+        } catch (conversionError) {
+          console.warn('MP4 conversion failed, keeping WebM:', conversionError);
+          // Keep original WebM if conversion fails
+        }
+      }
 
       // Download
+      this.exportProgressBar.style.width = '100%';
       const url = URL.createObjectURL(videoBlob);
       const a = document.createElement('a');
       a.href = url;
