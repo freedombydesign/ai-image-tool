@@ -7164,6 +7164,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     return closestIdx;
   }
 
+  // Remove duplicate scenes (by imageUrl)
+  dedupeScenes() {
+    const seen = new Set();
+    const uniqueScenes = [];
+
+    for (const scene of this.scenes) {
+      const key = scene.imageUrl || scene.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueScenes.push(scene);
+      }
+    }
+
+    const removed = this.scenes.length - uniqueScenes.length;
+    if (removed > 0) {
+      this.scenes = uniqueScenes;
+      this.recalculateTimings();
+      this.renderImportedScenes();
+      this.renderTimeline();
+      showToast(`Removed ${removed} duplicate scenes. Now have ${this.scenes.length} scenes.`, 'success');
+      console.log(`Deduped: removed ${removed} duplicates, now have ${this.scenes.length} scenes`);
+    } else {
+      showToast('No duplicates found', 'info');
+    }
+    return this.scenes.length;
+  }
+
   drawFrameWithEffects(ctx, img, scene, time, width, height) {
     const effect = this.zoomEffect.value;
     const progress = (time - scene.startTime) / scene.duration;
