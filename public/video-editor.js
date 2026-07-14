@@ -578,6 +578,7 @@ class VideoEditor {
     this.exportProgressBar = document.getElementById('export-progress-bar');
     this.exportStatus = document.getElementById('export-status');
     this.exportVideoBtn = document.getElementById('export-video-btn');
+    this.testExportBtn = document.getElementById('test-export-btn');
 
     // Talking Avatar
     this.enableAvatarToggle = document.getElementById('enable-avatar-overlay');
@@ -744,6 +745,11 @@ class VideoEditor {
 
     // Export
     this.exportVideoBtn.addEventListener('click', () => this.exportVideo());
+
+    // Test Export (30 seconds only for quick testing)
+    if (this.testExportBtn) {
+      this.testExportBtn.addEventListener('click', () => this.exportVideo(30));
+    }
 
     // SRT Export for CapCut
     const exportSrtBtn = document.getElementById('export-srt-btn');
@@ -6783,15 +6789,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Export using MediaRecorder (works in all browsers without FFmpeg)
-  async exportWithMediaRecorder() {
+  // maxDuration: optional limit in seconds for test exports
+  async exportWithMediaRecorder(maxDuration = null) {
     this.exportProgress.hidden = false;
     this.exportVideoBtn.disabled = true;
-    this.exportStatus.textContent = 'Preparing MediaRecorder export...';
+
+    const isTestExport = maxDuration !== null;
+    this.exportStatus.textContent = isTestExport
+      ? `Preparing TEST export (${maxDuration}s)...`
+      : 'Preparing MediaRecorder export...';
 
     try {
       const [width, height] = this.exportResolution.value.split('x').map(Number);
       const fps = parseInt(this.exportFps.value) || 30;
-      const totalDuration = this.getTotalDuration();
+      let totalDuration = this.getTotalDuration();
+
+      // Limit duration for test exports
+      if (maxDuration && totalDuration > maxDuration) {
+        totalDuration = maxDuration;
+        console.log(`Test export: limiting to ${maxDuration} seconds`);
+      }
 
       // Create export canvas
       const exportCanvas = document.createElement('canvas');
@@ -7176,7 +7193,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const url = URL.createObjectURL(videoBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `video_export_${Date.now()}.${extension}`;
+      const filename = isTestExport
+        ? `test_export_${maxDuration}s_${Date.now()}.${extension}`
+        : `video_export_${Date.now()}.${extension}`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -7196,7 +7216,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Export Video (FFmpeg version)
-  async exportVideo() {
+  // maxDuration: optional limit in seconds for test exports
+  async exportVideo(maxDuration = null) {
     if (this.scenes.length === 0) {
       showToast('Add scenes first to export.');
       return;
@@ -7205,7 +7226,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Try MediaRecorder first (works in all browsers)
     if (!this.ffmpegLoaded) {
       console.log('FFmpeg not available, using MediaRecorder export');
-      return this.exportWithMediaRecorder();
+      return this.exportWithMediaRecorder(maxDuration);
     }
 
     this.exportProgress.hidden = false;
