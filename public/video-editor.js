@@ -7107,15 +7107,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
             let drawW, drawH, drawX, drawY;
             if (videoAspect > rectAspect) {
+              // Video is wider - fit height, center horizontally
               drawH = rect.height;
               drawW = rect.height * videoAspect;
               drawX = rect.x - (drawW - rect.width) / 2;
               drawY = rect.y;
             } else {
+              // Video is taller - fit width, show TOP (face area) not center
               drawW = rect.width;
               drawH = rect.width / videoAspect;
               drawX = rect.x;
-              drawY = rect.y - (drawH - rect.height) / 2;
+              drawY = rect.y; // Show top of video where face is, not centered
             }
 
             ctx.save();
@@ -7789,17 +7791,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     let drawW, drawH, drawX, drawY;
     if (videoAspect > rectAspect) {
-      // Video is wider - fit height, crop width
+      // Video is wider - fit height, center horizontally
       drawH = rect.height;
       drawW = rect.height * videoAspect;
       drawX = rect.x - (drawW - rect.width) / 2;
       drawY = rect.y;
     } else {
-      // Video is taller - fit width, crop height
+      // Video is taller - fit width, show TOP (face area) not center
       drawW = rect.width;
       drawH = rect.width / videoAspect;
       drawX = rect.x;
-      drawY = rect.y - (drawH - rect.height) / 2;
+      drawY = rect.y; // Show top of video where face is
     }
 
     // Draw the avatar video frame with shape masking
