@@ -638,7 +638,15 @@ class VideoEditor {
       this.syncToSpeechBtn.addEventListener('click', () => this.syncToSpeech());
     }
     if (this.syncToAudioBtn) {
-      this.syncToAudioBtn.addEventListener('click', () => this.syncToAudio());
+      this.syncToAudioBtn.addEventListener('click', (e) => {
+        // Shift+Click = force fresh transcription (clear cache)
+        const forceRefresh = e.shiftKey;
+        if (forceRefresh) {
+          showToast('Clearing cache, will re-transcribe...', 'info');
+        }
+        this.syncToAudio(forceRefresh);
+      });
+      this.syncToAudioBtn.title = 'Click to sync | Shift+Click to clear cache and re-sync';
     }
     if (this.distributeEvenlyBtn) {
       this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
@@ -2750,7 +2758,8 @@ class VideoEditor {
   }
 
   // Sync scenes to actual audio transcription using Whisper
-  async syncToAudio() {
+  // forceRefresh = true will clear all caches and re-transcribe
+  async syncToAudio(forceRefresh = false) {
     if (this.scenes.length === 0) {
       showToast('Add scenes first.');
       return;
@@ -2761,10 +2770,25 @@ class VideoEditor {
       return;
     }
 
+    // If force refresh, clear all sync-related caches
+    if (forceRefresh) {
+      console.log('Force refresh: Clearing transcription and AI sync caches...');
+      // Clear transcription caches
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('transcription_') || key.startsWith('ai-sync-'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      console.log(`Cleared ${keysToRemove.length} cached items`);
+    }
+
     // Show loading state
     if (this.syncToAudioBtn) {
       this.syncToAudioBtn.disabled = true;
-      this.syncToAudioBtn.textContent = '⏳ Transcribing...';
+      this.syncToAudioBtn.textContent = forceRefresh ? '🔄 Re-transcribing...' : '⏳ Transcribing...';
     }
 
     try {

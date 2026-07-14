@@ -2063,38 +2063,45 @@ app.post('/api/ai-sync-scenes', async (req, res) => {
       return `Scene ${i + 1}: ${text.substring(0, 200)}`;
     }).join('\n');
 
-    const systemPrompt = `You are a video editor AI. Your task is to synchronize visual scenes with an audio transcript.
+    // Calculate base duration per scene
+    const baseDuration = totalDuration / scenes.length;
+    const minDuration = Math.max(3, totalDuration * 0.008);
 
-AUDIO TRANSCRIPT (with timestamps):
+    const systemPrompt = `Match ${scenes.length} video scenes to their spoken lines in this ${totalDuration.toFixed(1)}-second audio.
+
+IMPORTANT: Each scene was GENERATED FROM the script. The scene's text IS the script excerpt that should be spoken at that moment.
+
+TRANSCRIPT (with timestamps):
 ${transcriptSummary}
 
-TOTAL DURATION: ${totalDuration.toFixed(1)} seconds
-
-VISUAL SCENES TO PLACE:
+SCENES (each contains its SCRIPT TEXT):
 ${sceneDescriptions}
 
-TASK:
-Analyze the semantic content of each scene and determine the BEST time to show it based on what's being said in the audio.
+YOUR TASK - For each scene:
+1. Find where the scene's TEXT appears (or is paraphrased) in the transcript
+2. Note the timestamp where those words are SPOKEN
+3. Start the scene 1-2 seconds BEFORE those words are spoken
+4. Scenes MUST stay in order: Scene 1, then 2, then 3, etc.
+
+MATCHING TIPS:
+- Scene text "financial cushion" → find when "cushion" or "financial" is spoken
+- Scene text "emergency fund" → find when "emergency" or "fund" is spoken
+- Match KEY WORDS from scene text to transcript timestamps
 
 RULES:
-1. Each scene should start when its visual content is most relevant to what's being spoken
-2. Consider the narrative flow - scenes should appear in a logical sequence
-3. Start scenes SLIGHTLY BEFORE the relevant dialogue (0.5-2 seconds anticipation)
-4. Spread scenes across the entire duration - don't cluster them
-5. Later scenes should generally appear later in the timeline
-6. Scene duration should be proportional to how much content it represents
-7. Minimum scene duration: ${Math.max(3, totalDuration * 0.008).toFixed(1)} seconds
-8. No two scenes should start at the exact same time
-9. Scenes should not overlap (each scene ends when the next begins)
+- Scene 1 MUST start at 0.0s
+- Each scene ends when the next begins (no gaps)
+- Keep scenes in SEQUENTIAL order (1,2,3,4... never skip around)
+- Last scene ends at ${totalDuration.toFixed(1)}s
+- Min duration: ${minDuration.toFixed(1)}s
 
-OUTPUT FORMAT - Return ONLY a JSON array with scene timings:
+OUTPUT - JSON array (scenes in order 0 to ${scenes.length - 1}):
 [
-  { "sceneIndex": 0, "startTime": 0.0, "duration": 15.5, "reason": "brief explanation" },
-  { "sceneIndex": 1, "startTime": 15.5, "duration": 12.0, "reason": "brief explanation" }
+  { "sceneIndex": 0, "startTime": 0.0, "duration": X, "reason": "text matches at Xs" },
+  { "sceneIndex": 1, "startTime": X, "duration": Y, "reason": "text matches at Ys" }
 ]
 
-Ensure all ${scenes.length} scenes are included, with startTime + duration not exceeding ${totalDuration.toFixed(1)}s.
-Output ONLY the JSON array, no other text.`;
+Return ONLY the JSON array.`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -2122,45 +2129,45 @@ Output ONLY the JSON array, no other text.`;
       throw new Error('AI returned invalid timings format');
     }
 
-    // Ensure all scenes are accounted for
+    // ENFORCE SEQUENTIAL ORDER: Scenes must go 0, 1, 2, 3... not reordered
     const minDuration = Math.max(3, totalDuration * 0.008);
+    const baseDuration = totalDuration / scenes.length;
     const validatedTimings = [];
 
+    // First pass: collect AI timings but keep scene order
+    let currentTime = 0;
     for (let i = 0; i < scenes.length; i++) {
-      const timing = timings.find(t => t.sceneIndex === i);
-      if (timing) {
-        validatedTimings.push({
-          sceneIndex: i,
-          startTime: Math.max(0, Math.min(timing.startTime, totalDuration - minDuration)),
-          duration: Math.max(minDuration, timing.duration || minDuration),
-          reason: timing.reason || 'AI placement'
-        });
-      } else {
-        // Scene not in AI response - assign proportionally
-        validatedTimings.push({
-          sceneIndex: i,
-          startTime: (i / scenes.length) * totalDuration,
-          duration: totalDuration / scenes.length,
-          reason: 'Proportional fallback'
-        });
+      const aiTiming = timings.find(t => t.sceneIndex === i);
+
+      // Use AI's suggested duration, but enforce sequential start times
+      let duration = aiTiming?.duration || baseDuration;
+      duration = Math.max(minDuration, Math.min(duration, totalDuration - currentTime));
+
+      validatedTimings.push({
+        sceneIndex: i,
+        startTime: currentTime,
+        duration: duration,
+        reason: aiTiming?.reason || 'Sequential placement'
+      });
+
+      currentTime += duration;
+    }
+
+    // Adjust if we exceed total duration
+    const totalUsed = validatedTimings.reduce((sum, t) => sum + t.duration, 0);
+    if (totalUsed > totalDuration) {
+      const scale = totalDuration / totalUsed;
+      let runningTime = 0;
+      for (const timing of validatedTimings) {
+        timing.startTime = runningTime;
+        timing.duration = Math.max(minDuration, timing.duration * scale);
+        runningTime += timing.duration;
       }
     }
 
-    // Sort by startTime and fix overlaps
-    validatedTimings.sort((a, b) => a.startTime - b.startTime);
-    for (let i = 0; i < validatedTimings.length - 1; i++) {
-      const current = validatedTimings[i];
-      const next = validatedTimings[i + 1];
-      const currentEnd = current.startTime + current.duration;
-      if (currentEnd > next.startTime) {
-        // Adjust duration to prevent overlap
-        current.duration = Math.max(minDuration, next.startTime - current.startTime);
-      }
-    }
-
-    // Ensure last scene doesn't exceed total duration
+    // Ensure last scene ends at total duration
     const lastScene = validatedTimings[validatedTimings.length - 1];
-    if (lastScene.startTime + lastScene.duration > totalDuration) {
+    if (lastScene) {
       lastScene.duration = totalDuration - lastScene.startTime;
     }
 
