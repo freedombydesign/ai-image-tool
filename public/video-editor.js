@@ -6822,30 +6822,36 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
       if (this.avatarEnabled && this.avatarVideos && this.avatarVideos.length > 0) {
-        const totalVideos = this.avatarVideos.filter(av => av.videoUrl).length;
+        // For test exports, only load videos within the test duration
+        const videosToLoad = isTestExport
+          ? this.avatarVideos.filter(av => av.videoUrl && av.startTime < totalDuration)
+          : this.avatarVideos.filter(av => av.videoUrl);
+
+        const totalVideos = videosToLoad.length;
         let loadedCount = 0;
 
-        for (const av of this.avatarVideos) {
-          if (av.videoUrl) {
-            this.exportStatus.textContent = `Loading avatar video ${loadedCount + 1}/${totalVideos}...`;
-            this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`; // 0-20% for video loading
+        console.log(`Loading ${totalVideos} avatar videos${isTestExport ? ` (test mode: first ${totalDuration}s)` : ''}`);
 
-            try {
-              // Add 60 second timeout per video (increased for slower connections with 8 segments)
-              const videoEl = await Promise.race([
-                this.loadVideoElement(av.videoUrl),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), 60000))
-              ]);
-              videoEl.muted = true; // Mute avatar video (we use main audio)
-              videoEl.loop = false;
-              avatarVideoElements.push({ element: videoEl, ...av });
-              loadedCount++;
-              console.log(`Loaded avatar video ${loadedCount}/${totalVideos}`);
-            } catch (e) {
-              console.error('Failed to load avatar video:', e);
-              avatarVideoElements.push(null);
-              loadedCount++;
-            }
+        for (const av of videosToLoad) {
+          this.exportStatus.textContent = `Loading avatar video ${loadedCount + 1}/${totalVideos}...`;
+          this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`; // 0-20% for video loading
+
+          try {
+            // Shorter timeout for test exports (15s), longer for full exports (60s)
+            const timeout = isTestExport ? 15000 : 60000;
+            const videoEl = await Promise.race([
+              this.loadVideoElement(av.videoUrl),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), timeout))
+            ]);
+            videoEl.muted = true; // Mute avatar video (we use main audio)
+            videoEl.loop = false;
+            avatarVideoElements.push({ element: videoEl, ...av });
+            loadedCount++;
+            console.log(`Loaded avatar video ${loadedCount}/${totalVideos}`);
+          } catch (e) {
+            console.error('Failed to load avatar video:', e);
+            avatarVideoElements.push(null);
+            loadedCount++;
           }
         }
         this.exportProgressBar.style.width = '20%';
@@ -7041,8 +7047,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       this.exportStatus.textContent = 'Recording video...';
       const recordingStartTime = performance.now();
       let lastActiveAvatar = null;
+      let frameCount = 0;
 
       const renderFrame = () => {
+        frameCount++;
         // Use audio time if available, otherwise calculate from elapsed time
         const currentTime = audioElement
           ? audioElement.currentTime
@@ -7081,7 +7089,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           const imgH = sceneImg.naturalHeight || sceneImg.height;
 
           // Debug: Log first frame's image dimensions
-          if (frameCount === 0) {
+          if (frameCount === 1) {
             console.log(`Scene ${sceneIndex} image dimensions: ${imgW}x${imgH}, canvas: ${width}x${height}`);
           }
 
@@ -7108,7 +7116,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           const destY = (height - drawH) / 2;
 
           // Debug first frame
-          if (frameCount === 0) {
+          if (frameCount === 1) {
             console.log(`Drawing scene ${sceneIndex}: src(${srcX.toFixed(0)},${srcY.toFixed(0)},${srcW.toFixed(0)},${srcH.toFixed(0)}) -> dest(${destX.toFixed(0)},${destY.toFixed(0)},${drawW.toFixed(0)},${drawH.toFixed(0)})`);
           }
 
