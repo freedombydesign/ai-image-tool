@@ -3261,22 +3261,38 @@ class VideoEditor {
     const syncBtn = document.getElementById('expanded-sync-audio-btn');
     const distributeBtn = document.getElementById('expanded-distribute-btn');
 
+    console.log('Binding expanded timeline buttons:', { playBtn, syncBtn, distributeBtn });
+
     if (playBtn) {
-      playBtn.onclick = () => this.toggleExpandedPlayback();
+      // Remove old listener and add new one
+      playBtn.replaceWith(playBtn.cloneNode(true));
+      const newPlayBtn = document.getElementById('expanded-play-btn');
+      newPlayBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Play button clicked!');
+        this.toggleExpandedPlayback();
+      });
+    } else {
+      console.error('Play button not found!');
     }
     if (syncBtn) {
-      syncBtn.onclick = () => {
+      syncBtn.replaceWith(syncBtn.cloneNode(true));
+      const newSyncBtn = document.getElementById('expanded-sync-audio-btn');
+      newSyncBtn.addEventListener('click', () => {
         this.syncToAudio();
         this.renderExpandedTimeline();
         this.setupExpandedTimelineInteractions();
-      };
+      });
     }
     if (distributeBtn) {
-      distributeBtn.onclick = () => {
+      distributeBtn.replaceWith(distributeBtn.cloneNode(true));
+      const newDistributeBtn = document.getElementById('expanded-distribute-btn');
+      newDistributeBtn.addEventListener('click', () => {
         this.distributeEvenly();
         this.renderExpandedTimeline();
         this.setupExpandedTimelineInteractions();
-      };
+      });
     }
   }
 
