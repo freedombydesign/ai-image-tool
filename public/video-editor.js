@@ -7192,30 +7192,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const totalVideos = videosToLoad.length;
         let loadedCount = 0;
 
-        console.log(`Loading ${totalVideos} avatar videos${isTestExport ? ` (test mode: ${startTime}s to ${exportEndTime}s)` : ''}`);
+        console.log(`Loading ${totalVideos} avatar videos in parallel${isTestExport ? ` (test mode: ${startTime}s to ${exportEndTime}s)` : ''}`);
+        this.exportStatus.textContent = `Loading ${totalVideos} avatar videos...`;
 
-        for (const av of videosToLoad) {
-          this.exportStatus.textContent = `Loading avatar video ${loadedCount + 1}/${totalVideos}...`;
-          this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`; // 0-20% for video loading
-
+        // Load all avatar videos in parallel (much faster than sequential)
+        const timeout = isTestExport ? 30000 : 90000; // 90s for full export
+        const videoLoadPromises = videosToLoad.map(async (av, index) => {
           try {
-            // Use 30s timeout for test exports, 60s for full exports
-            const timeout = isTestExport ? 30000 : 60000;
             const videoEl = await Promise.race([
               this.loadVideoElement(av.videoUrl),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), timeout))
             ]);
-            videoEl.muted = true; // Mute avatar video (we use main audio)
+            videoEl.muted = true;
             videoEl.loop = false;
-            avatarVideoElements.push({ element: videoEl, ...av });
             loadedCount++;
+            this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`;
             console.log(`Loaded avatar video ${loadedCount}/${totalVideos}`);
+            return { element: videoEl, ...av };
           } catch (e) {
-            console.error('Failed to load avatar video:', e);
-            avatarVideoElements.push(null);
+            console.error(`Failed to load avatar video ${index + 1}:`, e);
             loadedCount++;
+            return null;
           }
-        }
+        });
+
+        const loadedVideos = await Promise.all(videoLoadPromises);
+        // Sort by startTime to maintain order
+        avatarVideoElements.push(...loadedVideos.filter(v => v !== null).sort((a, b) => a.startTime - b.startTime));
         this.exportProgressBar.style.width = '20%';
       }
 
