@@ -2885,6 +2885,9 @@ class VideoEditor {
       this.renderCaptions();
       this.updateTotalDuration();
 
+      // Save updated timings to Supabase
+      this.saveScenesToSupabase();
+
       // All scenes now get timing (proportional baseline + dialogue refinement)
       const refinedMsg = matchedCount > 0 ? `, ${matchedCount} refined by dialogue` : '';
       showToast(`All ${this.scenes.length} scenes synced to ${(result.duration || this.audioDuration).toFixed(0)}s audio${refinedMsg}`, 'success');
@@ -3176,12 +3179,47 @@ class VideoEditor {
       sceneTimings[0].startTime = 0;
     }
 
+    // Calculate minimum visible duration (at least 0.8% of timeline, minimum 3 seconds)
+    const minVisibleDuration = Math.max(3, totalDuration * 0.008);
+    console.log(`Minimum visible duration: ${minVisibleDuration.toFixed(1)}s (${(minVisibleDuration/totalDuration*100).toFixed(2)}% of timeline)`);
+
     // Make scenes contiguous and apply timings
     for (let i = 0; i < sceneTimings.length; i++) {
       const endTime = i < sceneTimings.length - 1 ? sceneTimings[i + 1].startTime : totalDuration;
       const scene = this.scenes[sceneTimings[i].sceneIndex];
       scene.startTime = sceneTimings[i].startTime;
-      scene.duration = Math.max(1, endTime - scene.startTime); // Minimum 1 second per scene
+      scene.duration = Math.max(minVisibleDuration, endTime - scene.startTime);
+    }
+
+    // Post-process: Fix any overlapping scenes caused by minimum duration enforcement
+    // Sort scenes by startTime and recalculate to prevent overlaps
+    const sortedScenes = [...this.scenes].sort((a, b) => a.startTime - b.startTime);
+    for (let i = 0; i < sortedScenes.length - 1; i++) {
+      const current = sortedScenes[i];
+      const next = sortedScenes[i + 1];
+      const currentEnd = current.startTime + current.duration;
+
+      // If current scene overlaps with next, adjust
+      if (currentEnd > next.startTime) {
+        // Either shrink current or push next forward
+        const overlap = currentEnd - next.startTime;
+        if (current.duration - overlap >= minVisibleDuration) {
+          // Shrink current scene
+          current.duration -= overlap;
+        } else {
+          // Push all subsequent scenes forward
+          const pushAmount = currentEnd - next.startTime;
+          for (let j = i + 1; j < sortedScenes.length; j++) {
+            sortedScenes[j].startTime += pushAmount;
+          }
+        }
+      }
+    }
+
+    // Final check: ensure last scene doesn't exceed total duration
+    const lastScene = sortedScenes[sortedScenes.length - 1];
+    if (lastScene && lastScene.startTime + lastScene.duration > totalDuration) {
+      lastScene.duration = Math.max(minVisibleDuration, totalDuration - lastScene.startTime);
     }
 
     // Log first 15 scenes to debug timing issues
@@ -3192,9 +3230,9 @@ class VideoEditor {
     console.log('=== END SCENE TIMINGS ===');
 
     // Check for any problematic scenes (very short duration)
-    const shortScenes = this.scenes.filter((s, i) => s.duration < 2);
+    const shortScenes = this.scenes.filter((s, i) => s.duration < minVisibleDuration);
     if (shortScenes.length > 0) {
-      console.warn(`Warning: ${shortScenes.length} scenes have duration < 2 seconds`);
+      console.warn(`Warning: ${shortScenes.length} scenes have duration < ${minVisibleDuration.toFixed(1)} seconds`);
     }
 
     return matchedCount;
@@ -3235,7 +3273,12 @@ class VideoEditor {
     this.renderCaptions();
     this.updateTotalDuration();
 
+    // Save to Supabase so changes persist
+    this.saveScenesToSupabase();
+
     showToast(`Distributed ${this.scenes.length} scenes (~${durationPerScene.toFixed(1)}s each, shifted ${anticipation}s earlier)`, 'success');
+
+    console.log('distributeEvenly completed. First 5 scenes:', this.scenes.slice(0, 5).map(s => ({start: s.startTime, dur: s.duration})));
   }
 
   // ===== EXPANDED TIMELINE EDITOR =====
