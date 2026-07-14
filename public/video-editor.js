@@ -6346,16 +6346,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }
     }
 
-    // Update caption with word-by-word highlighting (matches export style)
-    if (this.previewCaptionOverlay && currentScene) {
-      const caption = currentScene.caption || '';
-      const captionsEnabled = this.captionsEnabledToggle?.checked ?? true;
-      if (caption && captionsEnabled) {
-        this.renderStyledCaption(currentScene, this.playbackTime);
-        this.previewCaptionOverlay.classList.add('visible');
-      } else {
-        this.previewCaptionOverlay.classList.remove('visible');
-      }
+    // Hide caption overlay in preview (captions only show in export)
+    if (this.previewCaptionOverlay) {
+      this.previewCaptionOverlay.classList.remove('visible');
     }
 
     // Update scene indicator overlay
