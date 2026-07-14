@@ -9480,27 +9480,43 @@ async function extractAudioFromVideo(videoFile) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.muted = false;
+
+    // Timeout to prevent hanging forever
+    const timeout = setTimeout(() => {
+      URL.revokeObjectURL(video.src);
+      console.warn('extractAudioFromVideo: timeout waiting for video metadata');
+      reject(new Error('Timeout loading video metadata'));
+    }, 30000); // 30 second timeout
+
     video.src = URL.createObjectURL(videoFile);
+    console.log('extractAudioFromVideo: created video element, waiting for metadata...');
 
     video.onloadedmetadata = async () => {
+      clearTimeout(timeout);
+      console.log('extractAudioFromVideo: metadata loaded, duration:', video.duration);
       try {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const arrayBuffer = await videoFile.arrayBuffer();
+        console.log('extractAudioFromVideo: got arrayBuffer, size:', arrayBuffer.byteLength);
 
         // Try to decode audio from video
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        console.log('extractAudioFromVideo: decoded audio, duration:', audioBuffer.duration);
 
         // Convert AudioBuffer to WAV blob
         const wavBlob = audioBufferToWav(audioBuffer);
         URL.revokeObjectURL(video.src);
         resolve(wavBlob);
       } catch (err) {
+        console.error('extractAudioFromVideo: decode error:', err.message);
         URL.revokeObjectURL(video.src);
         reject(err);
       }
     };
 
-    video.onerror = () => {
+    video.onerror = (e) => {
+      clearTimeout(timeout);
+      console.error('extractAudioFromVideo: video error:', e);
       URL.revokeObjectURL(video.src);
       reject(new Error('Failed to load video'));
     };
