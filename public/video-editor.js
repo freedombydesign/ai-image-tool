@@ -879,7 +879,11 @@ class VideoEditor {
 
     // Test Export (30 seconds only for quick testing)
     if (this.testExportBtn) {
-      this.testExportBtn.addEventListener('click', () => this.exportVideo(30));
+      this.testExportBtn.addEventListener('click', () => {
+        const startInput = document.getElementById('test-export-start');
+        const startTime = this.parseTime(startInput?.value || '0');
+        this.exportVideo(30, startTime);
+      });
     }
 
     // SRT Export for CapCut
@@ -7073,24 +7077,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
   // Export using MediaRecorder (works in all browsers without FFmpeg)
   // maxDuration: optional limit in seconds for test exports
-  async exportWithMediaRecorder(maxDuration = null) {
+  async exportWithMediaRecorder(maxDuration = null, startTime = 0) {
     this.exportProgress.hidden = false;
     this.exportVideoBtn.disabled = true;
 
     const isTestExport = maxDuration !== null;
     this.exportStatus.textContent = isTestExport
-      ? `Preparing TEST export (${maxDuration}s)...`
+      ? `Preparing TEST export (${maxDuration}s from ${startTime}s)...`
       : 'Preparing MediaRecorder export...';
 
     try {
       const [width, height] = this.exportResolution.value.split('x').map(Number);
       const fps = parseInt(this.exportFps.value) || 30;
-      let totalDuration = this.getTotalDuration();
+      const fullDuration = this.getTotalDuration();
 
-      // Limit duration for test exports
-      if (maxDuration && totalDuration > maxDuration) {
-        totalDuration = maxDuration;
-        console.log(`Test export: limiting to ${maxDuration} seconds`);
+      // Calculate duration considering startTime and maxDuration
+      const availableDuration = fullDuration - startTime;
+      let totalDuration = maxDuration ? Math.min(maxDuration, availableDuration) : availableDuration;
+
+      if (startTime > 0) {
+        console.log(`Test export: starting at ${startTime}s, exporting ${totalDuration}s`);
       }
 
       // Create export canvas
@@ -7313,18 +7319,22 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       mediaRecorder.start(100); // Collect data every 100ms
 
       // Start audio playback - this drives the timeline
+      // Seek to startTime for test exports from a specific position
       if (audioElement) {
-        audioElement.currentTime = 0;
+        audioElement.currentTime = startTime;
         await audioElement.play();
       }
 
       // Start all avatar videos (paused, we'll sync them)
       for (const av of avatarVideoElements) {
         if (av && av.element) {
-          av.element.currentTime = 0;
+          av.element.currentTime = startTime;
           av.element.pause();
         }
       }
+
+      // Calculate end time for this export
+      const exportEndTime = startTime + totalDuration;
 
       // Render frames synced to real time (driven by audio)
       this.exportStatus.textContent = 'Recording video...';
@@ -7335,12 +7345,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       const renderFrame = () => {
         frameCount++;
-        // Use audio time if available, otherwise calculate from elapsed time
+        // Use audio time if available, otherwise calculate from elapsed time + startTime offset
         const currentTime = audioElement
           ? audioElement.currentTime
-          : (performance.now() - recordingStartTime) / 1000;
+          : startTime + (performance.now() - recordingStartTime) / 1000;
 
-        if (currentTime >= totalDuration || (audioElement && audioElement.ended)) {
+        if (currentTime >= exportEndTime || (audioElement && audioElement.ended)) {
           // Done rendering
           mediaRecorder.stop();
           if (audioElement) audioElement.pause();
@@ -7618,7 +7628,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
   // Export Video (FFmpeg version)
   // maxDuration: optional limit in seconds for test exports
-  async exportVideo(maxDuration = null) {
+  async exportVideo(maxDuration = null, startTime = 0) {
     if (this.scenes.length === 0) {
       showToast('Add scenes first to export.');
       return;
@@ -7627,7 +7637,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Try MediaRecorder first (works in all browsers)
     if (!this.ffmpegLoaded) {
       console.log('FFmpeg not available, using MediaRecorder export');
-      return this.exportWithMediaRecorder(maxDuration);
+      return this.exportWithMediaRecorder(maxDuration, startTime);
     }
 
     this.exportProgress.hidden = false;
@@ -7637,8 +7647,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     try {
       const [width, height] = this.exportResolution.value.split('x').map(Number);
       const fps = parseInt(this.exportFps.value);
-      const totalDuration = this.getTotalDuration();
-      const totalFrames = Math.ceil(totalDuration * fps);
+      const fullDuration = this.getTotalDuration();
+
+      // Calculate duration based on startTime and maxDuration
+      const availableDuration = fullDuration - startTime;
+      const exportDuration = maxDuration ? Math.min(maxDuration, availableDuration) : availableDuration;
+      const totalFrames = Math.ceil(exportDuration * fps);
+
+      if (startTime > 0) {
+        console.log(`Test export: starting at ${startTime}s, exporting ${exportDuration}s`);
+      }
 
       // Step 1: Load avatar videos (from generated + uploaded segments)
       let avatarVideoElements = [];
@@ -7704,7 +7722,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       // Generate and write frames to FFmpeg
       for (let frame = 0; frame < totalFrames; frame++) {
-        const time = frame / fps;
+        const time = startTime + (frame / fps);
         const sceneIndex = this.getSceneIndexAtTime(time);
         const scene = this.scenes[sceneIndex];
         const img = images[sceneIndex];
@@ -7737,7 +7755,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const hasVoiceover = !!this.audioBlob;
       if (hasVoiceover) {
         this.exportStatus.textContent = 'Preparing audio (stitching clean segments)...';
-        const audioToExport = await this.stitchAudioForExport();
+        let audioToExport = await this.stitchAudioForExport();
+
+        // Trim audio if we have a start time offset
+        if (startTime > 0) {
+          this.exportStatus.textContent = 'Trimming audio for test export...';
+          audioToExport = await this.trimAudioBlob(audioToExport, exportDuration, startTime);
+        }
+
         const audioData = new Uint8Array(await audioToExport.arrayBuffer());
         await this.ffmpeg.writeFile('voiceover.webm', audioData);
       }
