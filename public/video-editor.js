@@ -7075,19 +7075,44 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         if (sceneImg) {
           const progress = (currentTime - scene.startTime) / scene.duration;
           const scale = 1 + progress * 0.1;
-          const imgRatio = sceneImg.width / sceneImg.height;
-          const canvasRatio = width / height;
 
-          let drawW, drawH;
-          if (imgRatio > canvasRatio) {
-            drawH = height * scale;
-            drawW = drawH * imgRatio;
-          } else {
-            drawW = width * scale;
-            drawH = drawW / imgRatio;
+          // Use naturalWidth/naturalHeight for actual image dimensions
+          const imgW = sceneImg.naturalWidth || sceneImg.width;
+          const imgH = sceneImg.naturalHeight || sceneImg.height;
+
+          // Debug: Log first frame's image dimensions
+          if (frameCount === 0) {
+            console.log(`Scene ${sceneIndex} image dimensions: ${imgW}x${imgH}, canvas: ${width}x${height}`);
           }
 
-          ctx.drawImage(sceneImg, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+          const imgRatio = imgW / imgH;
+          const canvasRatio = width / height;
+
+          // Calculate "cover" behavior: scale image to cover canvas, then center-crop
+          let srcX = 0, srcY = 0, srcW = imgW, srcH = imgH;
+          let drawW = width * scale;
+          let drawH = height * scale;
+
+          if (imgRatio > canvasRatio) {
+            // Image is wider - crop sides
+            srcW = imgH * canvasRatio;
+            srcX = (imgW - srcW) / 2;
+          } else {
+            // Image is taller - crop top/bottom
+            srcH = imgW / canvasRatio;
+            srcY = (imgH - srcH) / 2;
+          }
+
+          // Draw centered on canvas (with Ken Burns scale applied)
+          const destX = (width - drawW) / 2;
+          const destY = (height - drawH) / 2;
+
+          // Debug first frame
+          if (frameCount === 0) {
+            console.log(`Drawing scene ${sceneIndex}: src(${srcX.toFixed(0)},${srcY.toFixed(0)},${srcW.toFixed(0)},${srcH.toFixed(0)}) -> dest(${destX.toFixed(0)},${destY.toFixed(0)},${drawW.toFixed(0)},${drawH.toFixed(0)})`);
+          }
+
+          ctx.drawImage(sceneImg, srcX, srcY, srcW, srcH, destX, destY, drawW, drawH);
         }
 
         // Draw avatar overlay - play videos smoothly
