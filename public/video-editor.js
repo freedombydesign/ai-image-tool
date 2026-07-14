@@ -6861,19 +6861,34 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.exportProgressBar.style.width = '50%';
 
         this.exportStatus.textContent = 'Loading audio for export...';
-        audioElement = new Audio(URL.createObjectURL(audioToUse));
+        console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
+        const audioUrl = URL.createObjectURL(audioToUse);
+        audioElement = new Audio(audioUrl);
         audioElement.muted = false;
         audioElement.preload = 'auto';
-        // Wait for audio to be ready with timeout
-        await Promise.race([
+
+        // Add error handler
+        audioElement.onerror = (e) => {
+          console.error('Audio element error:', audioElement.error?.code, audioElement.error?.message);
+        };
+
+        // Wait for audio to be ready with 30 second timeout
+        const audioLoaded = await Promise.race([
           new Promise(resolve => {
-            audioElement.oncanplaythrough = resolve;
+            audioElement.oncanplaythrough = () => resolve(true);
+            audioElement.onloadedmetadata = () => {
+              console.log('Audio metadata loaded, duration:', audioElement.duration);
+            };
             audioElement.load();
           }),
-          new Promise(resolve => setTimeout(resolve, 15000)) // 15 second timeout
+          new Promise(resolve => setTimeout(() => resolve(false), 30000))
         ]);
+
+        if (!audioLoaded) {
+          console.warn('Audio load timeout - proceeding anyway');
+        }
         this.exportProgressBar.style.width = '55%';
-        console.log('Audio ready for export');
+        console.log('Audio ready for export, duration:', audioElement.duration);
       }
 
       // Set up MediaRecorder
