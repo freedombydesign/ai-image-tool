@@ -7332,10 +7332,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }
 
       // Start all avatar videos (paused, we'll sync them)
+      // Seek each avatar to its local position within the segment
       for (const av of avatarVideoElements) {
         if (av && av.element) {
-          av.element.currentTime = startTime;
+          // Calculate local time within this avatar segment
+          const localTime = Math.max(0, startTime - av.startTime);
+          av.element.currentTime = localTime;
           av.element.pause();
+          console.log(`Avatar segment ${av.segmentIndex}: seeking to local time ${localTime.toFixed(1)}s`);
         }
       }
 
@@ -7543,10 +7547,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.previewCanvas = originalCanvas;
 
         // Update progress (recording is 55-95% of total progress)
-        const recordingPercent = Math.round((currentTime / totalDuration) * 100);
-        const overallPercent = 55 + Math.round((currentTime / totalDuration) * 40); // 55-95%
-        this.exportProgressBar.style.width = `${overallPercent}%`;
-        this.exportStatus.textContent = `Recording: ${recordingPercent}% (${Math.floor(currentTime)}s / ${Math.floor(totalDuration)}s)`;
+        // Calculate progress relative to export range
+        const elapsedInExport = currentTime - startTime;
+        const recordingPercent = Math.round((elapsedInExport / totalDuration) * 100);
+        const overallPercent = 55 + Math.round((elapsedInExport / totalDuration) * 40); // 55-95%
+        this.exportProgressBar.style.width = `${Math.min(95, overallPercent)}%`;
+        this.exportStatus.textContent = `Recording: ${recordingPercent}% (${elapsedInExport.toFixed(1)}s / ${totalDuration}s)`;
+
+        // Debug: log progress every 100 frames
+        if (frameCount % 100 === 0) {
+          console.log(`Export progress: currentTime=${currentTime.toFixed(1)}, exportEndTime=${exportEndTime}, elapsed=${elapsedInExport.toFixed(1)}/${totalDuration}`);
+        }
 
         // Use requestAnimationFrame for smooth real-time rendering
         requestAnimationFrame(renderFrame);
