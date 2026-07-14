@@ -981,6 +981,9 @@ class VideoEditor {
     const hexInput = document.getElementById(hexId);
     if (!colorInput || !hexInput) return;
 
+    // Initialize hex input from color picker value (prevents browser autofill issues)
+    hexInput.value = colorInput.value.toUpperCase();
+
     // Color picker changes -> update hex input
     colorInput.addEventListener('input', () => {
       hexInput.value = colorInput.value.toUpperCase();
