@@ -3224,7 +3224,19 @@ class VideoEditor {
         this.syncToAudioBtn.textContent = '🤖 AI Analyzing...';
       }
 
-      const matchedCount = await this.aiSyncScenes(result.segments || [], result.duration || this.audioDuration);
+      // Calculate duration - prefer explicit duration, then audioDuration, then calculate from segments
+      let totalDuration = result.duration || this.audioDuration;
+      if (!totalDuration || totalDuration === 0) {
+        // Calculate from last segment's end time
+        const segments = result.segments || [];
+        if (segments.length > 0) {
+          const lastSegment = segments[segments.length - 1];
+          totalDuration = lastSegment.end || lastSegment.start || 0;
+          console.log('Calculated duration from segments:', totalDuration);
+        }
+      }
+
+      const matchedCount = await this.aiSyncScenes(result.segments || [], totalDuration);
 
       this.renderTimeline();
       this.renderCaptions();
@@ -3234,7 +3246,7 @@ class VideoEditor {
       this.saveScenesToSupabase();
 
       // All scenes now get timing via AI placement
-      showToast(`AI synced ${this.scenes.length} scenes to ${(result.duration || this.audioDuration).toFixed(0)}s audio (${matchedCount} placed by GPT-4o)`, 'success');
+      showToast(`AI synced ${this.scenes.length} scenes to ${totalDuration.toFixed(0)}s audio (${matchedCount} placed by GPT-4o)`, 'success');
 
     } catch (error) {
       console.error('Sync to audio error:', error);
@@ -7324,7 +7336,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           if (audioElement) {
             audioElement.muted = false;
             audioElement.preload = 'auto';
-            audioElement.crossOrigin = 'anonymous';
+            // Only set crossOrigin for external URLs (Supabase), not blob URLs
+            // Blob URLs don't need CORS and setting it can cause MediaElementSource issues
+            if (supabaseUrl && !supabaseUrl.startsWith('blob:')) {
+              audioElement.crossOrigin = 'anonymous';
+            }
 
             // Add error handler
             audioElement.onerror = (e) => {
@@ -7359,14 +7375,29 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Add audio track if available
       if (audioElement) {
         try {
+          console.log('Creating AudioContext for audio routing...');
           audioContext = new AudioContext();
+          console.log('AudioContext state:', audioContext.state);
+
+          // Resume AudioContext if suspended (required after user gesture)
+          if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+            console.log('AudioContext resumed');
+          }
+
           const source = audioContext.createMediaElementSource(audioElement);
+          console.log('MediaElementSource created successfully');
           const destination = audioContext.createMediaStreamDestination();
           source.connect(destination);
           // Don't connect to speakers to avoid echo
-          destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+          const audioTracks = destination.stream.getAudioTracks();
+          console.log('Audio tracks to add:', audioTracks.length);
+          audioTracks.forEach(track => stream.addTrack(track));
+          console.log('Audio track added to stream successfully');
         } catch (e) {
-          console.log('Audio track not added:', e);
+          console.error('Audio track not added:', e.message);
+          console.error('Audio element src:', audioElement.src?.substring(0, 50));
+          console.error('Audio element crossOrigin:', audioElement.crossOrigin);
         }
       }
 

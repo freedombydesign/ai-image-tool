@@ -1533,7 +1533,8 @@ app.post('/api/transcribe-url', async (req, res) => {
       success: true,
       transcription: transcription.text,
       segments: transcription.segments,
-      words: transcription.words
+      words: transcription.words,
+      duration: transcription.duration || 0
     });
 
   } catch (error) {
