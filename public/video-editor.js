@@ -7258,36 +7258,47 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }));
       this.exportProgressBar.style.width = '40%';
 
-      // SIMPLE AUDIO SETUP: Use the existing audio player that's already loaded
+      // AUDIO SETUP: Use stitchAudioForExport() to get clean audio with replaced segments
       let audioElement = null;
       let audioContext = null;
+      let audioToExport = null;
 
-      this.exportStatus.textContent = 'Setting up audio...';
+      this.exportStatus.textContent = 'Preparing audio (stitching clean segments)...';
       this.exportProgressBar.style.width = '50%';
 
-      // Just use the audio that's already playing in the UI - it works!
-      if (this.audioPlayer && this.audioPlayer.src) {
-        console.log('Using existing audio player src:', this.audioPlayer.src.substring(0, 80));
+      // Use stitchAudioForExport to get clean audio (handles replacedAudioSegments properly)
+      if (this.audioBlob) {
+        console.log('Calling stitchAudioForExport() for clean audio...');
+        audioToExport = await this.stitchAudioForExport();
+        if (audioToExport) {
+          console.log('Stitched audio ready:', audioToExport.size, 'bytes');
+          // Create audio element from the stitched blob
+          const audioUrl = URL.createObjectURL(audioToExport);
+          audioElement = new Audio(audioUrl);
+          audioElement.preload = 'auto';
+          // NO crossOrigin for blob URLs
+
+          await new Promise((resolve) => {
+            audioElement.onloadedmetadata = () => {
+              console.log('Stitched audio loaded, duration:', audioElement.duration);
+              resolve();
+            };
+            audioElement.onerror = (e) => {
+              console.error('Stitched audio failed to load:', e);
+              resolve();
+            };
+            setTimeout(resolve, 10000);
+            audioElement.load();
+          });
+        }
+      } else if (this.audioPlayer && this.audioPlayer.src) {
+        // Fallback to player if no audioBlob
+        console.log('No audioBlob, using player src:', this.audioPlayer.src.substring(0, 80));
         audioElement = new Audio(this.audioPlayer.src);
         audioElement.preload = 'auto';
-
-        // Wait for it to load
-        await new Promise((resolve) => {
-          audioElement.onloadedmetadata = () => {
-            console.log('Export audio loaded, duration:', audioElement.duration);
-            resolve();
-          };
-          audioElement.onerror = () => {
-            console.error('Export audio failed to load');
-            resolve();
-          };
-          setTimeout(resolve, 10000); // 10s timeout
-          audioElement.load();
-        });
-      } else if (this.audioUrl) {
-        console.log('Using audioUrl:', this.audioUrl.substring(0, 80));
-        audioElement = new Audio(this.audioUrl);
-        audioElement.preload = 'auto';
+        if (!this.audioPlayer.src.startsWith('blob:')) {
+          audioElement.crossOrigin = 'anonymous';
+        }
         await new Promise((resolve) => {
           audioElement.onloadedmetadata = () => resolve();
           audioElement.onerror = () => resolve();
