@@ -6507,8 +6507,29 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     this.ctx.drawImage(img, x, y, drawW, drawH);
   }
 
+  // Clean caption text by removing visual cues like [laughs], (pauses), etc.
+  cleanCaptionText(text) {
+    if (!text) return '';
+    return text
+      // Remove [bracketed text] like [laughs], [music], [applause]
+      .replace(/\[.*?\]/g, '')
+      // Remove (parenthetical text) like (pauses), (sighs)
+      .replace(/\(.*?\)/g, '')
+      // Remove *action text* like *laughs*, *clears throat*
+      .replace(/\*.*?\*/g, '')
+      // Remove stage directions in caps like VISUAL: or CUT TO:
+      .replace(/[A-Z]{2,}:\s*/g, '')
+      // Clean up extra whitespace
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   drawCaption(scene) {
     if (!scene.caption) return;
+
+    // Clean the caption text (remove visual cues)
+    const cleanCaption = this.cleanCaptionText(scene.caption);
+    if (!cleanCaption) return;
 
     const canvasW = this.previewCanvas.width;
     const canvasH = this.previewCanvas.height;
@@ -6534,8 +6555,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const currentTime = this.playbackTime;
     const timeInScene = currentTime - sceneStartTime;
 
-    // Split caption into words
-    const allWords = scene.caption.split(/\s+/).filter(w => w.length > 0);
+    // Split caption into words (use cleaned version)
+    const allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
 
     // Calculate current word index based on time
     const wordDuration = sceneDuration / allWords.length;
@@ -7074,6 +7095,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           if (avatarData && avatarData.element) {
             const rect = this.getAvatarOverlayRect(width, height);
+
+            // Calculate aspect-ratio-preserving draw dimensions
+            const videoW = avatarData.element.videoWidth || 1;
+            const videoH = avatarData.element.videoHeight || 1;
+            const videoAspect = videoW / videoH;
+            const rectAspect = rect.width / rect.height;
+
+            let drawW, drawH, drawX, drawY;
+            if (videoAspect > rectAspect) {
+              drawH = rect.height;
+              drawW = rect.height * videoAspect;
+              drawX = rect.x - (drawW - rect.width) / 2;
+              drawY = rect.y;
+            } else {
+              drawW = rect.width;
+              drawH = rect.width / videoAspect;
+              drawX = rect.x;
+              drawY = rect.y - (drawH - rect.height) / 2;
+            }
+
             ctx.save();
             if (this.avatarShape === 'circle') {
               const centerX = rect.x + rect.width / 2;
@@ -7082,9 +7123,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               ctx.beginPath();
               ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
               ctx.clip();
-              ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+              ctx.drawImage(avatarData.element, drawX, drawY, drawW, drawH);
             } else {
-              ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+              // Clip to rect to prevent overflow
+              ctx.beginPath();
+              ctx.rect(rect.x, rect.y, rect.width, rect.height);
+              ctx.clip();
+              ctx.drawImage(avatarData.element, drawX, drawY, drawW, drawH);
             }
             ctx.restore();
           }
@@ -7493,6 +7538,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   drawCaptionOnCanvas(ctx, scene, width, height, currentTime = 0) {
     if (!scene.caption) return;
 
+    // Clean the caption text (remove visual cues)
+    const cleanCaption = this.cleanCaptionText(scene.caption);
+    if (!cleanCaption) return;
+
     // Get caption settings
     const fontSize = parseInt(document.getElementById('caption-font-size')?.value || 48);
     const fontFamily = document.getElementById('caption-font')?.value || 'Impact, sans-serif';
@@ -7528,8 +7577,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
     ctx.textAlign = textAlign;
 
-    // Split caption into words
-    const allWords = scene.caption.split(/\s+/).filter(w => w.length > 0);
+    // Split caption into words (use cleaned version)
+    const allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
 
     // Calculate which word should be highlighted based on time within scene
     const sceneProgress = (currentTime - scene.startTime) / scene.duration;
@@ -7729,6 +7778,27 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Get overlay position and size
     const rect = this.getAvatarOverlayRect(canvasWidth, canvasHeight);
 
+    // Calculate aspect-ratio-preserving draw dimensions (cover mode - fill and crop)
+    const videoW = videoElement.videoWidth || 1;
+    const videoH = videoElement.videoHeight || 1;
+    const videoAspect = videoW / videoH;
+    const rectAspect = rect.width / rect.height;
+
+    let drawW, drawH, drawX, drawY;
+    if (videoAspect > rectAspect) {
+      // Video is wider - fit height, crop width
+      drawH = rect.height;
+      drawW = rect.height * videoAspect;
+      drawX = rect.x - (drawW - rect.width) / 2;
+      drawY = rect.y;
+    } else {
+      // Video is taller - fit width, crop height
+      drawW = rect.width;
+      drawH = rect.width / videoAspect;
+      drawX = rect.x;
+      drawY = rect.y - (drawH - rect.height) / 2;
+    }
+
     // Draw the avatar video frame with shape masking
     ctx.save();
 
@@ -7743,15 +7813,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       ctx.closePath();
       ctx.clip();
 
-      // Draw centered and cropped to circle
-      const size = radius * 2;
-      ctx.drawImage(
-        videoElement,
-        rect.x + (rect.width - size) / 2,
-        rect.y + (rect.height - size) / 2,
-        size,
-        size
-      );
+      // Draw centered and cropped to circle (with aspect ratio preserved)
+      ctx.drawImage(videoElement, drawX, drawY, drawW, drawH);
 
       // Add border
       ctx.strokeStyle = '#ffffff';
@@ -7766,7 +7829,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       ctx.closePath();
       ctx.clip();
 
-      ctx.drawImage(videoElement, rect.x, rect.y, rect.width, rect.height);
+      // Draw with aspect ratio preserved
+      ctx.drawImage(videoElement, drawX, drawY, drawW, drawH);
 
       // Add border
       ctx.strokeStyle = '#ffffff';
@@ -7774,8 +7838,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       ctx.stroke();
 
     } else {
-      // Rectangle (no mask needed)
-      ctx.drawImage(videoElement, rect.x, rect.y, rect.width, rect.height);
+      // Rectangle - clip to rect and draw with aspect ratio
+      ctx.beginPath();
+      ctx.rect(rect.x, rect.y, rect.width, rect.height);
+      ctx.closePath();
+      ctx.clip();
+
+      ctx.drawImage(videoElement, drawX, drawY, drawW, drawH);
 
       // Add border
       ctx.strokeStyle = '#ffffff';
