@@ -315,14 +315,19 @@ class VideoEditor {
     if (!segments || segments.length === 0) return;
 
     console.log(`Auto-extracting audio from ${segments.length} avatar segments...`);
+    console.log('Segments data:', segments.map(s => ({ num: s.segment_num, hasUrl: !!s.video_url })));
     let extracted = 0;
 
     for (const seg of segments) {
+      console.log(`  Checking segment ${seg.segment_num}: video_url=${seg.video_url ? 'YES' : 'NO'}`);
       if (seg.video_url) {
         try {
+          // Log before fetch to diagnose hangs
+          console.log(`  Fetching segment ${seg.segment_num} from: ${seg.video_url.substring(0, 80)}...`);
+
           // Fetch with timeout to avoid hanging
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for faster debugging
 
           const response = await fetch(seg.video_url, { signal: controller.signal });
           clearTimeout(timeoutId);
