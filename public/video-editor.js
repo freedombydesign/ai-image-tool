@@ -331,15 +331,21 @@ class VideoEditor {
 
           const response = await fetch(seg.video_url, { signal: controller.signal });
           clearTimeout(timeoutId);
+          console.log(`  Segment ${seg.segment_num} response: ${response.status} ${response.ok ? 'OK' : 'FAIL'}`);
 
           if (!response.ok) {
             console.warn(`✗ Segment ${seg.segment_num} fetch failed: HTTP ${response.status}`);
             continue;
           }
 
+          console.log(`  Segment ${seg.segment_num} converting to blob...`);
           const blob = await response.blob();
+          console.log(`  Segment ${seg.segment_num} blob size: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+
           const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
+          console.log(`  Segment ${seg.segment_num} extracting audio...`);
           const audioBlob = await extractAudioFromVideo(file);
+          console.log(`  Segment ${seg.segment_num} audio extracted: ${(audioBlob.size / 1024).toFixed(0)}KB`);
           this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
           extracted++;
           console.log(`✓ Auto-extracted audio from segment ${seg.segment_num}`);
