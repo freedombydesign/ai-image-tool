@@ -7079,48 +7079,36 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
 
-        // Draw scene image with Ken Burns
+        // Draw scene image with Ken Burns (same logic as preview's applyKenBurnsEffect)
         if (sceneImg) {
           const progress = (currentTime - scene.startTime) / scene.duration;
           const scale = 1 + progress * 0.1;
 
-          // Use naturalWidth/naturalHeight for actual image dimensions
-          const imgW = sceneImg.naturalWidth || sceneImg.width;
-          const imgH = sceneImg.naturalHeight || sceneImg.height;
-
-          // Debug: Log first frame's image dimensions
-          if (frameCount === 1) {
-            console.log(`Scene ${sceneIndex} image dimensions: ${imgW}x${imgH}, canvas: ${width}x${height}`);
-          }
-
-          const imgRatio = imgW / imgH;
+          // Use same approach as preview - simple 5-argument drawImage
+          const imgRatio = sceneImg.width / sceneImg.height;
           const canvasRatio = width / height;
 
-          // Calculate "cover" behavior: scale image to cover canvas, then center-crop
-          let srcX = 0, srcY = 0, srcW = imgW, srcH = imgH;
-          let drawW = width * scale;
-          let drawH = height * scale;
-
+          let drawW, drawH;
           if (imgRatio > canvasRatio) {
-            // Image is wider - crop sides
-            srcW = imgH * canvasRatio;
-            srcX = (imgW - srcW) / 2;
+            // Image is wider than canvas - fit by height
+            drawH = height * scale;
+            drawW = drawH * imgRatio;
           } else {
-            // Image is taller - crop top/bottom
-            srcH = imgW / canvasRatio;
-            srcY = (imgH - srcH) / 2;
+            // Image is taller than canvas - fit by width
+            drawW = width * scale;
+            drawH = drawW / imgRatio;
           }
 
-          // Draw centered on canvas (with Ken Burns scale applied)
-          const destX = (width - drawW) / 2;
-          const destY = (height - drawH) / 2;
+          // Center the image (may extend beyond canvas edges for "cover" effect)
+          const x = (width - drawW) / 2;
+          const y = (height - drawH) / 2;
 
           // Debug first frame
           if (frameCount === 1) {
-            console.log(`Drawing scene ${sceneIndex}: src(${srcX.toFixed(0)},${srcY.toFixed(0)},${srcW.toFixed(0)},${srcH.toFixed(0)}) -> dest(${destX.toFixed(0)},${destY.toFixed(0)},${drawW.toFixed(0)},${drawH.toFixed(0)})`);
+            console.log(`Scene ${sceneIndex}: img ${sceneImg.width}x${sceneImg.height}, draw ${drawW.toFixed(0)}x${drawH.toFixed(0)} at (${x.toFixed(0)},${y.toFixed(0)})`);
           }
 
-          ctx.drawImage(sceneImg, srcX, srcY, srcW, srcH, destX, destY, drawW, drawH);
+          ctx.drawImage(sceneImg, x, y, drawW, drawH);
         }
 
         // Draw avatar overlay - play videos smoothly
