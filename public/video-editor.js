@@ -6220,16 +6220,43 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   getSceneAtTime(time) {
+    if (!this.scenes || this.scenes.length === 0) return null;
+
+    // Sort scenes by startTime for proper lookup
+    const sortedScenes = [...this.scenes].sort((a, b) => a.startTime - b.startTime);
+
     // If time is before first scene, return first scene
-    if (this.scenes.length > 0 && time < this.scenes[0].startTime) {
-      return this.scenes[0];
+    if (time < sortedScenes[0].startTime) {
+      return sortedScenes[0];
     }
-    for (const scene of this.scenes) {
-      if (time >= scene.startTime && time < scene.startTime + scene.duration) {
+
+    // Find scene that contains this time (with small epsilon for floating point)
+    const epsilon = 0.001;
+    for (const scene of sortedScenes) {
+      if (time >= scene.startTime - epsilon && time < scene.startTime + scene.duration + epsilon) {
         return scene;
       }
     }
-    return this.scenes[this.scenes.length - 1];
+
+    // If time is past all scenes, find the scene whose time range is closest
+    // This prevents jumping to scene 46 when there are gaps
+    let closestScene = sortedScenes[0];
+    let closestDistance = Math.abs(time - sortedScenes[0].startTime);
+
+    for (const scene of sortedScenes) {
+      const sceneEnd = scene.startTime + scene.duration;
+      // Check distance to start and end of scene
+      const distToStart = Math.abs(time - scene.startTime);
+      const distToEnd = Math.abs(time - sceneEnd);
+      const minDist = Math.min(distToStart, distToEnd);
+
+      if (minDist < closestDistance) {
+        closestDistance = minDist;
+        closestScene = scene;
+      }
+    }
+
+    return closestScene;
   }
 
   applyKenBurnsEffect(img, scene) {
@@ -7078,13 +7105,42 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   getSceneIndexAtTime(time) {
-    for (let i = 0; i < this.scenes.length; i++) {
-      const scene = this.scenes[i];
-      if (time >= scene.startTime && time < scene.startTime + scene.duration) {
-        return i;
+    if (!this.scenes || this.scenes.length === 0) return 0;
+
+    // Create sorted index pairs to track original indices
+    const sortedPairs = this.scenes.map((scene, idx) => ({ scene, idx }))
+      .sort((a, b) => a.scene.startTime - b.scene.startTime);
+
+    // If time is before first scene, return first scene's index
+    if (time < sortedPairs[0].scene.startTime) {
+      return sortedPairs[0].idx;
+    }
+
+    // Find scene that contains this time (with small epsilon for floating point)
+    const epsilon = 0.001;
+    for (const { scene, idx } of sortedPairs) {
+      if (time >= scene.startTime - epsilon && time < scene.startTime + scene.duration + epsilon) {
+        return idx;
       }
     }
-    return this.scenes.length - 1;
+
+    // Find closest scene to prevent jumping to last scene
+    let closestIdx = sortedPairs[0].idx;
+    let closestDistance = Math.abs(time - sortedPairs[0].scene.startTime);
+
+    for (const { scene, idx } of sortedPairs) {
+      const sceneEnd = scene.startTime + scene.duration;
+      const distToStart = Math.abs(time - scene.startTime);
+      const distToEnd = Math.abs(time - sceneEnd);
+      const minDist = Math.min(distToStart, distToEnd);
+
+      if (minDist < closestDistance) {
+        closestDistance = minDist;
+        closestIdx = idx;
+      }
+    }
+
+    return closestIdx;
   }
 
   drawFrameWithEffects(ctx, img, scene, time, width, height) {
