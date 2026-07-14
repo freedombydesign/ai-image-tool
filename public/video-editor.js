@@ -815,17 +815,29 @@ class VideoEditor {
     }
     if (this.syncToAudioBtn) {
       this.syncToAudioBtn.addEventListener('click', (e) => {
-        // Shift+Click = force fresh transcription (clear cache)
-        const forceRefresh = e.shiftKey;
+        // Shift+Click OR Ctrl+Click = force fresh transcription (clear cache)
+        const forceRefresh = e.shiftKey || e.ctrlKey || e.metaKey;
+        console.log('Sync button clicked. Modifier keys - Shift:', e.shiftKey, 'Ctrl:', e.ctrlKey, 'Meta:', e.metaKey);
         if (forceRefresh) {
-          showToast('Clearing cache, will re-transcribe...', 'info');
+          console.log('🔄 FORCE REFRESH MODE - Will clear all caches');
+          showToast('Clearing ALL caches, will re-analyze...', 'info');
         }
         this.syncToAudio(forceRefresh);
       });
-      this.syncToAudioBtn.title = 'Click to sync | Shift+Click to clear cache and re-sync';
+      this.syncToAudioBtn.title = 'Click to sync | Shift/Ctrl+Click to clear cache and re-sync';
     }
     if (this.distributeEvenlyBtn) {
       this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
+    }
+
+    // Force Re-sync button - always clears cache
+    const forceResyncBtn = document.getElementById('force-resync-btn');
+    if (forceResyncBtn) {
+      forceResyncBtn.addEventListener('click', () => {
+        console.log('🔄 FORCE RE-SYNC clicked - clearing all caches');
+        showToast('Clearing ALL caches, will re-analyze with GPT-4o...', 'info');
+        this.syncToAudio(true); // true = force refresh
+      });
     }
 
     // Expanded Timeline Editor
