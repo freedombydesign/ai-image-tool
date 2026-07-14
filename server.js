@@ -2130,8 +2130,7 @@ Return ONLY the JSON array.`;
     }
 
     // ENFORCE SEQUENTIAL ORDER: Scenes must go 0, 1, 2, 3... not reordered
-    const minDuration = Math.max(3, totalDuration * 0.008);
-    const baseDuration = totalDuration / scenes.length;
+    // minDuration and baseDuration already declared above
     const validatedTimings = [];
 
     // First pass: collect AI timings but keep scene order
