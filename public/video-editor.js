@@ -2918,6 +2918,51 @@ class VideoEditor {
           index: segment.index
         });
 
+        // Save to database with audio_url for persistence across refreshes
+        const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
+        if (userId && window.supabaseConfig) {
+          try {
+            const segmentNum = i + 1;
+            // Upload audio segment to Supabase storage
+            const audioPath = `audio/avatar-segment-${segmentNum}-${Date.now()}.wav`;
+            const audioUploadUrl = `${window.supabaseConfig.url}/storage/v1/object/${window.supabaseConfig.bucket}/${audioPath}`;
+
+            const audioUploadResponse = await fetch(audioUploadUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${window.supabaseConfig.anonKey}`,
+                'apikey': window.supabaseConfig.anonKey,
+                'Content-Type': 'audio/wav',
+                'x-upsert': 'true'
+              },
+              body: segment.blob
+            });
+
+            if (audioUploadResponse.ok) {
+              const audioPublicUrl = `${window.supabaseConfig.url}/storage/v1/object/public/${window.supabaseConfig.bucket}/${audioPath}`;
+
+              // Save segment to database with audio URL
+              await fetch('/api/db/avatar-segments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId,
+                  segmentNum,
+                  videoUrl: result.videoUrl,
+                  fileName: `avatar_segment_${segmentNum}.mp4`,
+                  audioUrl: audioPublicUrl
+                })
+              });
+
+              // Store in memory for immediate use
+              this.replacedAudioSegments[segmentNum] = { blob: segment.blob, url: audioPublicUrl };
+              console.log(`Segment ${segmentNum} saved to database with audio URL`);
+            }
+          } catch (dbError) {
+            console.warn(`Failed to save segment ${i + 1} to database:`, dbError.message);
+          }
+        }
+
         generatedCount++;
         console.log(`Avatar video ${i + 1} generated and cached:`, result.videoUrl);
 
