@@ -6897,30 +6897,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const sceneDuration = scene.duration || 6;
     const currentTime = this.playbackTime;
 
-    // Use captionWords array directly if available (matches Whisper timestamps)
-    // Otherwise fall back to splitting caption text
+    // Get words from captionWords if available, otherwise split caption text
     let allWords;
-    let currentWordIndex = 0;
-
     if (scene.captionWords && scene.captionWords.length > 0) {
-      // Use words from Whisper transcription - ensures sync with timestamps
       allWords = scene.captionWords.map(w => w.word.trim()).filter(w => w.length > 0);
-
-      // Find current word based on actual timestamps
-      currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
-      if (currentWordIndex === -1) {
-        // Past all words - show last word
-        currentWordIndex = allWords.length - 1;
-      }
-      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
     } else {
-      // Fallback: split caption text and divide evenly (less accurate)
       allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
-      const timeInScene = Math.max(0, currentTime - sceneStartTime);
-      const wordDuration = sceneDuration / allWords.length;
-      const rawWordIndex = Math.floor(timeInScene / wordDuration);
-      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
     }
+
+    // Use scene-relative timing for word highlighting (prevents drift with stitched audio)
+    const timeInScene = Math.max(0, currentTime - sceneStartTime);
+    const wordDuration = sceneDuration / allWords.length;
+    const rawWordIndex = Math.floor(timeInScene / wordDuration);
+    const currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
 
     // Only show a sliding window of words (2 lines worth)
     const totalWordsToShow = wordsPerLine * 2; // Show 2 lines at a time
@@ -8116,29 +8105,21 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
     ctx.textAlign = textAlign;
 
-    // Use captionWords array directly if available (matches Whisper timestamps)
-    // Otherwise fall back to splitting caption text
+    // Get words from captionWords if available, otherwise split caption text
     let allWords;
-    let currentWordIndex = 0;
-
     if (scene.captionWords && scene.captionWords.length > 0) {
-      // Use words from Whisper transcription - ensures sync with timestamps
       allWords = scene.captionWords.map(w => w.word.trim()).filter(w => w.length > 0);
-
-      // Find current word based on actual timestamps
-      currentWordIndex = scene.captionWords.findIndex(w => currentTime < w.end);
-      if (currentWordIndex === -1) {
-        // Past all words - show last word
-        currentWordIndex = allWords.length - 1;
-      }
-      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
     } else {
-      // Fallback: split caption text and divide evenly (less accurate)
       allWords = cleanCaption.split(/\s+/).filter(w => w.length > 0);
-      const sceneProgress = (currentTime - scene.startTime) / scene.duration;
-      currentWordIndex = Math.floor(sceneProgress * allWords.length);
-      currentWordIndex = Math.max(0, Math.min(allWords.length - 1, currentWordIndex));
     }
+
+    // Use scene-relative timing for word highlighting (prevents drift with stitched audio)
+    const sceneStart = scene.startTime || 0;
+    const sceneDuration = scene.duration || 6;
+    const timeInScene = Math.max(0, currentTime - sceneStart);
+    const wordDuration = sceneDuration / allWords.length;
+    const rawWordIndex = Math.floor(timeInScene / wordDuration);
+    const currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
 
     // Only show a sliding window of words (2 lines worth) - same as preview
     const totalWordsToShow = wordsPerLine * 2;
