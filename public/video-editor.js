@@ -7387,9 +7387,64 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       // Start audio playback - this drives the timeline
       // Seek to startTime for test exports from a specific position
+      let audioPlaybackFailed = false;
       if (audioElement) {
-        audioElement.currentTime = startTime;
-        await audioElement.play();
+        try {
+          // For blob URLs, we need to wait for seek to complete before playing
+          if (startTime > 0) {
+            console.log(`Seeking audio to ${startTime}s before playback...`);
+
+            // Wait for the seek to complete
+            await new Promise((resolve, reject) => {
+              const seekTimeout = setTimeout(() => {
+                console.warn('Audio seek timeout, proceeding with elapsed time fallback');
+                audioPlaybackFailed = true;
+                resolve();
+              }, 5000);
+
+              audioElement.onseeked = () => {
+                clearTimeout(seekTimeout);
+                console.log('Audio seek completed, currentTime:', audioElement.currentTime);
+                resolve();
+              };
+
+              audioElement.onerror = (e) => {
+                clearTimeout(seekTimeout);
+                console.error('Audio seek error:', e);
+                audioPlaybackFailed = true;
+                resolve();
+              };
+
+              audioElement.currentTime = startTime;
+            });
+          }
+
+          if (!audioPlaybackFailed) {
+            await audioElement.play();
+            console.log('Audio playback started, currentTime:', audioElement.currentTime);
+
+            // Verify audio is actually playing after a short delay
+            await new Promise(resolve => setTimeout(resolve, 200));
+            if (Math.abs(audioElement.currentTime - startTime) < 0.1 && !audioElement.paused) {
+              // Audio didn't advance - might be stuck
+              console.warn('Audio appears stuck at', audioElement.currentTime, '- checking...');
+              await new Promise(resolve => setTimeout(resolve, 300));
+              if (Math.abs(audioElement.currentTime - startTime) < 0.1) {
+                console.warn('Audio confirmed stuck, switching to elapsed time fallback');
+                audioPlaybackFailed = true;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Audio playback failed:', e);
+          audioPlaybackFailed = true;
+        }
+      }
+
+      // If audio failed, we'll use elapsed time calculation in renderFrame
+      if (audioPlaybackFailed) {
+        console.log('Using elapsed time fallback instead of audio time');
+        audioElement = null; // Force elapsed time calculation
       }
 
       // Start all avatar videos (paused, we'll sync them)
