@@ -2495,16 +2495,26 @@ class VideoEditor {
     if (!this.audioBlob) return null;
 
     // Check if we have any replaced segments
-    const replacedKeys = Object.keys(this.replacedAudioSegments);
+    const replacedKeys = Object.keys(this.replacedAudioSegments || {});
     if (replacedKeys.length === 0) {
       console.log('No replaced audio segments, using original audio');
       return this.audioBlob;
     }
 
-    console.log(`Stitching audio with ${replacedKeys.length} replaced segments:`, replacedKeys);
+    // If ALL segments are replaced, just concatenate the replaced audio (faster)
+    const numAvatarSegments = this.avatarVideos?.length || 8;
+    if (replacedKeys.length === numAvatarSegments) {
+      console.log('All segments replaced - using fast concatenation');
+      return this.fastStitchReplacedAudio();
+    }
 
-    // Get original audio segments
+    console.log(`Stitching audio with ${replacedKeys.length}/${numAvatarSegments} replaced segments`);
+
+    // Get original audio segments (this is slow - decodes entire audio)
+    console.log('Splitting original audio into segments...');
     const originalSegments = await this.splitAudioForAvatar();
+    console.log(`Split into ${originalSegments.length} segments`);
+
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
     // Load all segment audio buffers
@@ -2528,6 +2538,7 @@ class VideoEditor {
         const arrayBuffer = await audioBlob.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
         segmentBuffers.push(audioBuffer);
+        console.log(`Segment ${segmentNum} decoded`);
       } catch (e) {
         console.error(`Failed to decode segment ${segmentNum}:`, e);
         // Fall back to original if decode fails
@@ -2561,6 +2572,62 @@ class VideoEditor {
     // Convert to WAV blob
     const stitchedBlob = this.audioBufferToWav(combinedBuffer);
     console.log('Stitched audio created:', stitchedBlob.size, 'bytes');
+
+    return stitchedBlob;
+  }
+
+  // Fast stitch when ALL segments are replaced (no need to split original)
+  async fastStitchReplacedAudio() {
+    const replacedKeys = Object.keys(this.replacedAudioSegments || {}).map(Number).sort((a, b) => a - b);
+    console.log('Fast stitching replaced segments:', replacedKeys);
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const segmentBuffers = [];
+
+    for (const segmentNum of replacedKeys) {
+      const audioBlob = this.replacedAudioSegments[segmentNum].blob;
+      console.log(`Fast stitch: decoding segment ${segmentNum}...`);
+      try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        segmentBuffers.push(audioBuffer);
+        console.log(`Segment ${segmentNum} decoded: ${audioBuffer.duration.toFixed(1)}s`);
+      } catch (e) {
+        console.error(`Failed to decode segment ${segmentNum}:`, e);
+      }
+    }
+
+    if (segmentBuffers.length === 0) {
+      console.error('No segments decoded, falling back to original');
+      return this.audioBlob;
+    }
+
+    // Calculate total length
+    const sampleRate = segmentBuffers[0].sampleRate;
+    const numChannels = segmentBuffers[0].numberOfChannels;
+    let totalSamples = 0;
+    for (const buf of segmentBuffers) {
+      totalSamples += buf.length;
+    }
+
+    console.log(`Combining ${segmentBuffers.length} segments: ${totalSamples} samples, ${numChannels} channels`);
+
+    // Create combined buffer
+    const combinedBuffer = audioContext.createBuffer(numChannels, totalSamples, sampleRate);
+
+    let offset = 0;
+    for (const buf of segmentBuffers) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const destData = combinedBuffer.getChannelData(channel);
+        const srcData = buf.getChannelData(channel);
+        destData.set(srcData, offset);
+      }
+      offset += buf.length;
+    }
+
+    // Convert to WAV blob
+    const stitchedBlob = this.audioBufferToWav(combinedBuffer);
+    console.log('Fast stitched audio created:', stitchedBlob.size, 'bytes', `${combinedBuffer.duration.toFixed(1)}s`);
 
     return stitchedBlob;
   }
@@ -6777,11 +6844,23 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         this.exportStatus.textContent = 'Preparing audio (stitching segments)...';
         this.exportProgressBar.style.width = '45%';
         console.log('Stitching audio for export...');
-        const audioToUse = await this.stitchAudioForExport();
-        console.log('Audio stitched, size:', audioToUse?.size);
+
+        // Try stitching with 45 second timeout, fall back to original if it fails
+        let audioToUse;
+        try {
+          audioToUse = await Promise.race([
+            this.stitchAudioForExport(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Stitching timeout')), 45000))
+          ]);
+          console.log('Audio stitched, size:', audioToUse?.size);
+        } catch (e) {
+          console.warn('Audio stitching failed or timed out, using original audio:', e.message);
+          this.exportStatus.textContent = 'Using original audio (stitching timed out)...';
+          audioToUse = this.audioBlob;
+        }
         this.exportProgressBar.style.width = '50%';
 
-        this.exportStatus.textContent = 'Loading stitched audio...';
+        this.exportStatus.textContent = 'Loading audio for export...';
         audioElement = new Audio(URL.createObjectURL(audioToUse));
         audioElement.muted = false;
         audioElement.preload = 'auto';
