@@ -7084,31 +7084,42 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           const progress = (currentTime - scene.startTime) / scene.duration;
           const scale = 1 + progress * 0.1;
 
-          // Use same approach as preview - simple 5-argument drawImage
-          const imgRatio = sceneImg.width / sceneImg.height;
-          const canvasRatio = width / height;
-
-          let drawW, drawH;
-          if (imgRatio > canvasRatio) {
-            // Image is wider than canvas - fit by height
-            drawH = height * scale;
-            drawW = drawH * imgRatio;
-          } else {
-            // Image is taller than canvas - fit by width
-            drawW = width * scale;
-            drawH = drawW / imgRatio;
-          }
-
-          // Center the image (may extend beyond canvas edges for "cover" effect)
-          const x = (width - drawW) / 2;
-          const y = (height - drawH) / 2;
+          // Get image dimensions - check both width/height and naturalWidth/naturalHeight
+          const imgW = sceneImg.naturalWidth || sceneImg.width || 1;
+          const imgH = sceneImg.naturalHeight || sceneImg.height || 1;
 
           // Debug first frame
           if (frameCount === 1) {
-            console.log(`Scene ${sceneIndex}: img ${sceneImg.width}x${sceneImg.height}, draw ${drawW.toFixed(0)}x${drawH.toFixed(0)} at (${x.toFixed(0)},${y.toFixed(0)})`);
+            console.log(`Scene ${sceneIndex}: image ${imgW}x${imgH}, canvas ${width}x${height}`);
           }
 
-          ctx.drawImage(sceneImg, x, y, drawW, drawH);
+          // Skip if image isn't loaded (dimensions are 0 or 1)
+          if (imgW <= 1 || imgH <= 1) {
+            console.warn(`Scene ${sceneIndex} image not loaded properly: ${imgW}x${imgH}`);
+            // Just fill with placeholder color
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 0, width, height);
+          } else {
+            const imgRatio = imgW / imgH;
+            const canvasRatio = width / height;
+
+            let drawW, drawH;
+            if (imgRatio > canvasRatio) {
+              // Image is wider than canvas - fit by height
+              drawH = height * scale;
+              drawW = drawH * imgRatio;
+            } else {
+              // Image is taller than canvas - fit by width
+              drawW = width * scale;
+              drawH = drawW / imgRatio;
+            }
+
+            // Center the image (may extend beyond canvas edges for "cover" effect)
+            const x = (width - drawW) / 2;
+            const y = (height - drawH) / 2;
+
+            ctx.drawImage(sceneImg, x, y, drawW, drawH);
+          }
         }
 
         // Draw avatar overlay - play videos smoothly
