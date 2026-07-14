@@ -6349,7 +6349,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     // Update caption
     if (this.previewCaptionOverlay && currentScene) {
       const caption = currentScene.caption || '';
-      if (caption && this.captionsEnabled) {
+      const captionsEnabled = this.captionsEnabledToggle?.checked ?? true;
+      if (caption && captionsEnabled) {
         this.previewCaptionOverlay.textContent = caption;
         this.previewCaptionOverlay.classList.add('visible');
       } else {
@@ -7165,8 +7166,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           this.exportProgressBar.style.width = `${(loadedCount / totalVideos) * 20}%`; // 0-20% for video loading
 
           try {
-            // Shorter timeout for test exports (15s), longer for full exports (60s)
-            const timeout = isTestExport ? 15000 : 60000;
+            // Use 30s timeout for test exports, 60s for full exports
+            const timeout = isTestExport ? 30000 : 60000;
             const videoEl = await Promise.race([
               this.loadVideoElement(av.videoUrl),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Video load timeout')), timeout))
