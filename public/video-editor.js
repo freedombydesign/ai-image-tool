@@ -3307,8 +3307,8 @@ class VideoEditor {
       clearInterval(this.expandedPlaybackInterval);
       this.expandedPlaybackInterval = null;
     }
-    if (this.audioElement) {
-      this.audioElement.pause();
+    if (this.audioPlayer) {
+      this.audioPlayer.pause();
     }
 
     // Re-render the regular timeline
@@ -3423,8 +3423,8 @@ class VideoEditor {
         this.updateExpandedPreview(sceneIndex);
 
         // Start audio scrubbing
-        if (this.audioElement) {
-          this.audioElement.pause();
+        if (this.audioPlayer) {
+          this.audioPlayer.pause();
         }
 
         e.preventDefault();
@@ -3458,15 +3458,15 @@ class VideoEditor {
 
         // Audio scrubbing - play at current position (throttled)
         const now = Date.now();
-        if (this.audioElement && now - lastScrubTime > 80) {
+        if (this.audioPlayer && now - lastScrubTime > 80) {
           lastScrubTime = now;
-          this.audioElement.currentTime = newStartTime;
-          this.audioElement.play().catch(() => {});
+          this.audioPlayer.currentTime = newStartTime;
+          this.audioPlayer.play().catch(() => {});
 
           // Stop after a short moment
           setTimeout(() => {
-            if (isDragging && this.audioElement) {
-              this.audioElement.pause();
+            if (isDragging && this.audioPlayer) {
+              this.audioPlayer.pause();
             }
           }, 120);
         }
@@ -3485,8 +3485,8 @@ class VideoEditor {
         sceneEl.classList.remove('dragging');
 
         // Stop audio
-        if (this.audioElement) {
-          this.audioElement.pause();
+        if (this.audioPlayer) {
+          this.audioPlayer.pause();
         }
 
         // Re-render to update positions
@@ -3507,14 +3507,14 @@ class VideoEditor {
     const playBtn = document.getElementById('expanded-play-btn');
     const expandedAvatarVideo = document.getElementById('expanded-avatar-video');
 
-    console.log('toggleExpandedPlayback called, interval:', this.expandedPlaybackInterval, 'audioElement:', this.audioElement);
+    console.log('toggleExpandedPlayback called, interval:', this.expandedPlaybackInterval, 'audioElement:', this.audioPlayer);
 
     if (this.expandedPlaybackInterval) {
       // Stop playback
       console.log('Stopping playback');
       clearInterval(this.expandedPlaybackInterval);
       this.expandedPlaybackInterval = null;
-      if (this.audioElement) this.audioElement.pause();
+      if (this.audioPlayer) this.audioPlayer.pause();
       if (expandedAvatarVideo) {
         expandedAvatarVideo.pause();
         expandedAvatarVideo.classList.remove('active');
@@ -3522,18 +3522,18 @@ class VideoEditor {
       if (playBtn) playBtn.textContent = '▶️ Play';
     } else {
       // Start playback
-      console.log('Starting playback, audioElement:', this.audioElement);
+      console.log('Starting playback, audioElement:', this.audioPlayer);
 
-      if (!this.audioElement) {
+      if (!this.audioPlayer) {
         console.error('No audioElement!');
         showToast('No audio loaded. Upload audio first to preview.', true);
         return;
       }
 
-      console.log('Audio src:', this.audioElement.src, 'readyState:', this.audioElement.readyState);
+      console.log('Audio src:', this.audioPlayer.src, 'readyState:', this.audioPlayer.readyState);
 
-      this.audioElement.currentTime = 0;
-      this.audioElement.play().then(() => {
+      this.audioPlayer.currentTime = 0;
+      this.audioPlayer.play().then(() => {
         console.log('Audio started playing successfully');
       }).catch((err) => {
         console.error('Audio play error:', err);
@@ -3544,9 +3544,9 @@ class VideoEditor {
       const totalDuration = this.audioDuration || this.getTotalDuration();
 
       this.expandedPlaybackInterval = setInterval(() => {
-        if (!this.audioElement) return;
+        if (!this.audioPlayer) return;
 
-        const currentTime = this.audioElement.currentTime;
+        const currentTime = this.audioPlayer.currentTime;
 
         // Update playhead
         const playhead = document.getElementById('expanded-timeline-playhead');
@@ -3574,7 +3574,7 @@ class VideoEditor {
         if (currentTime >= totalDuration) {
           clearInterval(this.expandedPlaybackInterval);
           this.expandedPlaybackInterval = null;
-          this.audioElement.pause();
+          this.audioPlayer.pause();
           if (expandedAvatarVideo) {
             expandedAvatarVideo.pause();
             expandedAvatarVideo.classList.remove('active');
@@ -3884,8 +3884,8 @@ class VideoEditor {
         document.body.appendChild(timeIndicator);
 
         // Start audio scrubbing - pause any current playback
-        if (this.audioElement) {
-          this.audioElement.pause();
+        if (this.audioPlayer) {
+          this.audioPlayer.pause();
         }
 
         e.preventDefault();
@@ -3939,15 +3939,15 @@ class VideoEditor {
 
           // Audio scrubbing - play audio at current position (throttled)
           const now = Date.now();
-          if (this.audioElement && now - lastScrubTime > 100) {
+          if (this.audioPlayer && now - lastScrubTime > 100) {
             lastScrubTime = now;
-            this.audioElement.currentTime = newStartTime;
-            this.audioElement.play().catch(() => {});
+            this.audioPlayer.currentTime = newStartTime;
+            this.audioPlayer.play().catch(() => {});
 
             // Stop after a short moment to create scrubbing effect
             setTimeout(() => {
-              if (isDragging && this.audioElement) {
-                this.audioElement.pause();
+              if (isDragging && this.audioPlayer) {
+                this.audioPlayer.pause();
               }
             }, 150);
           }
@@ -3965,8 +3965,8 @@ class VideoEditor {
           sceneEl.classList.remove('dragging');
 
           // Stop audio scrubbing
-          if (this.audioElement) {
-            this.audioElement.pause();
+          if (this.audioPlayer) {
+            this.audioPlayer.pause();
           }
 
           // Remove time indicator
