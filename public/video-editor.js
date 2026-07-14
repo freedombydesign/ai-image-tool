@@ -6862,24 +6862,52 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         this.exportStatus.textContent = 'Loading audio for export...';
 
-        // Try to use existing audio player first (already loaded and working)
-        const existingPlayer = document.getElementById('audio-player');
-        if (existingPlayer && existingPlayer.duration > 0 && existingPlayer.readyState >= 2) {
-          console.log('Using existing audio player, duration:', existingPlayer.duration);
-          audioElement = existingPlayer.cloneNode(true);
-          audioElement.currentTime = 0;
+        // IMPORTANT: If we have stitched audio (with AI avatar audio), use it!
+        // Don't fall back to the existing player which has original audio
+        if (hasReplacedSegments && audioToUse && audioToUse !== this.audioBlob) {
+          console.log('Using STITCHED audio for export:', audioToUse.size, 'bytes');
+          const stitchedUrl = URL.createObjectURL(audioToUse);
+          audioElement = new Audio(stitchedUrl);
+          audioElement.muted = false;
+          audioElement.preload = 'auto';
+
+          // Wait for stitched audio to load
+          await Promise.race([
+            new Promise(resolve => {
+              audioElement.oncanplaythrough = () => resolve(true);
+              audioElement.onloadedmetadata = () => {
+                console.log('Stitched audio loaded, duration:', audioElement.duration);
+                resolve(true);
+              };
+              audioElement.load();
+            }),
+            new Promise(resolve => setTimeout(() => {
+              console.warn('Stitched audio load timeout, proceeding anyway');
+              resolve(false);
+            }, 20000))
+          ]);
+
           this.exportProgressBar.style.width = '55%';
-          console.log('Audio ready for export (cloned player)');
+          console.log('Stitched audio ready for export, duration:', audioElement.duration);
         } else {
-          // Try Supabase URL if available
-          const supabaseUrl = this.audioUrl;
-          if (supabaseUrl) {
-            console.log('Loading audio from Supabase URL:', supabaseUrl);
-            audioElement = new Audio(supabaseUrl);
+          // No stitched audio - try existing player or fallback
+          const existingPlayer = document.getElementById('audio-player');
+          if (existingPlayer && existingPlayer.duration > 0 && existingPlayer.readyState >= 2) {
+            console.log('Using existing audio player (no stitching needed), duration:', existingPlayer.duration);
+            audioElement = existingPlayer.cloneNode(true);
+            audioElement.currentTime = 0;
+            this.exportProgressBar.style.width = '55%';
+            console.log('Audio ready for export (cloned player)');
           } else {
-            console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
-            audioElement = new Audio(URL.createObjectURL(audioToUse));
-          }
+            // Try Supabase URL if available
+            const supabaseUrl = this.audioUrl;
+            if (supabaseUrl) {
+              console.log('Loading audio from Supabase URL:', supabaseUrl);
+              audioElement = new Audio(supabaseUrl);
+            } else {
+              console.log('Creating audio element from blob:', audioToUse?.size, 'bytes', audioToUse?.type);
+              audioElement = new Audio(URL.createObjectURL(audioToUse));
+            }
 
           audioElement.muted = false;
           audioElement.preload = 'auto';
