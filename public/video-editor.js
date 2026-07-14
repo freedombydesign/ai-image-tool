@@ -3393,7 +3393,11 @@ class VideoEditor {
     const scenesContainer = document.getElementById('expanded-timeline-scenes');
     if (!scenesContainer) return;
 
-    const totalDuration = this.audioDuration || this.getTotalDuration();
+    // Use max of audio duration and scene end times to ensure all scenes fit
+    const sceneEndTime = this.scenes.length > 0
+      ? Math.max(...this.scenes.map(s => s.startTime + s.duration))
+      : 0;
+    const totalDuration = Math.max(this.audioDuration || 0, sceneEndTime, this.getTotalDuration());
 
     scenesContainer.innerHTML = this.scenes.map((scene, index) => {
       const leftPercent = (scene.startTime / totalDuration) * 100;
@@ -3913,7 +3917,11 @@ class VideoEditor {
   }
 
   renderTimeline() {
-    const totalDuration = this.audioDuration || this.getTotalDuration();
+    // Use max of audio duration and scene end times to ensure all scenes fit
+    const sceneEndTime = this.scenes.length > 0
+      ? Math.max(...this.scenes.map(s => s.startTime + s.duration))
+      : 0;
+    const totalDuration = Math.max(this.audioDuration || 0, sceneEndTime, this.getTotalDuration());
 
     this.timelineScenes.innerHTML = this.scenes.map((scene, index) => {
       const leftPercent = (scene.startTime / totalDuration) * 100;
