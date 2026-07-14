@@ -3007,13 +3007,13 @@ class VideoEditor {
       const audioUrl = urlData.publicUrl;
       console.log('Step 4c: Audio uploaded to:', audioUrl);
 
-      // If we used stitched audio with replacements, make it the new primary audio
+      // Keep replaced segments for export - they'll be stitched during export
       if (hasReplacements) {
-        console.log('Replacing primary audio blob with stitched audio (includes AI avatar segments)');
-        this.audioBlob = audioToSync;
-        // Clear replaced segments since they're now baked into the main audio
-        this.replacedAudioSegments = {};
-        showToast('Combined audio with AI segments saved as primary', 'success');
+        console.log('Keeping replaced audio segments for export stitching');
+        console.log('Segments available:', Object.keys(this.replacedAudioSegments));
+        // DO NOT clear replacedAudioSegments - we need them for export!
+        // this.replacedAudioSegments = {};  // REMOVED - this was causing clean audio to be lost
+        showToast('AI avatar audio ready for export', 'success');
       }
 
       // Save audio URL for cross-browser persistence
