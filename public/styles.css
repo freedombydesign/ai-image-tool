@@ -1915,6 +1915,24 @@ footer {
   object-fit: cover;
 }
 
+.expanded-preview-container .expanded-avatar-video {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  display: none;
+}
+
+.expanded-preview-container .expanded-avatar-video.active {
+  display: block;
+}
+
 .expanded-preview-info {
   position: absolute;
   bottom: 0;

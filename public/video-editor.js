@@ -3334,7 +3334,7 @@ class VideoEditor {
     }
   }
 
-  updateExpandedPreview(sceneIndex) {
+  updateExpandedPreview(sceneIndex, currentTime = null) {
     const scene = this.scenes[sceneIndex];
     if (!scene) return;
 
@@ -3344,7 +3344,45 @@ class VideoEditor {
 
     if (previewImg) previewImg.src = scene.imageUrl;
     if (sceneNumber) sceneNumber.textContent = `Scene ${sceneIndex + 1}`;
-    if (sceneTime) sceneTime.textContent = this.formatTime(scene.startTime);
+    if (sceneTime) sceneTime.textContent = this.formatTime(currentTime !== null ? currentTime : scene.startTime);
+  }
+
+  // Update avatar video in expanded timeline
+  updateExpandedAvatar(currentTime) {
+    const expandedAvatarVideo = document.getElementById('expanded-avatar-video');
+    if (!expandedAvatarVideo) return;
+
+    // Check if we have avatar videos generated
+    if (!this.avatarVideos || this.avatarVideos.length === 0) {
+      expandedAvatarVideo.classList.remove('active');
+      return;
+    }
+
+    // Find the avatar video for the current time
+    const avatarVideo = this.getAvatarVideoAtTime(currentTime);
+
+    if (avatarVideo) {
+      // Show and play the avatar video
+      if (expandedAvatarVideo.src !== avatarVideo.videoUrl) {
+        expandedAvatarVideo.src = avatarVideo.videoUrl;
+        expandedAvatarVideo.load();
+      }
+      expandedAvatarVideo.classList.add('active');
+
+      // Sync avatar video time with audio
+      const avatarTime = currentTime - avatarVideo.startTime;
+      if (Math.abs(expandedAvatarVideo.currentTime - avatarTime) > 0.1) {
+        expandedAvatarVideo.currentTime = avatarTime;
+      }
+
+      if (expandedAvatarVideo.paused) {
+        expandedAvatarVideo.play().catch(() => {});
+      }
+    } else {
+      // No avatar for this time, hide it
+      expandedAvatarVideo.classList.remove('active');
+      expandedAvatarVideo.pause();
+    }
   }
 
   setupExpandedTimelineInteractions() {
@@ -3451,19 +3489,30 @@ class VideoEditor {
 
   toggleExpandedPlayback() {
     const playBtn = document.getElementById('expanded-play-btn');
+    const expandedAvatarVideo = document.getElementById('expanded-avatar-video');
 
     if (this.expandedPlaybackInterval) {
       // Stop playback
       clearInterval(this.expandedPlaybackInterval);
       this.expandedPlaybackInterval = null;
       if (this.audioElement) this.audioElement.pause();
+      if (expandedAvatarVideo) {
+        expandedAvatarVideo.pause();
+        expandedAvatarVideo.classList.remove('active');
+      }
       if (playBtn) playBtn.textContent = '▶️ Play';
     } else {
       // Start playback
-      if (!this.audioElement) return;
+      if (!this.audioElement) {
+        showToast('No audio loaded. Upload audio first to preview.', true);
+        return;
+      }
 
       this.audioElement.currentTime = 0;
-      this.audioElement.play().catch(() => {});
+      this.audioElement.play().catch((err) => {
+        console.error('Audio play error:', err);
+        showToast('Could not play audio: ' + err.message, true);
+      });
       if (playBtn) playBtn.textContent = '⏸️ Pause';
 
       const totalDuration = this.audioDuration || this.getTotalDuration();
@@ -3489,14 +3538,21 @@ class VideoEditor {
         const currentScene = this.getSceneAtTime(currentTime);
         if (currentScene) {
           const sceneIndex = this.scenes.indexOf(currentScene);
-          this.updateExpandedPreview(sceneIndex);
+          this.updateExpandedPreview(sceneIndex, currentTime);
         }
+
+        // Update avatar video if available
+        this.updateExpandedAvatar(currentTime);
 
         // Stop at end
         if (currentTime >= totalDuration) {
           clearInterval(this.expandedPlaybackInterval);
           this.expandedPlaybackInterval = null;
           this.audioElement.pause();
+          if (expandedAvatarVideo) {
+            expandedAvatarVideo.pause();
+            expandedAvatarVideo.classList.remove('active');
+          }
           if (playBtn) playBtn.textContent = '▶️ Play';
         }
       }, 50);
