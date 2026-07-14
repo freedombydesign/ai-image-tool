@@ -1718,6 +1718,17 @@ class VideoEditor {
     return parseFloat(timeStr) || 0;
   }
 
+  // Simple hash function for cache keys
+  hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36);
+  }
+
   showTrimControls() {
     if (!this.audioBlob || !this.audioDuration) {
       showToast('No audio to trim');
@@ -3263,18 +3274,46 @@ class VideoEditor {
       return this.matchScenesToSegments(segments, totalDuration);
     }
 
+    // Prepare scene data for API (only send relevant fields)
+    const sceneData = this.scenes.map((scene, index) => ({
+      index,
+      text: scene.text || '',
+      caption: scene.caption || '',
+      prompt: scene.prompt || '',
+      description: scene.description || ''
+    }));
+
+    // Generate cache key based on scene content + segment content + duration
+    const sceneHash = sceneData.map(s => `${s.text}|${s.caption}`.substring(0, 50)).join('::');
+    const segmentHash = segments.slice(0, 10).map(s => s.text?.substring(0, 30) || '').join('::');
+    const cacheKey = `ai-sync-${this.scenes.length}-${segments.length}-${totalDuration.toFixed(0)}-${this.hashString(sceneHash + segmentHash)}`;
+
+    // Check cache first
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const cachedTimings = JSON.parse(cached);
+        console.log('AI Sync: Using cached timings (saved $$ on GPT-4o call)');
+
+        // Apply cached timings
+        cachedTimings.forEach(timing => {
+          const scene = this.scenes[timing.sceneIndex];
+          if (scene) {
+            scene.startTime = timing.startTime;
+            scene.duration = timing.duration;
+          }
+        });
+
+        return cachedTimings.length;
+      } catch (e) {
+        console.log('AI Sync: Cache invalid, will call API');
+        localStorage.removeItem(cacheKey);
+      }
+    }
+
     console.log(`AI Sync: Sending ${this.scenes.length} scenes and ${segments.length} segments to GPT-4o...`);
 
     try {
-      // Prepare scene data for API (only send relevant fields)
-      const sceneData = this.scenes.map((scene, index) => ({
-        index,
-        text: scene.text || '',
-        caption: scene.caption || '',
-        prompt: scene.prompt || '',
-        description: scene.description || ''
-      }));
-
       const response = await fetch('/api/ai-sync-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3312,6 +3351,14 @@ class VideoEditor {
         console.log(`Scene ${i + 1}: ${s.startTime?.toFixed(1)}s - ${(s.startTime + s.duration)?.toFixed(1)}s (${s.duration?.toFixed(1)}s)`);
       });
       console.log('=== END AI SCENE TIMINGS ===');
+
+      // Cache the results to avoid repeated API calls
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(timings));
+        console.log('AI Sync: Results cached for future use');
+      } catch (e) {
+        console.log('AI Sync: Could not cache results');
+      }
 
       return timings.length; // Return number of AI-placed scenes
 
