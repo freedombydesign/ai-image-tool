@@ -6897,6 +6897,21 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const sceneDuration = scene.duration || 6;
     const currentTime = this.playbackTime;
 
+    // Debug: log caption animation info periodically
+    if (!this._lastCaptionDebug || Date.now() - this._lastCaptionDebug > 2000) {
+      this._lastCaptionDebug = Date.now();
+      console.log('Caption debug:', {
+        animation,
+        currentTime: currentTime?.toFixed(2),
+        sceneStartTime: sceneStartTime?.toFixed(2),
+        sceneDuration: sceneDuration?.toFixed(2),
+        hasCaptionWords: !!scene.captionWords,
+        captionWordsLength: scene.captionWords?.length,
+        textColor,
+        highlightColor
+      });
+    }
+
     // Use captionWords array directly if available (matches Whisper timestamps)
     // Otherwise fall back to splitting caption text
     let allWords;
@@ -6920,6 +6935,18 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const wordDuration = sceneDuration / allWords.length;
       const rawWordIndex = Math.floor(timeInScene / wordDuration);
       currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
+
+      // Debug word index calculation
+      if (!this._lastWordDebug || Date.now() - this._lastWordDebug > 2000) {
+        this._lastWordDebug = Date.now();
+        console.log('Word index debug:', {
+          timeInScene: timeInScene?.toFixed(2),
+          wordCount: allWords.length,
+          wordDuration: wordDuration?.toFixed(3),
+          rawWordIndex,
+          currentWordIndex
+        });
+      }
     }
 
     // Only show a sliding window of words (2 lines worth)
