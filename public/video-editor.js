@@ -2806,7 +2806,21 @@ class VideoEditor {
         throw new Error('Supabase SDK not loaded. Please refresh the page.');
       }
 
-      console.log('Step 2: Audio blob:', this.audioBlob?.type, this.audioBlob?.size);
+      // Use stitched audio if there are AI avatar replacements
+      let audioToSync = this.audioBlob;
+      const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
+
+      if (hasReplacements) {
+        console.log('Found replaced audio segments, stitching combined audio...');
+        showToast('Combining audio with AI avatar segments...', 'info');
+        const stitchedAudio = await this.stitchAudioForExport();
+        if (stitchedAudio) {
+          audioToSync = stitchedAudio;
+          console.log('Using stitched audio with replacements');
+        }
+      }
+
+      console.log('Step 2: Audio blob:', audioToSync?.type, audioToSync?.size);
 
       // Step 1: Get Supabase config for direct upload
       showToast('Connecting to storage...', 'info');
@@ -2830,7 +2844,7 @@ class VideoEditor {
       const supabaseClient = window.supabase.createClient(config.url, config.anonKey);
 
       // Determine correct file extension from blob type
-      const mimeType = this.audioBlob.type || 'audio/mpeg';
+      const mimeType = audioToSync.type || 'audio/mpeg';
       let extension = 'mp3';
       if (mimeType.includes('webm')) extension = 'webm';
       else if (mimeType.includes('wav')) extension = 'wav';
@@ -2840,12 +2854,12 @@ class VideoEditor {
       else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) extension = 'mp3';
 
       const fileName = `audio/transcribe_${Date.now()}.${extension}`;
-      console.log('Step 4: Uploading to Supabase:', fileName, 'mimeType:', mimeType, 'size:', this.audioBlob.size);
+      console.log('Step 4: Uploading to Supabase:', fileName, 'mimeType:', mimeType, 'size:', audioToSync.size);
 
       const { data: uploadData, error: uploadError } = await supabaseClient.storage
         .from(config.bucket)
-        .upload(fileName, this.audioBlob, {
-          contentType: this.audioBlob.type || 'audio/mpeg',
+        .upload(fileName, audioToSync, {
+          contentType: audioToSync.type || 'audio/mpeg',
           upsert: true
         });
 
@@ -2872,7 +2886,7 @@ class VideoEditor {
       this.saveScenesToSupabase();
 
       // Step 4: Check cache first to avoid re-transcribing
-      const audioHash = await this.generateAudioHash(this.audioBlob);
+      const audioHash = await this.generateAudioHash(audioToSync);
       const cacheKey = `transcription_${audioHash}`;
       let result = null;
 
