@@ -6957,6 +6957,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           }
           this.exportProgressBar.style.width = '55%';
           console.log('Audio ready for export, duration:', audioElement.duration);
+          }
         }
       }
 
