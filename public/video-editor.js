@@ -9559,34 +9559,19 @@ async function handleSegmentUpload(segmentNum, file) {
 
 // Extract audio from a video file using Web Audio API
 async function extractAudioFromVideo(videoFile) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    video.muted = false;
-    video.src = URL.createObjectURL(videoFile);
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await videoFile.arrayBuffer();
 
-    video.onloadedmetadata = async () => {
-      try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const arrayBuffer = await videoFile.arrayBuffer();
+    // Decode audio directly from video file
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        // Try to decode audio from video
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-        // Convert AudioBuffer to WAV blob
-        const wavBlob = audioBufferToWav(audioBuffer);
-        URL.revokeObjectURL(video.src);
-        resolve(wavBlob);
-      } catch (err) {
-        URL.revokeObjectURL(video.src);
-        reject(err);
-      }
-    };
-
-    video.onerror = () => {
-      URL.revokeObjectURL(video.src);
-      reject(new Error('Failed to load video'));
-    };
-  });
+    // Convert AudioBuffer to WAV blob
+    const wavBlob = audioBufferToWav(audioBuffer);
+    return wavBlob;
+  } catch (err) {
+    throw new Error(`Audio decode failed: ${err.message}`);
+  }
 }
 
 // Convert AudioBuffer to WAV Blob
