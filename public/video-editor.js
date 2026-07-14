@@ -7048,6 +7048,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const recordingStartTime = performance.now();
       let lastActiveAvatar = null;
       let frameCount = 0;
+      let lastSceneIndex = -1;
 
       const renderFrame = () => {
         frameCount++;
@@ -7068,9 +7069,20 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }
 
         // Find current scene
-        const scene = this.scenes.find(s =>
+        let scene = this.scenes.find(s =>
           currentTime >= s.startTime && currentTime < s.startTime + s.duration
-        ) || this.scenes[this.scenes.length - 1];
+        );
+
+        // If no scene found (gap in timeline), use closest scene
+        if (!scene) {
+          // Find scene that ends closest to current time
+          scene = this.scenes.reduce((closest, s) => {
+            const sceneEnd = s.startTime + s.duration;
+            const closestEnd = closest.startTime + closest.duration;
+            return Math.abs(currentTime - sceneEnd) < Math.abs(currentTime - closestEnd) ? s : closest;
+          }, this.scenes[0]);
+          console.log(`No scene at ${currentTime.toFixed(2)}s, using fallback scene ${this.scenes.indexOf(scene)}`);
+        }
 
         const sceneIndex = this.scenes.indexOf(scene);
         const sceneImg = sceneImages[sceneIndex];
@@ -7082,7 +7094,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         // Draw scene image with Ken Burns - use same logic as preview's applyKenBurnsEffect
         if (sceneImg) {
           const effect = this.zoomEffect ? this.zoomEffect.value : 'zoom-in';
-          const progress = (currentTime - scene.startTime) / scene.duration;
+          // Clamp progress to 0-1 to prevent extreme zoom during scene gaps
+          const rawProgress = (currentTime - scene.startTime) / scene.duration;
+          const progress = Math.max(0, Math.min(1, rawProgress));
 
           // Calculate scale and offset based on effect (match preview exactly)
           let scale = 1;
@@ -7120,9 +7134,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           const imgW = sceneImg.naturalWidth || sceneImg.width || 1;
           const imgH = sceneImg.naturalHeight || sceneImg.height || 1;
 
-          // Debug first frame
-          if (frameCount === 1) {
-            console.log(`Scene ${sceneIndex}: image ${imgW}x${imgH}, canvas ${width}x${height}, effect: ${effect}`);
+          // Debug on scene changes
+          if (sceneIndex !== lastSceneIndex) {
+            console.log(`Scene ${sceneIndex}: image ${imgW}x${imgH}, canvas ${width}x${height}, effect: ${effect}, time: ${currentTime.toFixed(2)}s, progress: ${progress.toFixed(3)}, scale: ${scale.toFixed(3)}`);
+            lastSceneIndex = sceneIndex;
+          }
+
+          // Warn if progress or scale is abnormal
+          if (progress < 0 || progress > 1.5 || scale > 1.2) {
+            console.warn(`Abnormal values at ${currentTime.toFixed(2)}s: progress=${progress.toFixed(3)}, scale=${scale.toFixed(3)}, scene ${sceneIndex}`);
           }
 
           // Skip if image isn't loaded
