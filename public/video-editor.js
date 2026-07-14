@@ -314,91 +314,45 @@ class VideoEditor {
   async extractAudioFromAvatarSegments(segments) {
     if (!segments || segments.length === 0) return;
 
-    console.log(`Loading audio for ${segments.length} avatar segments...`);
-    console.log('Segments data:', segments.map(s => ({ num: s.segment_num, hasVideoUrl: !!s.video_url, hasAudioUrl: !!s.audio_url })));
-    let loaded = 0;
+    console.log(`Auto-extracting audio from ${segments.length} avatar segments...`);
+    let extracted = 0;
 
     for (const seg of segments) {
-      console.log(`  Checking segment ${seg.segment_num}: video_url=${seg.video_url ? 'YES' : 'NO'}, audio_url=${seg.audio_url ? 'YES' : 'NO'}`);
-
-      // If we have a saved audio URL, use it directly (no extraction needed!)
+      // If we have a saved audio URL, use it directly (fast path)
       if (seg.audio_url) {
         try {
-          console.log(`  Segment ${seg.segment_num} has saved audio URL, fetching directly...`);
           const response = await fetch(seg.audio_url);
           if (response.ok) {
             const audioBlob = await response.blob();
             this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
-            loaded++;
-            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from saved URL (${(audioBlob.size / 1024).toFixed(0)}KB)`);
+            extracted++;
+            console.log(`✓ Loaded audio for segment ${seg.segment_num} from saved URL`);
             continue;
           }
         } catch (e) {
-          console.warn(`  Failed to fetch saved audio for segment ${seg.segment_num}, will try extraction:`, e.message);
+          console.warn(`Failed to fetch saved audio for segment ${seg.segment_num}, trying extraction`);
         }
       }
 
-      // Fallback: extract audio from video (slow, may fail)
+      // Fallback: extract audio from video using Web Audio API
       if (seg.video_url) {
         try {
-          console.log(`  Segment ${seg.segment_num} needs audio extraction from video...`);
-
-          // Fetch with timeout to avoid hanging
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-          const response = await fetch(seg.video_url, { signal: controller.signal });
-          clearTimeout(timeoutId);
-
-          if (!response.ok) {
-            console.warn(`✗ Segment ${seg.segment_num} fetch failed: HTTP ${response.status}`);
-            continue;
-          }
-
+          const response = await fetch(seg.video_url);
           const blob = await response.blob();
-          console.log(`  Segment ${seg.segment_num} blob size: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
-
-          // Use FFmpeg if available, fallback to Web Audio API
-          let audioBlob;
-          if (this.ffmpeg && this.ffmpegLoaded) {
-            try {
-              const inputName = `segment${seg.segment_num}.mp4`;
-              const outputName = `audio${seg.segment_num}.mp3`;
-
-              const uint8Array = new Uint8Array(await blob.arrayBuffer());
-              await this.ffmpeg.writeFile(inputName, uint8Array);
-              await this.ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-q:a', '2', outputName]);
-              const data = await this.ffmpeg.readFile(outputName);
-              audioBlob = new Blob([data.buffer], { type: 'audio/mp3' });
-              await this.ffmpeg.deleteFile(inputName);
-              await this.ffmpeg.deleteFile(outputName);
-              console.log(`  Segment ${seg.segment_num} audio extracted via FFmpeg: ${(audioBlob.size / 1024).toFixed(0)}KB`);
-            } catch (ffmpegErr) {
-              console.warn(`  FFmpeg extraction failed for segment ${seg.segment_num}:`, ffmpegErr.message);
-              // Skip Web Audio fallback since it doesn't work for video files
-              continue;
-            }
-          } else {
-            console.log(`  FFmpeg not loaded, skipping extraction for segment ${seg.segment_num}`);
-            continue;
-          }
-
+          const file = new File([blob], `segment${seg.segment_num}.mp4`, { type: 'video/mp4' });
+          const audioBlob = await extractAudioFromVideo(file);
           this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
-          loaded++;
-          console.log(`✓ Extracted audio from segment ${seg.segment_num}`);
+          extracted++;
+          console.log(`✓ Auto-extracted audio from segment ${seg.segment_num}`);
         } catch (e) {
-          if (e.name === 'AbortError') {
-            console.warn(`✗ Segment ${seg.segment_num} fetch timed out`);
-          } else {
-            console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
-          }
+          console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
         }
       }
     }
 
-    if (loaded > 0) {
+    if (extracted > 0) {
       this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
-      console.log(`✓ Loaded audio for ${loaded}/${segments.length} avatar segments. Clean audio ready!`);
+      console.log(`✓ Auto-extracted audio from ${extracted}/${segments.length} avatar segments. Clean audio ready!`);
     }
   }
 
@@ -9608,43 +9562,27 @@ async function extractAudioFromVideo(videoFile) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.muted = false;
-
-    // Timeout to prevent hanging forever
-    const timeout = setTimeout(() => {
-      URL.revokeObjectURL(video.src);
-      console.warn('extractAudioFromVideo: timeout waiting for video metadata');
-      reject(new Error('Timeout loading video metadata'));
-    }, 30000); // 30 second timeout
-
     video.src = URL.createObjectURL(videoFile);
-    console.log('extractAudioFromVideo: created video element, waiting for metadata...');
 
     video.onloadedmetadata = async () => {
-      clearTimeout(timeout);
-      console.log('extractAudioFromVideo: metadata loaded, duration:', video.duration);
       try {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const arrayBuffer = await videoFile.arrayBuffer();
-        console.log('extractAudioFromVideo: got arrayBuffer, size:', arrayBuffer.byteLength);
 
         // Try to decode audio from video
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        console.log('extractAudioFromVideo: decoded audio, duration:', audioBuffer.duration);
 
         // Convert AudioBuffer to WAV blob
         const wavBlob = audioBufferToWav(audioBuffer);
         URL.revokeObjectURL(video.src);
         resolve(wavBlob);
       } catch (err) {
-        console.error('extractAudioFromVideo: decode error:', err.message);
         URL.revokeObjectURL(video.src);
         reject(err);
       }
     };
 
-    video.onerror = (e) => {
-      clearTimeout(timeout);
-      console.error('extractAudioFromVideo: video error:', e);
+    video.onerror = () => {
       URL.revokeObjectURL(video.src);
       reject(new Error('Failed to load video'));
     };
