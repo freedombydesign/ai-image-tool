@@ -1812,7 +1812,7 @@ footer {
   bottom: 0;
   width: 14px;
   background: linear-gradient(to right, var(--primary), transparent);
-  opacity: 0;
+  opacity: 0.5;
   cursor: grab;
   transition: opacity 0.2s;
   display: flex;
@@ -1824,7 +1824,7 @@ footer {
 }
 
 .timeline-scene:hover .drag-handle {
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .timeline-scene .drag-handle:active {

@@ -4036,8 +4036,7 @@ class VideoEditor {
              style="left: ${leftPercent}%; width: ${widthPercent}%">
           <div class="drag-handle" title="Drag to reposition">⋮⋮</div>
           <img src="${scene.imageUrl}" alt="Scene ${index + 1}"
-               onclick="videoEditor.viewSceneFullscreen(${index})"
-               title="Click to view full size" style="cursor: pointer;">
+               title="Drag to move, click to view full size" style="cursor: grab;">
           <span class="scene-number">${index + 1}</span>
           <span class="scene-duration">${scene.duration.toFixed(1)}s</span>
           <div class="resize-handle" title="Drag to resize"></div>
@@ -4106,13 +4105,24 @@ class VideoEditor {
 
       dragHandle.addEventListener('mousedown', startDrag);
 
-      // Also allow dragging from anywhere on the scene (not just drag handle)
+      // Allow dragging from anywhere on the scene INCLUDING the image
+      // (hold and drag to move, quick click on image still shows fullscreen)
+      let clickStartTime = 0;
       sceneEl.addEventListener('mousedown', (e) => {
-        // Ignore if clicking on resize handle, drag handle, or image
-        if (e.target === resizeHandle || e.target === dragHandle || e.target.tagName === 'IMG') {
+        // Ignore if clicking on resize handle or drag handle (they have their own handlers)
+        if (e.target === resizeHandle || e.target === dragHandle) {
           return;
         }
+        clickStartTime = Date.now();
         startDrag(e);
+      });
+
+      // If it was a quick click (not a drag), show fullscreen
+      sceneEl.addEventListener('mouseup', (e) => {
+        const clickDuration = Date.now() - clickStartTime;
+        if (clickDuration < 200 && e.target.tagName === 'IMG' && !isDragging) {
+          videoEditor.viewSceneFullscreen(sceneIndex);
+        }
       });
 
       // Shared mousemove handler
