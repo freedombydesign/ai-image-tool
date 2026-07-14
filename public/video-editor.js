@@ -7137,27 +7137,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           if (avatarData && avatarData.element) {
             const rect = this.getAvatarOverlayRect(width, height);
 
-            // Calculate aspect-ratio-preserving draw dimensions
-            const videoW = avatarData.element.videoWidth || 1;
-            const videoH = avatarData.element.videoHeight || 1;
-            const videoAspect = videoW / videoH;
-            const rectAspect = rect.width / rect.height;
-
-            let drawW, drawH, drawX, drawY;
-            if (videoAspect > rectAspect) {
-              // Video is wider - fit height, center horizontally
-              drawH = rect.height;
-              drawW = rect.height * videoAspect;
-              drawX = rect.x - (drawW - rect.width) / 2;
-              drawY = rect.y;
-            } else {
-              // Video is taller - fit width, show TOP (face area) not center
-              drawW = rect.width;
-              drawH = rect.width / videoAspect;
-              drawX = rect.x;
-              drawY = rect.y; // Show top of video where face is, not centered
-            }
-
+            // Match preview exactly - simple stretch to fit, no aspect ratio preservation
             ctx.save();
             if (this.avatarShape === 'circle') {
               const centerX = rect.x + rect.width / 2;
@@ -7165,14 +7145,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               const radius = Math.min(rect.width, rect.height) / 2;
               ctx.beginPath();
               ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+              ctx.closePath();
               ctx.clip();
-              ctx.drawImage(avatarData.element, drawX, drawY, drawW, drawH);
+              // Draw same as preview: stretch to fit circle
+              ctx.drawImage(
+                avatarData.element,
+                rect.x + (rect.width - radius * 2) / 2,
+                rect.y + (rect.height - radius * 2) / 2,
+                radius * 2,
+                radius * 2
+              );
             } else {
-              // Clip to rect to prevent overflow
-              ctx.beginPath();
-              ctx.rect(rect.x, rect.y, rect.width, rect.height);
-              ctx.clip();
-              ctx.drawImage(avatarData.element, drawX, drawY, drawW, drawH);
+              // Rectangle - stretch to fit rect (same as preview)
+              ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
             }
             ctx.restore();
           }
