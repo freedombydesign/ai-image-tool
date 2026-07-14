@@ -2650,21 +2650,28 @@ app.post('/api/db/avatar-segments', async (req, res) => {
   }
 
   try {
-    const { userId, segmentNum, videoUrl, fileName } = req.body;
+    const { userId, segmentNum, videoUrl, fileName, audioUrl } = req.body;
 
     if (!userId || segmentNum === undefined || !videoUrl) {
       return res.status(400).json({ error: 'userId, segmentNum, and videoUrl are required' });
     }
 
+    const segmentData = {
+      user_id: userId,
+      segment_num: segmentNum,
+      video_url: videoUrl,
+      file_name: fileName || `segment-${segmentNum}.mp4`,
+      created_at: new Date().toISOString()
+    };
+
+    // Add audio_url if provided (for clean audio persistence)
+    if (audioUrl) {
+      segmentData.audio_url = audioUrl;
+    }
+
     const { data, error } = await supabase
       .from('avatar_segments')
-      .upsert({
-        user_id: userId,
-        segment_num: segmentNum,
-        video_url: videoUrl,
-        file_name: fileName || `segment-${segmentNum}.mp4`,
-        created_at: new Date().toISOString()
-      }, {
+      .upsert(segmentData, {
         onConflict: 'user_id,segment_num'
       })
       .select()
