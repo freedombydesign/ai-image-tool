@@ -3072,11 +3072,26 @@ class VideoEditor {
 
     console.log('Step 1: Assigned proportional times to all', numScenes, 'scenes');
 
-    // === STEP 2: SEMANTIC MATCHING ===
-    // For EACH scene, search ALL segments for the best semantic match
+    // === STEP 2: SEMANTIC MATCHING (IMPROVED) ===
+    // Match scenes to audio using sliding window context (not just single segments)
 
     let refinedCount = 0;
-    const usedSegments = new Set(); // Track used segments to avoid duplicate placements
+
+    // Build sliding window contexts (combine 3-5 segments for better matching)
+    const windowContexts = [];
+    const windowSize = 3; // Number of segments per window
+    for (let i = 0; i < segments.length; i++) {
+      const windowSegs = segments.slice(i, i + windowSize);
+      const combinedText = windowSegs.map(s => s.text).join(' ');
+      const startTime = windowSegs[0]?.start || 0;
+      const endTime = windowSegs[windowSegs.length - 1]?.end || startTime;
+      windowContexts.push({
+        text: combinedText,
+        start: startTime,
+        end: endTime,
+        midpoint: (startTime + endTime) / 2
+      });
+    }
 
     sceneTimings.forEach((timing, sceneIndex) => {
       const scene = this.scenes[sceneIndex];
@@ -3086,29 +3101,28 @@ class VideoEditor {
 
       const expectedTime = timing.startTime;
 
-      // Search ALL segments, but prefer ones closer to expected time
+      // Search ALL window contexts for best match
       let bestMatch = null;
       let bestScore = 0;
 
-      segments.forEach((seg, segIdx) => {
-        if (usedSegments.has(segIdx)) return; // Skip already used segments
+      windowContexts.forEach((ctx) => {
+        const baseScore = semanticSimilarity(sceneText, ctx.text);
 
-        const baseScore = semanticSimilarity(sceneText, seg.text);
-
-        // Bonus for being near expected position (encourages order preservation)
-        const timeDiff = Math.abs(seg.start - expectedTime) / totalDuration;
-        const positionBonus = Math.max(0, 0.3 - timeDiff); // Up to 0.3 bonus for close matches
+        // Smaller position bonus - allow more flexibility in matching
+        const timeDiff = Math.abs(ctx.midpoint - expectedTime) / totalDuration;
+        const positionBonus = Math.max(0, 0.15 - timeDiff * 0.5);
 
         const finalScore = baseScore + positionBonus;
 
-        if (finalScore > bestScore && baseScore >= 0.15) { // Lower threshold for semantic matching
+        // Lower threshold (0.10) to catch more matches
+        if (finalScore > bestScore && baseScore >= 0.10) {
           bestScore = finalScore;
-          bestMatch = { ...seg, idx: segIdx, baseScore };
+          bestMatch = { ...ctx, baseScore };
         }
       });
 
       // Accept matches with reasonable confidence
-      if (bestMatch && bestMatch.baseScore >= 0.15) {
+      if (bestMatch && bestMatch.baseScore >= 0.10) {
         const newStartTime = Math.max(0, bestMatch.start - anticipation);
 
         timing.startTime = newStartTime;
@@ -3116,7 +3130,6 @@ class VideoEditor {
         timing.matched = true;
         timing.method = 'semantic';
         timing.matchedText = bestMatch.text?.substring(0, 50);
-        usedSegments.add(bestMatch.idx);
         refinedCount++;
 
         console.log(`Scene ${sceneIndex + 1} matched: ${expectedTime.toFixed(1)}s → ${newStartTime.toFixed(1)}s (${(bestMatch.baseScore * 100).toFixed(0)}% semantic match)`);
@@ -3125,7 +3138,7 @@ class VideoEditor {
       }
     });
 
-    console.log(`Step 2: Matched ${refinedCount}/${numScenes} scenes using SEMANTIC matching`);
+    console.log(`Step 2: Matched ${refinedCount}/${numScenes} scenes using SEMANTIC matching (sliding window)`);
 
     // === STEP 3: REDISTRIBUTE BETWEEN ANCHORS ===
     // Find anchor points (refined scenes) and redistribute unrefined scenes between them
@@ -3281,6 +3294,48 @@ class VideoEditor {
     console.log('distributeEvenly completed. First 5 scenes:', this.scenes.slice(0, 5).map(s => ({start: s.startTime, dur: s.duration})));
   }
 
+  // Fix any scenes that are too short to be visible
+  fixShortScenes() {
+    if (this.scenes.length === 0) return 0;
+
+    const totalDuration = this.audioDuration || this.getTotalDuration();
+    // Minimum 3 seconds or 0.8% of total duration (whichever is larger)
+    const minDuration = Math.max(3, totalDuration * 0.008);
+
+    let fixedCount = 0;
+
+    // Sort scenes by startTime to process in order
+    const sortedScenes = [...this.scenes].sort((a, b) => a.startTime - b.startTime);
+
+    for (let i = 0; i < sortedScenes.length; i++) {
+      const scene = sortedScenes[i];
+
+      if (scene.duration < minDuration) {
+        // Calculate max possible duration (until next scene or end)
+        const nextScene = sortedScenes[i + 1];
+        const maxEnd = nextScene ? nextScene.startTime : totalDuration;
+        const availableSpace = maxEnd - scene.startTime;
+
+        // Expand to minimum duration or available space
+        const newDuration = Math.min(minDuration, Math.max(scene.duration, availableSpace));
+
+        if (newDuration > scene.duration) {
+          console.log(`Fixing scene ${this.scenes.indexOf(scene) + 1}: ${scene.duration.toFixed(1)}s → ${newDuration.toFixed(1)}s`);
+          scene.duration = newDuration;
+          fixedCount++;
+        }
+      }
+    }
+
+    if (fixedCount > 0) {
+      console.log(`Fixed ${fixedCount} short scenes (min duration: ${minDuration.toFixed(1)}s)`);
+      this.renderTimeline();
+      this.saveScenesToSupabase();
+    }
+
+    return fixedCount;
+  }
+
   // ===== EXPANDED TIMELINE EDITOR =====
 
   openExpandedTimeline() {
@@ -3291,6 +3346,12 @@ class VideoEditor {
 
     const modal = document.getElementById('expanded-timeline-modal');
     if (!modal) return;
+
+    // Auto-fix any scenes that are too short to be visible
+    const fixedCount = this.fixShortScenes();
+    if (fixedCount > 0) {
+      showToast(`Fixed ${fixedCount} scenes that were too short to display`, 'success');
+    }
 
     modal.style.display = 'flex';
     this.renderExpandedTimeline();
