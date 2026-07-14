@@ -2156,34 +2156,26 @@ Return ONLY the JSON array.`;
       });
     }
 
-    // Second pass: FORCE strictly sequential - each scene starts where previous ends
-    // Sort by sceneIndex to maintain order
-    validatedTimings.sort((a, b) => a.sceneIndex - b.sceneIndex);
+    // Second pass: Keep AI's startTime (when words are spoken), but extend duration to fill gaps
+    // Sort by startTime so scenes are in chronological order
+    validatedTimings.sort((a, b) => a.startTime - b.startTime);
 
-    let currentTime = 0;
+    // Each scene's duration extends until the NEXT scene starts (fills gaps naturally)
     for (let i = 0; i < validatedTimings.length; i++) {
       const timing = validatedTimings[i];
 
-      // FORCE: Each scene starts exactly where the previous ended
-      timing.startTime = currentTime;
-
-      // Use AI's suggested duration, but ensure minimum
-      timing.duration = Math.max(minDuration, timing.duration);
-
-      // Don't exceed remaining time
-      const remainingTime = totalDuration - currentTime;
-      const remainingScenes = validatedTimings.length - i;
-      const maxDuration = remainingTime - (remainingScenes - 1) * minDuration;
-      timing.duration = Math.min(timing.duration, maxDuration);
-
-      currentTime += timing.duration;
+      if (i < validatedTimings.length - 1) {
+        // Duration extends until next scene starts
+        const nextStart = validatedTimings[i + 1].startTime;
+        timing.duration = Math.max(minDuration, nextStart - timing.startTime);
+      } else {
+        // Last scene extends to end of audio
+        timing.duration = Math.max(minDuration, totalDuration - timing.startTime);
+      }
     }
 
-    // Ensure last scene reaches exactly the end
-    const lastTiming = validatedTimings[validatedTimings.length - 1];
-    if (lastTiming) {
-      lastTiming.duration = totalDuration - lastTiming.startTime;
-    }
+    // Re-sort by sceneIndex for consistent output
+    validatedTimings.sort((a, b) => a.sceneIndex - b.sceneIndex);
 
     // Log to verify order
     console.log('Scene order check:', validatedTimings.slice(0, 5).map(t =>
