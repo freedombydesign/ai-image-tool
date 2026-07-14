@@ -8391,6 +8391,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }
       }, 5000);
 
+      // Second fallback - accept metadata only after longer timeout
+      // Some videos load metadata but take forever to buffer
+      setTimeout(() => {
+        if (!resolved && video.readyState >= 1) {
+          resolved = true;
+          console.log('Video loaded (metadata-only fallback):', url.substring(0, 50), 'readyState:', video.readyState);
+          resolve(video);
+        }
+      }, 15000);
+
       video.src = url;
       video.load();
     });
