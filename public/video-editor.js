@@ -310,95 +310,108 @@ class VideoEditor {
     }
   }
 
-  // Load audio for avatar segments (from saved URLs only - extraction from Replicate videos blocked by CORS)
+  // Load audio for avatar segments - auto-repairs missing audio_url by splitting TTS audio
   async extractAudioFromAvatarSegments(segments) {
     if (!segments || segments.length === 0) return;
 
     console.log(`Loading audio for ${segments.length} avatar segments...`);
-    console.log('Segments data:', segments.map(s => ({ num: s.segment_num, hasVideoUrl: !!s.video_url, hasAudioUrl: !!s.audio_url })));
     let loaded = 0;
+    let needsRepair = [];
 
+    // First pass: load segments that have audio_url
     for (const seg of segments) {
-      console.log(`  Checking segment ${seg.segment_num}: video_url=${seg.video_url ? 'YES' : 'NO'}, audio_url=${seg.audio_url ? 'YES' : 'NO'}`);
-
-      // If we have a saved audio URL, use it directly (no extraction needed!)
       if (seg.audio_url) {
         try {
-          console.log(`  Segment ${seg.segment_num} has saved audio URL, fetching directly...`);
           const response = await fetch(seg.audio_url);
           if (response.ok) {
             const audioBlob = await response.blob();
             this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
             loaded++;
-            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from saved URL (${(audioBlob.size / 1024).toFixed(0)}KB)`);
+            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from saved URL`);
             continue;
           }
         } catch (e) {
-          console.warn(`  Failed to fetch saved audio for segment ${seg.segment_num}, will try extraction:`, e.message);
+          console.warn(`  Failed to fetch audio for segment ${seg.segment_num}:`, e.message);
         }
       }
+      // Track segments that need repair
+      needsRepair.push(seg);
+    }
 
-      // Fallback: extract audio from video (slow, may fail)
-      if (seg.video_url) {
-        try {
-          console.log(`  Segment ${seg.segment_num} needs audio extraction from video...`);
+    // Auto-repair: if segments are missing audio_url AND we have TTS audio, split and upload
+    if (needsRepair.length > 0 && this.audioBlob) {
+      console.log(`🔧 Auto-repairing ${needsRepair.length} segments missing audio_url...`);
 
-          // Fetch with timeout to avoid hanging
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        // Split TTS audio into segments
+        const audioSegments = await this.splitAudioForAvatar();
+        console.log(`Split TTS audio into ${audioSegments.length} segments`);
 
-          const response = await fetch(seg.video_url, { signal: controller.signal });
-          clearTimeout(timeoutId);
+        const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
+        const config = window.supabaseConfig;
 
-          if (!response.ok) {
-            console.warn(`✗ Segment ${seg.segment_num} fetch failed: HTTP ${response.status}`);
-            continue;
-          }
+        for (const seg of needsRepair) {
+          const segmentIndex = seg.segment_num - 1;
+          if (segmentIndex >= 0 && segmentIndex < audioSegments.length) {
+            const audioSeg = audioSegments[segmentIndex];
 
-          const blob = await response.blob();
-          console.log(`  Segment ${seg.segment_num} blob size: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+            // Store in memory immediately
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null };
+            loaded++;
+            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split`);
 
-          // Use FFmpeg if available, fallback to Web Audio API
-          let audioBlob;
-          if (this.ffmpeg && this.ffmpegLoaded) {
-            try {
-              const inputName = `segment${seg.segment_num}.mp4`;
-              const outputName = `audio${seg.segment_num}.mp3`;
+            // Upload to Supabase if available
+            if (userId && config) {
+              try {
+                const audioPath = `audio/avatar-segment-${seg.segment_num}-${Date.now()}.wav`;
+                const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
 
-              const uint8Array = new Uint8Array(await blob.arrayBuffer());
-              await this.ffmpeg.writeFile(inputName, uint8Array);
-              await this.ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame', '-q:a', '2', outputName]);
-              const data = await this.ffmpeg.readFile(outputName);
-              audioBlob = new Blob([data.buffer], { type: 'audio/mp3' });
-              await this.ffmpeg.deleteFile(inputName);
-              await this.ffmpeg.deleteFile(outputName);
-              console.log(`  Segment ${seg.segment_num} audio extracted via FFmpeg: ${(audioBlob.size / 1024).toFixed(0)}KB`);
-            } catch (ffmpegErr) {
-              console.warn(`  FFmpeg extraction failed for segment ${seg.segment_num}:`, ffmpegErr.message);
-              // Skip Web Audio fallback since it doesn't work for video files
-              continue;
+                const uploadResponse = await fetch(audioUploadUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${config.anonKey}`,
+                    'apikey': config.anonKey,
+                    'Content-Type': 'audio/wav',
+                    'x-upsert': 'true'
+                  },
+                  body: audioSeg.blob
+                });
+
+                if (uploadResponse.ok) {
+                  const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+
+                  // Update database with audio_url
+                  await fetch('/api/db/avatar-segments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId,
+                      segmentNum: seg.segment_num,
+                      videoUrl: seg.video_url,
+                      fileName: seg.file_name,
+                      audioUrl: audioPublicUrl
+                    })
+                  });
+
+                  this.replacedAudioSegments[seg.segment_num].url = audioPublicUrl;
+                  console.log(`✓ Saved audio_url for segment ${seg.segment_num} to database`);
+                }
+              } catch (uploadErr) {
+                console.warn(`  Failed to upload audio for segment ${seg.segment_num}:`, uploadErr.message);
+              }
             }
-          } else {
-            console.log(`  FFmpeg not loaded, skipping extraction for segment ${seg.segment_num}`);
-            continue;
-          }
-
-          this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.video_url };
-          loaded++;
-          console.log(`✓ Extracted audio from segment ${seg.segment_num}`);
-        } catch (e) {
-          if (e.name === 'AbortError') {
-            console.warn(`✗ Segment ${seg.segment_num} fetch timed out`);
-          } else {
-            console.warn(`✗ Failed to extract audio from segment ${seg.segment_num}:`, e.message);
           }
         }
+      } catch (splitErr) {
+        console.error('Failed to split TTS audio for repair:', splitErr);
       }
     }
 
     if (loaded > 0) {
       this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
       console.log(`✓ Loaded audio for ${loaded}/${segments.length} avatar segments. Clean audio ready!`);
+    } else {
+      console.log('No audio loaded - will use original TTS audio for export');
     }
   }
 
