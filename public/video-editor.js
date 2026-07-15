@@ -301,7 +301,11 @@ class VideoEditor {
           // Update the UI slots if they exist
           this.updateAvatarSegmentSlots();
 
+          // Store segments globally so we can repair them after audio loads
+          window.loadedAvatarSegments = data.segments;
+
           // Auto-extract audio from avatar segments for clean audio playback
+          // (will retry after audio loads if audioBlob not ready yet)
           this.extractAudioFromAvatarSegments(data.segments);
         }
       }
@@ -1932,6 +1936,15 @@ class VideoEditor {
         this.updateTotalDuration();
 
         console.log('Audio decoded:', this.audioDuration, 'seconds');
+
+        // Now that audio is loaded, repair any avatar segments missing audio_url
+        if (window.loadedAvatarSegments && window.loadedAvatarSegments.length > 0) {
+          const needsRepair = window.loadedAvatarSegments.filter(s => !s.audio_url);
+          if (needsRepair.length > 0) {
+            console.log(`Audio loaded - triggering repair for ${needsRepair.length} segments...`);
+            this.extractAudioFromAvatarSegments(window.loadedAvatarSegments);
+          }
+        }
       } catch (decodeError) {
         console.warn('Waveform decode failed, using player duration:', decodeError);
         // Still show the player, just without waveform
