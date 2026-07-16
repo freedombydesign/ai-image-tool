@@ -2750,13 +2750,21 @@ class VideoEditor {
 
   // Compress WAV to WebM/Opus using MediaRecorder (for large files)
   async compressAudioToWebM(wavBlob) {
-    console.log('Compressing audio from WAV to WebM...');
     const startTime = Date.now();
 
     // Decode WAV to AudioBuffer
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Resume context if suspended (browser autoplay policy)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
     const arrayBuffer = await wavBlob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const durationSec = audioBuffer.duration;
+    console.log(`Compressing ${durationSec.toFixed(1)}s audio from WAV to WebM (this takes real-time)...`);
 
     // Create a MediaStreamDestination to capture audio
     const dest = audioContext.createMediaStreamDestination();
@@ -2782,7 +2790,11 @@ class VideoEditor {
     };
 
     return new Promise((resolve, reject) => {
+      let stopped = false;
+
       mediaRecorder.onstop = () => {
+        if (stopped) return; // Prevent double-trigger
+        stopped = true;
         const webmBlob = new Blob(chunks, { type: mimeType });
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         console.log(`Compression complete in ${elapsed}s: ${(wavBlob.size / 1024 / 1024).toFixed(1)}MB -> ${(webmBlob.size / 1024 / 1024).toFixed(1)}MB`);
@@ -2796,19 +2808,22 @@ class VideoEditor {
       };
 
       // Start recording and play the audio
-      mediaRecorder.start();
+      mediaRecorder.start(1000); // Request data every 1 second
       source.start(0);
 
-      // Stop recording when audio ends
-      source.onended = () => {
-        mediaRecorder.stop();
-      };
+      // Progress logging
+      let progressInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const percent = Math.min(100, (elapsed / durationSec) * 100).toFixed(0);
+        console.log(`Compression progress: ${percent}% (${elapsed.toFixed(0)}s / ${durationSec.toFixed(0)}s)`);
+      }, 5000); // Log every 5 seconds
 
-      // Fallback timeout (audio duration + 2 seconds buffer)
-      const timeout = (audioBuffer.duration + 2) * 1000;
+      // Use precise timeout based on audio duration (more reliable than onended)
+      const timeout = (durationSec + 0.5) * 1000; // Small buffer
       setTimeout(() => {
+        clearInterval(progressInterval);
         if (mediaRecorder.state === 'recording') {
-          console.warn('Compression timeout, stopping recorder');
+          console.log('Audio playback complete, finalizing...');
           mediaRecorder.stop();
         }
       }, timeout);
