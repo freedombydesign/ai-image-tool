@@ -1123,97 +1123,16 @@ class VideoEditor {
   }
 
   async initFFmpeg() {
-    // Check SharedArrayBuffer availability (required for FFmpeg multi-threading)
-    const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
-    console.log('SharedArrayBuffer available:', hasSharedArrayBuffer);
-
-    // Use single-threaded core if SharedArrayBuffer not available
-    // Single-threaded works everywhere without special headers, just slower
-    const cdnOptions = hasSharedArrayBuffer
-      ? ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js']
-      : ['https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.12.6/dist/umd/ffmpeg-core.js'];
-
-    console.log('Using FFmpeg core:', hasSharedArrayBuffer ? 'multi-threaded' : 'single-threaded (no special headers needed)');
-
-    // Check for FFmpeg library - it may be exposed as FFmpegWASM or FFmpeg
-    const FFmpegLib = window.FFmpegWASM || window.FFmpeg;
-    console.log('FFmpegLib check:', { FFmpegWASM: !!window.FFmpegWASM, FFmpeg: !!window.FFmpeg });
-    if (!FFmpegLib) {
-      console.error('FFmpeg library not loaded - script may not have loaded');
-      // Try loading the script dynamically
-      await this.loadFFmpegScript();
-      return;
-    }
-
-    for (const coreURL of cdnOptions) {
-      try {
-        console.log('Trying FFmpeg from:', coreURL);
-        const FFmpegClass = FFmpegLib.FFmpeg || FFmpegLib;
-        this.ffmpeg = new FFmpegClass();
-
-        this.ffmpeg.on('progress', ({ progress }) => {
-          const percent = Math.round(progress * 100);
-          if (this.exportProgressBar) {
-            this.exportProgressBar.style.width = `${percent}%`;
-          }
-          if (this.exportStatus) {
-            this.exportStatus.textContent = `Encoding: ${percent}%`;
-          }
-        });
-
-        await this.ffmpeg.load({ coreURL });
-
-        this.ffmpegLoaded = true;
-        console.log('FFmpeg loaded successfully from:', coreURL);
-        return; // Success - exit loop
-      } catch (error) {
-        console.error('Failed to load FFmpeg from', coreURL, error);
-      }
-    }
-
-    // All CDNs failed - show error
-    console.error('All FFmpeg CDNs failed');
-    showToast('Video export unavailable. Will export as image slideshow instead.');
+    // FFmpeg WASM disabled - browser security blocks dynamic worker loading
+    // Using pure JS WebM duration fix instead for video export
+    console.log('FFmpeg disabled - using pure JS WebM fix for exports');
+    this.ffmpegLoaded = false;
   }
 
-  // Dynamically load FFmpeg script if not already loaded
+  // Legacy function - no longer used
   async loadFFmpegScript() {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js';
-      script.crossOrigin = 'anonymous';
-      script.onload = async () => {
-        console.log('FFmpeg script loaded dynamically');
-        // Wait a moment for the library to initialize
-        await new Promise(r => setTimeout(r, 500));
-        // Try init again
-        const FFmpegLib = window.FFmpegWASM || window.FFmpeg;
-        if (FFmpegLib) {
-          try {
-            const FFmpegClass = FFmpegLib.FFmpeg || FFmpegLib;
-            this.ffmpeg = new FFmpegClass();
-            this.ffmpeg.on('progress', ({ progress }) => {
-              const percent = Math.round(progress * 100);
-              if (this.exportProgressBar) this.exportProgressBar.style.width = `${percent}%`;
-              if (this.exportStatus) this.exportStatus.textContent = `Encoding: ${percent}%`;
-            });
-            await this.ffmpeg.load({
-              coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js'
-            });
-            this.ffmpegLoaded = true;
-            console.log('FFmpeg loaded after dynamic script load');
-            resolve();
-          } catch (e) {
-            console.error('FFmpeg init failed after dynamic load:', e);
-            reject(e);
-          }
-        } else {
-          reject(new Error('FFmpeg still not available'));
-        }
-      };
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
+    console.log('FFmpeg script loading skipped - not supported in browser');
+    return Promise.resolve();
   }
 
   // Import scenes from batch generator
