@@ -7826,17 +7826,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         audioElement = null; // Force elapsed time calculation
       }
 
-      // Start all avatar videos (paused, we'll sync them)
-      // Seek each avatar to its local position within the segment
-      for (const av of avatarVideoElements) {
+      // Pre-seek all avatar videos and WAIT for seeks to complete
+      // This is critical for lip sync - videos must be ready at exact positions
+      this.exportStatus.textContent = 'Syncing avatar videos...';
+      const seekPromises = avatarVideoElements.map(av => {
         if (av && av.element) {
-          // Calculate local time within this avatar segment
           const localTime = Math.max(0, startTime - av.startTime);
-          av.element.currentTime = localTime;
-          av.element.pause();
-          console.log(`Avatar segment ${av.segmentIndex}: seeking to local time ${localTime.toFixed(1)}s`);
+          return new Promise(resolve => {
+            // Wait for seek to complete
+            const onSeeked = () => {
+              av.element.removeEventListener('seeked', onSeeked);
+              console.log(`Avatar segment ${av.segmentIndex}: ready at ${localTime.toFixed(2)}s`);
+              resolve();
+            };
+            av.element.addEventListener('seeked', onSeeked);
+            av.element.currentTime = localTime;
+            av.element.pause();
+            // Timeout fallback
+            setTimeout(() => {
+              av.element.removeEventListener('seeked', onSeeked);
+              resolve();
+            }, 2000);
+          });
         }
-      }
+        return Promise.resolve();
+      });
+      await Promise.all(seekPromises);
+      console.log('All avatar videos pre-seeked and ready');
 
       // Render frames synced to real time (driven by audio)
       this.exportStatus.textContent = 'Recording video...';
@@ -7988,8 +8004,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // Start new avatar at correct position
             const localTime = currentTime - avatarData.startTime;
             avatarData.element.currentTime = localTime;
+            // Set playback rate to catch up if we're behind (helps with sync)
+            avatarData.element.playbackRate = 1.0;
             avatarData.element.play().catch(() => {});
             lastActiveAvatar = avatarData;
+            console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s`);
           } else if (!avatarData && lastActiveAvatar) {
             // No avatar for this time, pause current
             lastActiveAvatar.element.pause();
@@ -7997,19 +8016,35 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           }
 
           if (avatarData && avatarData.element) {
-            // Continuously check for drift and resync if needed
+            // TIGHT sync: continuously sync avatar video to audio timeline
+            // This is critical for lip sync - we force the video to match audio time
             const expectedLocalTime = currentTime - avatarData.startTime;
             const actualVideoTime = avatarData.element.currentTime;
-            const drift = Math.abs(actualVideoTime - expectedLocalTime);
+            const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
+            const absDrift = Math.abs(drift);
             const now = performance.now();
 
-            // If drift > 0.25 seconds, resync (allows some tolerance for natural playback)
-            // Add 500ms cooldown after resync to prevent feedback loop
-            const cooldownElapsed = now - lastAvatarResyncTime > 500;
-            if (drift > 0.25 && !avatarData.element.seeking && cooldownElapsed) {
-              console.log(`Avatar drift detected: ${drift.toFixed(3)}s, resyncing`);
-              avatarData.element.currentTime = expectedLocalTime;
+            // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
+            // Add 200ms cooldown after resync to prevent feedback loop
+            const cooldownElapsed = now - lastAvatarResyncTime > 200;
+
+            if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
+              if (absDrift > 0.3) {
+                // Large drift - hard resync by seeking
+                console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+                avatarData.element.currentTime = expectedLocalTime;
+                avatarData.element.playbackRate = 1.0;
+              } else if (drift < 0) {
+                // Video is behind audio - speed up slightly to catch up
+                avatarData.element.playbackRate = 1.05;
+              } else {
+                // Video is ahead of audio - slow down slightly
+                avatarData.element.playbackRate = 0.95;
+              }
               lastAvatarResyncTime = now;
+            } else if (absDrift <= 0.05 && avatarData.element.playbackRate !== 1.0) {
+              // Drift is minimal - return to normal speed
+              avatarData.element.playbackRate = 1.0;
             }
 
             const rect = this.getAvatarOverlayRect(width, height);
