@@ -156,7 +156,8 @@ class VideoEditor {
           audioFileName: this.audioFileName || localStorage.getItem('saved_audio_name') || null,
           scenes: this.scenes.map((scene, index) => ({
             imageUrl: scene.imageUrl,
-            text: scene.text || scene.caption || '',
+            text: scene.text || '',
+            caption: scene.caption || '',  // Save caption separately (transcription from Whisper)
             visualDescription: scene.visualDescription || '',
             duration: scene.duration,
             startTime: scene.startTime,
@@ -205,7 +206,7 @@ class VideoEditor {
             id: `scene-${Date.now()}-${index}`,
             imageUrl: scene.imageUrl || scene.image_url,
             text: scene.text || '',
-            caption: scene.text || '',
+            caption: scene.caption || scene.text || '',  // Prefer saved caption (transcription), fall back to text
             duration: scene.duration || 6,
             startTime: scene.startTime || scene.start_time || 0
           }));
@@ -253,7 +254,7 @@ class VideoEditor {
               id: `scene-${Date.now()}-${index}`,
               imageUrl: scene.imageUrl || scene.image_url,
               text: scene.text || '',
-              caption: scene.text || '',
+              caption: scene.caption || scene.text || '',  // Prefer saved caption (transcription), fall back to text
               duration: scene.duration || 6,
               startTime: scene.startTime || scene.start_time || 0
             }));

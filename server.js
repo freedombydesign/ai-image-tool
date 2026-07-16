@@ -2824,16 +2824,31 @@ app.post('/api/db/batch-scenes', async (req, res) => {
       return res.status(400).json({ error: 'userId, batchId, and scenes array required' });
     }
 
-    // Prepare scene records (store audioUrl in first scene's style field as JSON for retrieval)
-    const sceneRecords = scenes.map((scene, index) => ({
-      user_id: userId,
-      batch_id: batchId,
-      scene_index: index,
-      image_url: scene.imageUrl,
-      prompt: scene.text || scene.prompt || '',
-      style: index === 0 && audioUrl ? JSON.stringify({ audioUrl, audioFileName, originalStyle: scene.style || '' }) : (scene.style || ''),
-      model: scene.model || 'unknown'
-    }));
+    // Prepare scene records - store extra data (caption, duration, startTime) in style field as JSON
+    const sceneRecords = scenes.map((scene, index) => {
+      // Build style JSON with all extra fields
+      const styleData = {
+        caption: scene.caption || '',
+        duration: scene.duration || 6,
+        startTime: scene.startTime || 0,
+        visualDescription: scene.visualDescription || '',
+        originalStyle: scene.style || ''
+      };
+      // First scene also gets audio info
+      if (index === 0 && audioUrl) {
+        styleData.audioUrl = audioUrl;
+        styleData.audioFileName = audioFileName;
+      }
+      return {
+        user_id: userId,
+        batch_id: batchId,
+        scene_index: index,
+        image_url: scene.imageUrl,
+        prompt: scene.text || scene.prompt || '',
+        style: JSON.stringify(styleData),
+        model: scene.model || 'unknown'
+      };
+    });
 
     // Insert all scenes
     const { data, error } = await supabase
@@ -2868,7 +2883,7 @@ app.get('/api/db/batch-scenes/:userId', async (req, res) => {
 
     if (error) throw error;
 
-    // Group by batch_id
+    // Group by batch_id and parse style JSON for extra fields
     const batches = {};
     (data || []).forEach(scene => {
       if (!batches[scene.batch_id]) {
@@ -2878,11 +2893,36 @@ app.get('/api/db/batch-scenes/:userId', async (req, res) => {
           scenes: []
         };
       }
+
+      // Parse style JSON for caption, duration, etc.
+      let caption = '';
+      let duration = 6;
+      let startTime = 0;
+      let visualDescription = '';
+      let originalStyle = scene.style || '';
+
+      if (scene.style) {
+        try {
+          const styleData = JSON.parse(scene.style);
+          caption = styleData.caption || '';
+          duration = styleData.duration || 6;
+          startTime = styleData.startTime || 0;
+          visualDescription = styleData.visualDescription || '';
+          originalStyle = styleData.originalStyle || '';
+        } catch (e) {
+          // Not JSON, use raw style
+        }
+      }
+
       batches[scene.batch_id].scenes.push({
         index: scene.scene_index,
         imageUrl: scene.image_url,
         text: scene.prompt,
-        style: scene.style,
+        caption: caption,
+        duration: duration,
+        startTime: startTime,
+        visualDescription: visualDescription,
+        style: originalStyle,
         model: scene.model
       });
     });
@@ -2917,30 +2957,49 @@ app.get('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
 
     if (error) throw error;
 
-    // Extract audioUrl from first scene's style field if it's JSON
+    // Extract extra fields from style JSON for each scene
     let audioUrl = null;
     let audioFileName = null;
-    if (data && data.length > 0 && data[0].style) {
-      try {
-        const styleData = JSON.parse(data[0].style);
-        if (styleData.audioUrl) {
-          audioUrl = styleData.audioUrl;
-          audioFileName = styleData.audioFileName;
-          // Restore original style
-          data[0].style = styleData.originalStyle || '';
-        }
-      } catch (e) {
-        // Not JSON, that's fine - just regular style
-      }
-    }
 
-    const scenes = (data || []).map(scene => ({
-      index: scene.scene_index,
-      imageUrl: scene.image_url,
-      text: scene.prompt,
-      style: scene.style,
-      model: scene.model
-    }));
+    const scenes = (data || []).map((scene, index) => {
+      let caption = '';
+      let duration = 6;
+      let startTime = 0;
+      let visualDescription = '';
+      let originalStyle = scene.style || '';
+
+      // Try to parse style as JSON to extract extra fields
+      if (scene.style) {
+        try {
+          const styleData = JSON.parse(scene.style);
+          caption = styleData.caption || '';
+          duration = styleData.duration || 6;
+          startTime = styleData.startTime || 0;
+          visualDescription = styleData.visualDescription || '';
+          originalStyle = styleData.originalStyle || '';
+
+          // First scene may have audio info
+          if (index === 0 && styleData.audioUrl) {
+            audioUrl = styleData.audioUrl;
+            audioFileName = styleData.audioFileName;
+          }
+        } catch (e) {
+          // Not JSON, that's fine - use raw style
+        }
+      }
+
+      return {
+        index: scene.scene_index,
+        imageUrl: scene.image_url,
+        text: scene.prompt,
+        caption: caption,  // Transcribed caption from Whisper
+        duration: duration,
+        startTime: startTime,
+        visualDescription: visualDescription,
+        style: originalStyle,
+        model: scene.model
+      };
+    });
 
     res.json({ success: true, scenes, audioUrl, audioFileName });
   } catch (error) {
