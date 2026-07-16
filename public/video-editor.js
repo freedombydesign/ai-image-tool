@@ -3284,25 +3284,45 @@ class VideoEditor {
       let audioToSync = this.audioBlob;
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
 
-      if (hasReplacements) {
+      // Generate LOGICAL cache key based on project state (not audio bytes which vary)
+      // This ensures caption cache and sync cache match
+      const replacementKeys = Object.keys(this.replacedAudioSegments || {}).sort().join(',');
+      const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
+      const logicalCacheKey = `stitched_transcription_${baseAudioKey}_replacements_${replacementKeys}`;
+
+      console.log('Logical cache key:', logicalCacheKey);
+
+      let result = null;
+
+      // Check logical cache FIRST (before any audio processing)
+      const cachedLogical = localStorage.getItem(logicalCacheKey);
+      if (cachedLogical) {
+        try {
+          result = JSON.parse(cachedLogical);
+          console.log('✓ INSTANT: Using logical cache (no stitch/compress needed!)', result.segments?.length, 'segments');
+          showToast('Using cached transcription - instant!', 'success');
+        } catch (e) {
+          console.log('Logical cache invalid');
+        }
+      }
+
+      // Only stitch audio if we need to (no cache hit)
+      if (!result && hasReplacements) {
         console.log('Found replaced audio segments - using STITCHED audio for sync (matches export/captions)');
         if (this.syncToAudioBtn) this.syncToAudioBtn.textContent = '⏳ Building stitched audio...';
         audioToSync = await this.stitchAudioForExport();
         console.log('Stitched audio ready for sync:', audioToSync?.size, 'bytes');
       }
 
-      console.log('Step 2: Audio blob:', audioToSync?.type, audioToSync?.size);
+      // Also check old-style hash caches as fallback
+      if (!result) {
+        console.log('Step 2: Audio blob:', audioToSync?.type, audioToSync?.size);
+        const audioHash = await this.generateAudioHash(audioToSync);
+        const transcriptionCacheKey = `transcription_${audioHash}`;
+        const captionCacheKey = `captions_${audioHash}`;
 
-      // CRITICAL: Generate hash BEFORE any compression (so it matches caption cache)
-      const audioHash = await this.generateAudioHash(audioToSync);
-      const transcriptionCacheKey = `transcription_${audioHash}`;
-      const captionCacheKey = `captions_${audioHash}`;
-      let result = null;
-
-      // Check BOTH transcription cache AND caption cache
-      // Captions use the same Whisper transcription, so we can reuse it!
-      const cachedTranscription = localStorage.getItem(transcriptionCacheKey);
-      const cachedCaptions = localStorage.getItem(captionCacheKey);
+        const cachedTranscription = localStorage.getItem(transcriptionCacheKey);
+        const cachedCaptions = localStorage.getItem(captionCacheKey);
 
       if (cachedTranscription) {
         try {
@@ -3441,10 +3461,14 @@ class VideoEditor {
           throw new Error(result.error || 'Transcription failed');
         }
 
-        // Cache the result for future syncs (use ORIGINAL hash, not post-compression)
-        localStorage.setItem(transcriptionCacheKey, JSON.stringify(result));
-        console.log('Transcription cached for future use');
-      }
+        // Cache the result for future syncs
+        const resultJson = JSON.stringify(result);
+        localStorage.setItem(transcriptionCacheKey, resultJson);
+        // ALSO save to logical cache key for instant future lookups
+        localStorage.setItem(logicalCacheKey, resultJson);
+        console.log('Transcription cached (both hash and logical keys)');
+      } // end if (!result) - upload/transcribe
+      } // end if (!result) - fallback hash cache check
 
       console.log('Step 8: Transcription received:', result.segments?.length, 'segments');
 
@@ -5481,7 +5505,32 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
       let baseAudio = this.audioBlob;
 
-      if (hasReplacements) {
+      // Generate LOGICAL cache key (same as syncToAudio uses)
+      const replacementKeys = Object.keys(this.replacedAudioSegments || {}).sort().join(',');
+      const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
+      const logicalCacheKey = hasReplacements && !isTestMode
+        ? `stitched_transcription_${baseAudioKey}_replacements_${replacementKeys}`
+        : null;
+
+      // Check logical cache FIRST (before any audio processing) - only for full audio with replacements
+      let result = null;
+      if (logicalCacheKey && !forceRefresh) {
+        const cachedLogical = localStorage.getItem(logicalCacheKey);
+        if (cachedLogical) {
+          try {
+            result = JSON.parse(cachedLogical);
+            console.log('✓ INSTANT: Using logical cache for captions!', result.segments?.length, 'segments');
+            showToast('Using cached transcription - instant!', 'success');
+            // Skip audio processing, go straight to caption application below
+          } catch (e) {
+            console.log('Logical cache invalid');
+            result = null;
+          }
+        }
+      }
+
+      // Only do audio processing if no cache hit
+      if (!result && hasReplacements) {
         if (activeBtn) activeBtn.innerHTML = '⏳ Building stitched audio...';
         console.log('Generating captions from STITCHED audio (has replaced segments)');
         baseAudio = await this.stitchAudioForExport();
@@ -5499,26 +5548,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }
       }
 
-      // Check cache first to avoid API costs (unless forceRefresh)
-      const audioHash = await this.generateAudioHash(audioToTranscribe);
-      const cacheKey = `captions_${audioHash}`;
-      const cached = forceRefresh ? null : localStorage.getItem(cacheKey);
+      // Only proceed with audio processing if we don't have a cached result
+      if (!result) {
+        // Check hash-based cache to avoid API costs (unless forceRefresh)
+        const audioHash = await this.generateAudioHash(audioToTranscribe);
+        const cacheKey = `captions_${audioHash}`;
+        const cached = forceRefresh ? null : localStorage.getItem(cacheKey);
 
-      let result = null;
-
-      if (forceRefresh) {
-        console.log('Force refresh: bypassing caption cache');
-        localStorage.removeItem(cacheKey); // Clear old cache entry
-      } else if (cached) {
-        try {
-          result = JSON.parse(cached);
-          console.log('Caption transcription loaded from cache (FREE!)');
-          showToast('Using cached transcription (no API cost)', false);
-        } catch (e) {
-          console.log('Cache invalid, will call API');
-          localStorage.removeItem(cacheKey);
+        if (forceRefresh) {
+          console.log('Force refresh: bypassing caption cache');
+          localStorage.removeItem(cacheKey); // Clear old cache entry
+        } else if (cached) {
+          try {
+            result = JSON.parse(cached);
+            console.log('Caption transcription loaded from hash cache (FREE!)');
+            showToast('Using cached transcription (no API cost)', false);
+          } catch (e) {
+            console.log('Cache invalid, will call API');
+            localStorage.removeItem(cacheKey);
+          }
         }
-      }
 
       // Only call API if not cached
       if (!result) {
@@ -5544,8 +5593,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Cache the result
           try {
-            localStorage.setItem(cacheKey, JSON.stringify(result));
-            console.log('Caption transcription cached for future use');
+            const resultJson = JSON.stringify(result);
+            localStorage.setItem(cacheKey, resultJson);
+            // Also save to logical cache key
+            if (logicalCacheKey) {
+              localStorage.setItem(logicalCacheKey, resultJson);
+              console.log('Caption transcription cached (both hash and logical keys)');
+            } else {
+              console.log('Caption transcription cached for future use');
+            }
           } catch (e) {
             console.warn('Could not cache transcription:', e);
           }
@@ -5661,13 +5717,21 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Cache the result to avoid future API costs
           try {
-            localStorage.setItem(cacheKey, JSON.stringify(result));
-            console.log('Caption transcription cached for future use');
+            const resultJson = JSON.stringify(result);
+            localStorage.setItem(cacheKey, resultJson);
+            // Also save to logical cache key for instant future lookups
+            if (logicalCacheKey) {
+              localStorage.setItem(logicalCacheKey, resultJson);
+              console.log('Caption transcription cached (both hash and logical keys)');
+            } else {
+              console.log('Caption transcription cached for future use');
+            }
           } catch (e) {
             console.log('Could not cache transcription');
           }
         } // end else (upload path)
-      } // end if (!result)
+      } // end inner if (!result) - API call
+      } // end outer if (!result) - audio processing
 
       console.log('Transcription for captions:', result);
       console.log('Word-level timestamps available:', result.words?.length || 0);
