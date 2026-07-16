@@ -7428,20 +7428,45 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           audioElement.muted = false;
           audioElement.preload = 'auto';
 
-          // Wait for stitched audio to load
+          // Wait for stitched audio to FULLY buffer (not just metadata)
           await Promise.race([
             new Promise(resolve => {
-              audioElement.oncanplaythrough = () => resolve(true);
+              let metadataLoaded = false;
+              let resolved = false;
+
               audioElement.onloadedmetadata = () => {
-                console.log('Stitched audio loaded, duration:', audioElement.duration);
-                resolve(true);
+                metadataLoaded = true;
+                console.log('Stitched audio metadata loaded, duration:', audioElement.duration);
               };
+
+              audioElement.oncanplaythrough = () => {
+                if (!resolved) {
+                  resolved = true;
+                  console.log('Stitched audio fully buffered');
+                  resolve(true);
+                }
+              };
+
+              // For large files, also check progress
+              audioElement.onprogress = () => {
+                if (!resolved && metadataLoaded && audioElement.buffered.length > 0) {
+                  const bufferedEnd = audioElement.buffered.end(audioElement.buffered.length - 1);
+                  console.log(`Stitched audio buffered: ${bufferedEnd.toFixed(1)}s / ${audioElement.duration.toFixed(1)}s`);
+                  // If we've buffered past the start time, we can proceed
+                  if (bufferedEnd >= Math.min(startTime + 60, audioElement.duration)) {
+                    resolved = true;
+                    console.log('Stitched audio buffered enough for export');
+                    resolve(true);
+                  }
+                }
+              };
+
               audioElement.load();
             }),
             new Promise(resolve => setTimeout(() => {
-              console.warn('Stitched audio load timeout, proceeding anyway');
+              console.warn('Stitched audio buffer timeout, proceeding anyway');
               resolve(false);
-            }, 20000))
+            }, 30000))
           ]);
 
           this.exportProgressBar.style.width = '55%';
@@ -7564,13 +7589,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           if (startTime > 0) {
             console.log(`Seeking audio to ${startTime}s before playback...`);
 
-            // Wait for the seek to complete
+            // Wait for the seek to complete (longer timeout for large stitched files)
             await new Promise((resolve, reject) => {
               const seekTimeout = setTimeout(() => {
                 console.warn('Audio seek timeout, proceeding with elapsed time fallback');
                 audioPlaybackFailed = true;
                 resolve();
-              }, 5000);
+              }, 15000);
 
               audioElement.onseeked = () => {
                 clearTimeout(seekTimeout);
