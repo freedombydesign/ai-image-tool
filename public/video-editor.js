@@ -315,37 +315,22 @@ class VideoEditor {
     }
   }
 
-  // Load audio for avatar segments - auto-repairs missing audio_url by splitting TTS audio
+  // Load audio for avatar segments - ALWAYS uses TTS splits for consistent timing
+  // NOTE: We never load from saved audio_url because those may contain old lip-sync
+  // audio with incorrect timing (e.g., 90.8s instead of 90.0s), causing drift
   async extractAudioFromAvatarSegments(segments) {
     if (!segments || segments.length === 0) return;
 
-    console.log(`Loading audio for ${segments.length} avatar segments...`);
+    console.log(`Loading audio for ${segments.length} avatar segments using TTS splits...`);
     let loaded = 0;
-    let needsRepair = [];
 
-    // First pass: load segments that have audio_url
-    for (const seg of segments) {
-      if (seg.audio_url) {
-        try {
-          const response = await fetch(seg.audio_url);
-          if (response.ok) {
-            const audioBlob = await response.blob();
-            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
-            loaded++;
-            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from saved URL`);
-            continue;
-          }
-        } catch (e) {
-          console.warn(`  Failed to fetch audio for segment ${seg.segment_num}:`, e.message);
-        }
-      }
-      // Track segments that need repair
-      needsRepair.push(seg);
-    }
+    // ALWAYS use TTS splits - never load from saved audio_url
+    // Saved URLs may contain old lip-sync audio with wrong timing
+    let needsRepair = [...segments];
 
-    // Auto-repair: if segments are missing audio_url AND we have TTS audio, split and upload
+    // Split TTS audio for ALL segments to ensure consistent timing
     if (needsRepair.length > 0 && this.audioBlob) {
-      console.log(`🔧 Auto-repairing ${needsRepair.length} segments missing audio_url...`);
+      console.log(`🔊 Splitting TTS audio for ${needsRepair.length} segments (ensures exact timing)...`);
 
       try {
         // Split TTS audio into segments
