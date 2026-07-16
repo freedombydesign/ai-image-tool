@@ -953,6 +953,22 @@ class VideoEditor {
     if (this.clearCaptionsBtn) {
       this.clearCaptionsBtn.addEventListener('click', () => this.clearCaptions());
     }
+    // Force Fresh button - always bypasses cache and clears old captions first
+    this.forceFreshCaptionsBtn = document.getElementById('force-fresh-captions-btn');
+    if (this.forceFreshCaptionsBtn) {
+      this.forceFreshCaptionsBtn.addEventListener('click', () => {
+        console.log('Force Fresh: clearing all caption caches and regenerating');
+        // Clear localStorage caption caches
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('captions_')) {
+            localStorage.removeItem(key);
+            console.log('Cleared cache:', key);
+          }
+        });
+        showToast('Cleared caption cache, regenerating...', false);
+        this.generateCaptionsFromAudio(null, 0, true); // Full audio, force refresh
+      });
+    }
     if (this.previewCaptionBtn) {
       this.previewCaptionBtn.addEventListener('click', () => this.previewCaptionStyle());
     }
