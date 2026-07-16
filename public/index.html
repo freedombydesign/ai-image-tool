@@ -8,8 +8,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- FFmpeg removed - browser security blocks dynamic worker loading -->
-  <!-- Using pure JS WebM fix instead -->
+  <!-- WebM metadata fix for proper seeking in long videos -->
+  <script src="https://cdn.jsdelivr.net/npm/fix-webm-metainfo@1.0.8/lib/fix-webm-metainfo.min.js"></script>
 </head>
 <body>
   <div class="app">

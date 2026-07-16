@@ -1124,8 +1124,8 @@ class VideoEditor {
 
   async initFFmpeg() {
     // FFmpeg WASM disabled - browser security blocks dynamic worker loading
-    // Using pure JS WebM duration fix instead for video export
-    console.log('FFmpeg disabled - using pure JS WebM fix for exports');
+    // Using fix-webm-metainfo library for WebM metadata fix (Duration + Cues)
+    console.log('FFmpeg disabled - using fix-webm-metainfo library for exports');
     this.ffmpegLoaded = false;
   }
 
@@ -2757,87 +2757,28 @@ class VideoEditor {
     });
   }
 
-  // Fix WebM duration metadata (MediaRecorder doesn't set duration properly)
-  // This fixes seeking/buffering issues in long videos
+  // Fix WebM metadata for proper seeking in long videos
+  // Uses fix-webm-metainfo library which adds Duration, SeekHead, AND Cues
+  // Cues are critical for seeking - without them, browser must load entire file
   async fixWebmDuration(blob, durationSeconds) {
-    const buffer = await blob.arrayBuffer();
-    const data = new Uint8Array(buffer);
-
-    // WebM uses EBML format. Duration is in Segment > Info > Duration
-    // We need to find the Info element and update/add Duration
-
-    // EBML element IDs we care about:
-    // Segment: 0x18538067
-    // Info: 0x1549A966
-    // Duration: 0x4489
-
-    // Helper to read variable-length EBML integer
-    const readVint = (arr, pos) => {
-      if (pos >= arr.length) return { value: 0, length: 0 };
-      const first = arr[pos];
-      let length = 1;
-      let mask = 0x80;
-      while ((first & mask) === 0 && length < 8) {
-        length++;
-        mask >>= 1;
+    // Try using fix-webm-metainfo library (adds Duration + Cues for seeking)
+    if (typeof fixWebmMetaInfo === 'function') {
+      try {
+        console.log(`Fixing WebM metadata with fix-webm-metainfo library...`);
+        console.log(`Video size: ${(blob.size / 1024 / 1024).toFixed(1)}MB, duration: ${durationSeconds.toFixed(1)}s`);
+        const fixedBlob = await fixWebmMetaInfo(blob);
+        console.log(`WebM metadata fixed! Size: ${(fixedBlob.size / 1024 / 1024).toFixed(1)}MB`);
+        console.log('Added: Duration, SeekHead, Cues (seeking index)');
+        return fixedBlob;
+      } catch (err) {
+        console.warn('fix-webm-metainfo failed:', err.message);
       }
-      let value = first & (mask - 1);
-      for (let i = 1; i < length; i++) {
-        value = (value << 8) | arr[pos + i];
-      }
-      return { value, length };
-    };
-
-    // Find Info element
-    let infoPos = -1;
-    for (let i = 0; i < Math.min(data.length - 4, 1000); i++) {
-      // Info element ID: 0x1549A966 (4 bytes)
-      if (data[i] === 0x15 && data[i + 1] === 0x49 && data[i + 2] === 0xA9 && data[i + 3] === 0x66) {
-        infoPos = i;
-        break;
-      }
+    } else {
+      console.warn('fix-webm-metainfo library not loaded');
     }
 
-    if (infoPos === -1) {
-      console.warn('Could not find Info element in WebM');
-      return blob; // Return original if we can't fix it
-    }
-
-    // Find Duration element within Info
-    const { length: infoSizeLen } = readVint(data, infoPos + 4);
-    const infoDataStart = infoPos + 4 + infoSizeLen;
-
-    let durationPos = -1;
-    for (let i = infoDataStart; i < Math.min(data.length - 2, infoDataStart + 200); i++) {
-      // Duration element ID: 0x4489 (2 bytes)
-      if (data[i] === 0x44 && data[i + 1] === 0x89) {
-        durationPos = i;
-        break;
-      }
-    }
-
-    // Duration is stored as a float64 in milliseconds (timecode scale = 1000000 typically)
-    // We'll inject/replace the duration value
-    const durationMs = durationSeconds * 1000;
-
-    if (durationPos !== -1) {
-      // Found existing Duration - update it
-      const { length: durSizeLen } = readVint(data, durationPos + 2);
-      const durDataStart = durationPos + 2 + durSizeLen;
-
-      // Duration is typically 8 bytes (float64)
-      if (durSizeLen === 1 && data[durationPos + 2] === 0x88) {
-        // 8-byte float
-        const view = new DataView(buffer);
-        view.setFloat64(durDataStart, durationMs, false); // big-endian
-        console.log(`Fixed WebM duration: ${durationSeconds.toFixed(1)}s`);
-        return new Blob([buffer], { type: blob.type });
-      }
-    }
-
-    // If we couldn't patch in place, try a different approach:
-    // Prepend a corrected Duration element (this is a hack but sometimes works)
-    console.log('Could not patch duration in place, returning original');
+    // Return original if library not available or failed
+    console.log('Returning original WebM (may have seeking issues in long videos)');
     return blob;
   }
 
