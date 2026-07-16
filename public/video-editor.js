@@ -1126,15 +1126,14 @@ class VideoEditor {
     // Check SharedArrayBuffer availability (required for FFmpeg multi-threading)
     const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
     console.log('SharedArrayBuffer available:', hasSharedArrayBuffer);
-    if (!hasSharedArrayBuffer) {
-      console.warn('SharedArrayBuffer not available - FFmpeg will run in single-threaded mode or may fail');
-      console.warn('Check that server sends: Cross-Origin-Opener-Policy: same-origin, Cross-Origin-Embedder-Policy: credentialless');
-    }
 
-    // CDN options to try (jsdelivr has better CORS support)
-    const cdnOptions = [
-      'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-    ];
+    // Use single-threaded core if SharedArrayBuffer not available
+    // Single-threaded works everywhere without special headers, just slower
+    const cdnOptions = hasSharedArrayBuffer
+      ? ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js']
+      : ['https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.12.6/dist/umd/ffmpeg-core.js'];
+
+    console.log('Using FFmpeg core:', hasSharedArrayBuffer ? 'multi-threaded' : 'single-threaded (no special headers needed)');
 
     // Check for FFmpeg library - it may be exposed as FFmpegWASM or FFmpeg
     const FFmpegLib = window.FFmpegWASM || window.FFmpeg;
