@@ -3293,114 +3293,131 @@ class VideoEditor {
 
       console.log('Step 2: Audio blob:', audioToSync?.type, audioToSync?.size);
 
-      // Step 1: Get Supabase config for direct upload
-      showToast('Connecting to storage...', 'info');
-      const configResponse = await fetch('/api/supabase-config');
-
-      if (!configResponse.ok) {
-        const errText = await configResponse.text();
-        throw new Error('Config fetch failed: ' + errText.substring(0, 100));
-      }
-
-      const config = await configResponse.json();
-      console.log('Step 3: Got config, bucket:', config.bucket);
-
-      if (!config.url || !config.anonKey) {
-        throw new Error('Supabase not configured');
-      }
-
-      // Step 3: Initialize Supabase client and upload directly (bypasses Vercel limit)
-      showToast('Uploading audio for transcription...', 'info');
-      console.log('Step 4: Creating Supabase client...');
-      const supabaseClient = window.supabase.createClient(config.url, config.anonKey);
-
-      // Determine correct file extension from blob type
-      let mimeType = audioToSync.type || 'audio/mpeg';
-      let extension = 'mp3';
-      if (mimeType.includes('webm')) extension = 'webm';
-      else if (mimeType.includes('wav')) extension = 'wav';
-      else if (mimeType.includes('ogg')) extension = 'ogg';
-      else if (mimeType.includes('m4a') || mimeType.includes('mp4')) extension = 'm4a';
-      else if (mimeType.includes('flac')) extension = 'flac';
-      else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) extension = 'mp3';
-
-      // Compress large WAV files to WebM (Supabase limit is 50MB)
-      const fileSizeMB = audioToSync.size / (1024 * 1024);
-      if (fileSizeMB > 50 && extension === 'wav') {
-        console.log(`Audio is ${fileSizeMB.toFixed(1)}MB - compressing to WebM...`);
-        if (this.syncToAudioBtn) this.syncToAudioBtn.textContent = '⏳ Compressing audio...';
-        showToast(`Compressing ${fileSizeMB.toFixed(0)}MB audio (this takes a while)...`, 'info');
-        try {
-          audioToSync = await this.compressAudioToWebM(audioToSync);
-          extension = 'webm';
-          mimeType = 'audio/webm';
-          console.log('Compressed to WebM:', (audioToSync.size / (1024 * 1024)).toFixed(1) + 'MB');
-        } catch (compressError) {
-          console.error('Compression failed:', compressError);
-          throw new Error('Audio too large and compression failed');
-        }
-      }
-
-      const fileName = `audio/transcribe_${Date.now()}.${extension}`;
-      console.log('Step 4: Uploading to Supabase:', fileName, 'mimeType:', mimeType, 'size:', audioToSync.size);
-
-      const { data: uploadData, error: uploadError } = await supabaseClient.storage
-        .from(config.bucket)
-        .upload(fileName, audioToSync, {
-          contentType: audioToSync.type || 'audio/mpeg',
-          upsert: true
-        });
-
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        throw new Error('Upload failed: ' + (uploadError.message || JSON.stringify(uploadError)));
-      }
-
-      console.log('Step 4b: Upload successful:', uploadData);
-
-      // Get public URL
-      const { data: urlData } = supabaseClient.storage
-        .from(config.bucket)
-        .getPublicUrl(fileName);
-
-      const audioUrl = urlData.publicUrl;
-      console.log('Step 4c: Audio uploaded to:', audioUrl);
-
-      // Keep replaced segments for export - they'll be stitched during export
-      if (hasReplacements) {
-        console.log('Keeping replaced audio segments for export stitching');
-        console.log('Segments available:', Object.keys(this.replacedAudioSegments));
-        // DO NOT clear replacedAudioSegments - we need them for export!
-        // this.replacedAudioSegments = {};  // REMOVED - this was causing clean audio to be lost
-        showToast('AI avatar audio ready for export', 'success');
-      }
-
-      // Save audio URL for cross-browser persistence
-      this.savedAudioUrl = audioUrl;
-      localStorage.setItem('saved_audio_url', audioUrl);
-      localStorage.setItem('saved_audio_name', this.audioFileName || 'combined-audio.m4a');
-      // Also save to Supabase with scenes
-      this.saveScenesToSupabase();
-
-      // Step 4: Check cache first to avoid re-transcribing
+      // CRITICAL: Generate hash BEFORE any compression (so it matches caption cache)
       const audioHash = await this.generateAudioHash(audioToSync);
-      const cacheKey = `transcription_${audioHash}`;
+      const transcriptionCacheKey = `transcription_${audioHash}`;
+      const captionCacheKey = `captions_${audioHash}`;
       let result = null;
 
-      // Try to get cached transcription
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
+      // Check BOTH transcription cache AND caption cache
+      // Captions use the same Whisper transcription, so we can reuse it!
+      const cachedTranscription = localStorage.getItem(transcriptionCacheKey);
+      const cachedCaptions = localStorage.getItem(captionCacheKey);
+
+      if (cachedTranscription) {
         try {
-          result = JSON.parse(cached);
-          console.log('Using CACHED transcription (saving API cost!)', result.segments?.length, 'segments');
-          showToast('Using cached transcription (no API cost)', 'success');
+          result = JSON.parse(cachedTranscription);
+          console.log('Using CACHED transcription (from sync cache)', result.segments?.length, 'segments');
+          showToast('Using cached transcription (no upload needed)', 'success');
         } catch (e) {
-          console.log('Cache invalid, will re-transcribe');
+          console.log('Sync cache invalid');
         }
       }
 
-      // If no cache, transcribe
+      if (!result && cachedCaptions) {
+        try {
+          result = JSON.parse(cachedCaptions);
+          console.log('REUSING caption transcription (no upload needed!)', result.segments?.length, 'segments');
+          showToast('Reusing caption transcription - no upload needed!', 'success');
+          // Also save to transcription cache for future
+          localStorage.setItem(transcriptionCacheKey, cachedCaptions);
+        } catch (e) {
+          console.log('Caption cache invalid');
+        }
+      }
+
+      // Only do upload/transcribe if no cache hit
       if (!result) {
+        console.log('No cached transcription found - need to upload and transcribe');
+
+        // Step 1: Get Supabase config for direct upload
+        showToast('Connecting to storage...', 'info');
+        const configResponse = await fetch('/api/supabase-config');
+
+        if (!configResponse.ok) {
+          const errText = await configResponse.text();
+          throw new Error('Config fetch failed: ' + errText.substring(0, 100));
+        }
+
+        const config = await configResponse.json();
+        console.log('Step 3: Got config, bucket:', config.bucket);
+
+        if (!config.url || !config.anonKey) {
+          throw new Error('Supabase not configured');
+        }
+
+        // Step 3: Initialize Supabase client and upload directly (bypasses Vercel limit)
+        showToast('Uploading audio for transcription...', 'info');
+        console.log('Step 4: Creating Supabase client...');
+        const supabaseClient = window.supabase.createClient(config.url, config.anonKey);
+
+        // Determine correct file extension from blob type
+        let mimeType = audioToSync.type || 'audio/mpeg';
+        let extension = 'mp3';
+        if (mimeType.includes('webm')) extension = 'webm';
+        else if (mimeType.includes('wav')) extension = 'wav';
+        else if (mimeType.includes('ogg')) extension = 'ogg';
+        else if (mimeType.includes('m4a') || mimeType.includes('mp4')) extension = 'm4a';
+        else if (mimeType.includes('flac')) extension = 'flac';
+        else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) extension = 'mp3';
+
+        // Compress large WAV files to WebM (Supabase limit is 50MB)
+        const fileSizeMB = audioToSync.size / (1024 * 1024);
+        if (fileSizeMB > 50 && extension === 'wav') {
+          console.log(`Audio is ${fileSizeMB.toFixed(1)}MB - compressing to WebM...`);
+          if (this.syncToAudioBtn) this.syncToAudioBtn.textContent = '⏳ Compressing audio...';
+          showToast(`Compressing ${fileSizeMB.toFixed(0)}MB audio (this takes a while)...`, 'info');
+          try {
+            audioToSync = await this.compressAudioToWebM(audioToSync);
+            extension = 'webm';
+            mimeType = 'audio/webm';
+            console.log('Compressed to WebM:', (audioToSync.size / (1024 * 1024)).toFixed(1) + 'MB');
+          } catch (compressError) {
+            console.error('Compression failed:', compressError);
+            throw new Error('Audio too large and compression failed');
+          }
+        }
+
+        const fileName = `audio/transcribe_${Date.now()}.${extension}`;
+        console.log('Step 4: Uploading to Supabase:', fileName, 'mimeType:', mimeType, 'size:', audioToSync.size);
+
+        const { data: uploadData, error: uploadError } = await supabaseClient.storage
+          .from(config.bucket)
+          .upload(fileName, audioToSync, {
+            contentType: audioToSync.type || 'audio/mpeg',
+            upsert: true
+          });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          throw new Error('Upload failed: ' + (uploadError.message || JSON.stringify(uploadError)));
+        }
+
+        console.log('Step 4b: Upload successful:', uploadData);
+
+        // Get public URL
+        const { data: urlData } = supabaseClient.storage
+          .from(config.bucket)
+          .getPublicUrl(fileName);
+
+        const audioUrl = urlData.publicUrl;
+        console.log('Step 4c: Audio uploaded to:', audioUrl);
+
+        // Keep replaced segments for export - they'll be stitched during export
+        if (hasReplacements) {
+          console.log('Keeping replaced audio segments for export stitching');
+          console.log('Segments available:', Object.keys(this.replacedAudioSegments));
+          showToast('AI avatar audio ready for export', 'success');
+        }
+
+        // Save audio URL for cross-browser persistence
+        this.savedAudioUrl = audioUrl;
+        localStorage.setItem('saved_audio_url', audioUrl);
+        localStorage.setItem('saved_audio_name', this.audioFileName || 'combined-audio.m4a');
+        // Also save to Supabase with scenes
+        this.saveScenesToSupabase();
+
+        // Transcribe
         showToast('Transcribing audio with Whisper...', 'info');
 
         console.log('Step 5: Sending transcribe request to:', audioUrl);
@@ -3424,8 +3441,8 @@ class VideoEditor {
           throw new Error(result.error || 'Transcription failed');
         }
 
-        // Cache the result for future syncs
-        localStorage.setItem(cacheKey, JSON.stringify(result));
+        // Cache the result for future syncs (use ORIGINAL hash, not post-compression)
+        localStorage.setItem(transcriptionCacheKey, JSON.stringify(result));
         console.log('Transcription cached for future use');
       }
 
