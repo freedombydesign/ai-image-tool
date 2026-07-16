@@ -3280,15 +3280,15 @@ class VideoEditor {
         throw new Error('Supabase SDK not loaded. Please refresh the page.');
       }
 
-      // Always use ORIGINAL audio for sync/transcription (smaller file, same timing)
-      // The stitched audio is only for playback preview
+      // Use stitched audio if we have replaced segments (so scene timing matches captions/export)
       let audioToSync = this.audioBlob;
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
 
       if (hasReplacements) {
-        console.log('Found replaced audio segments - using ORIGINAL audio for sync (same timing, smaller file)');
-        console.log('Stitched audio will be used for playback preview only');
-        // Don't stitch for sync - use original. Stitching happens on play.
+        console.log('Found replaced audio segments - using STITCHED audio for sync (matches export/captions)');
+        if (this.syncToAudioBtn) this.syncToAudioBtn.textContent = '⏳ Building stitched audio...';
+        audioToSync = await this.stitchAudioForExport();
+        console.log('Stitched audio ready for sync:', audioToSync?.size, 'bytes');
       }
 
       console.log('Step 2: Audio blob:', audioToSync?.type, audioToSync?.size);
