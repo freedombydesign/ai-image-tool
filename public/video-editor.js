@@ -5477,41 +5477,24 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
 
-        // Step 1: Get Supabase config for direct upload (bypasses Vercel 4.5MB limit)
-        const configResponse = await fetch('/api/supabase-config');
-        if (!configResponse.ok) {
-          throw new Error('Cannot get storage config');
-        }
-        const config = await configResponse.json();
-
-        // Step 2: Upload directly to Supabase Storage (bypasses Vercel completely)
+        // Upload audio through server API (avoids CORS issues with direct Supabase upload)
         const fileName = `audio-${Date.now()}.${extension}`;
-        const filePath = `audio/${fileName}`;
+        const formData = new FormData();
+        formData.append('audio', audioToTranscribe, fileName);
 
-        if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
-
-        // Direct upload to Supabase Storage REST API
-        const uploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${filePath}`;
-
-        const uploadResponse = await fetch(uploadUrl, {
+        const uploadResponse = await fetch('/api/upload-audio', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.anonKey}`,
-            'apikey': config.anonKey,
-            'Content-Type': mimeType,
-            'x-upsert': 'true'
-          },
-          body: audioToTranscribe
+          body: formData
         });
 
         if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text();
-          console.error('Supabase upload error:', errorText);
-          throw new Error('Failed to upload audio to cloud storage');
+          const errorData = await uploadResponse.json().catch(() => ({}));
+          console.error('Audio upload error:', errorData);
+          throw new Error(errorData.error || 'Failed to upload audio');
         }
 
-        // Get the public URL
-        const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${filePath}`;
+        const uploadResult = await uploadResponse.json();
+        const publicUrl = uploadResult.url;
         console.log('Audio uploaded to:', publicUrl);
 
         // Step 3: Transcribe from Supabase URL
