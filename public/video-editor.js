@@ -10041,46 +10041,15 @@ async function handleSegmentUpload(segmentNum, file) {
       fileName: file.name
     };
 
-    // Extract audio from uploaded video, upload to Supabase, and store for stitching
-    let audioPublicUrl = null;
-    try {
-      const audioBlob = await extractAudioFromVideo(file);
-      if (audioBlob && typeof videoEditor !== 'undefined') {
-        // Upload extracted audio to Supabase for persistence (reuse config from above)
-        if (config && config.url && config.bucket) {
-          const audioPath = `audio/avatar-segment-${segmentNum}-${Date.now()}.wav`;
-          const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
+    // NOTE: We do NOT extract audio from uploaded avatar videos
+    // Avatar videos contain lip-sync audio which sounds bad
+    // The clean TTS audio is already loaded via loadAudioForAvatarSegments()
+    // which splits the original TTS audio by segment timing
 
-          const audioUploadResponse = await fetch(audioUploadUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${config.anonKey}`,
-              'apikey': config.anonKey,
-              'Content-Type': 'audio/wav',
-              'x-upsert': 'true'
-            },
-            body: audioBlob
-          });
-
-          if (audioUploadResponse.ok) {
-            audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
-            console.log(`✓ Uploaded extracted audio for segment ${segmentNum} to:`, audioPublicUrl);
-          }
-        }
-
-        videoEditor.replacedAudioSegments[segmentNum] = {
-          blob: audioBlob,
-          url: audioPublicUrl || permanentUrl
-        };
-        videoEditor.stitchedAudioBlob = null; // Clear cache
-        console.log(`Extracted and stored audio from uploaded segment ${segmentNum}`);
-      }
-    } catch (audioErr) {
-      console.warn(`Could not extract audio from segment ${segmentNum}:`, audioErr);
-    }
-
-    // Save to database for persistence across refreshes (including audio_url if available)
-    console.log(`Saving segment ${segmentNum} to database with audioUrl:`, audioPublicUrl);
+    // Save to database for persistence across refreshes
+    // audioUrl is null - we use clean TTS audio, not lip-sync audio from avatar videos
+    const audioPublicUrl = null;
+    console.log(`Saving segment ${segmentNum} to database (video only, using TTS audio)`);
     const dbResponse = await fetch('/api/db/avatar-segments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
