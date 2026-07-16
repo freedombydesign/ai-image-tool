@@ -3321,6 +3321,45 @@ app.get('/api/supabase-config', (req, res) => {
   });
 });
 
+// Generate signed upload URL for large files (bypasses Vercel 4.5MB limit AND CORS)
+app.post('/api/signed-upload-url', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { fileName, contentType } = req.body;
+    if (!fileName) {
+      return res.status(400).json({ error: 'fileName is required' });
+    }
+
+    const filePath = `audio/${fileName}`;
+
+    // Create signed upload URL (valid for 1 hour)
+    const { data, error } = await supabase.storage
+      .from('ai-tool-images')
+      .createSignedUploadUrl(filePath);
+
+    if (error) throw error;
+
+    // Also return the public URL for after upload
+    const { data: urlData } = supabase.storage
+      .from('ai-tool-images')
+      .getPublicUrl(filePath);
+
+    res.json({
+      success: true,
+      signedUrl: data.signedUrl,
+      token: data.token,
+      path: filePath,
+      publicUrl: urlData.publicUrl
+    });
+  } catch (error) {
+    console.error('Signed URL error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🎨 AI Image Tool running at http://localhost:${PORT}`);

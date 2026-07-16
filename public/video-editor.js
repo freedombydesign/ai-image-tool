@@ -5477,24 +5477,39 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
 
-        // Upload audio through server API (avoids CORS issues with direct Supabase upload)
+        // Use signed upload URL to bypass Vercel's 4.5MB body limit
         const fileName = `audio-${Date.now()}.${extension}`;
-        const formData = new FormData();
-        formData.append('audio', audioToTranscribe, fileName);
 
-        const uploadResponse = await fetch('/api/upload-audio', {
+        // Step 1: Get signed upload URL from server
+        const signedUrlResponse = await fetch('/api/signed-upload-url', {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName, contentType: audioToTranscribe.type || 'audio/mp4' })
+        });
+
+        if (!signedUrlResponse.ok) {
+          const errorData = await signedUrlResponse.json().catch(() => ({}));
+          console.error('Failed to get signed URL:', errorData);
+          throw new Error(errorData.error || 'Failed to get upload URL');
+        }
+
+        const { signedUrl, publicUrl } = await signedUrlResponse.json();
+        console.log('Got signed upload URL, uploading directly to Supabase...');
+
+        // Step 2: Upload directly to Supabase using signed URL (bypasses Vercel limit)
+        const uploadResponse = await fetch(signedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': audioToTranscribe.type || 'audio/mp4'
+          },
+          body: audioToTranscribe
         });
 
         if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json().catch(() => ({}));
-          console.error('Audio upload error:', errorData);
-          throw new Error(errorData.error || 'Failed to upload audio');
+          console.error('Direct upload failed:', uploadResponse.status, uploadResponse.statusText);
+          throw new Error('Failed to upload audio to storage');
         }
 
-        const uploadResult = await uploadResponse.json();
-        const publicUrl = uploadResult.url;
         console.log('Audio uploaded to:', publicUrl);
 
         // Step 3: Transcribe from Supabase URL
