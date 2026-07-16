@@ -935,12 +935,18 @@ class VideoEditor {
       this.generateCaptionsBtn.addEventListener('click', () => this.generateCaptionsFromAudio());
     }
     // Test captions - 30 seconds starting at specified time (cheaper for testing sync)
+    // Shift+Click to force fresh transcription (bypass cache)
     this.testCaptionsBtn = document.getElementById('test-captions-btn');
     this.testCaptionsStartInput = document.getElementById('test-captions-start');
     if (this.testCaptionsBtn) {
-      this.testCaptionsBtn.addEventListener('click', () => {
+      this.testCaptionsBtn.addEventListener('click', (e) => {
         const startTime = this.parseTime(this.testCaptionsStartInput?.value || '0');
-        this.generateCaptionsFromAudio(30, startTime);
+        const forceRefresh = e.shiftKey;
+        if (forceRefresh) {
+          console.log('Shift+Click: forcing fresh transcription (bypassing cache)');
+          showToast('Forcing fresh transcription...', false);
+        }
+        this.generateCaptionsFromAudio(30, startTime, forceRefresh);
       });
     }
     if (this.clearCaptionsBtn) {
@@ -5359,7 +5365,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   // Generate captions from audio transcription
   // maxDuration: optional limit in seconds (e.g., 30 for test captions)
   // startOffset: where to start extracting audio (for testing middle sections)
-  async generateCaptionsFromAudio(maxDuration = null, startOffset = 0) {
+  async generateCaptionsFromAudio(maxDuration = null, startOffset = 0, forceRefresh = false) {
     if (!this.audioBlob) {
       showToast('Record or upload audio first to generate captions.');
       return;
@@ -5408,14 +5414,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }
       }
 
-      // Check cache first to avoid API costs
+      // Check cache first to avoid API costs (unless forceRefresh)
       const audioHash = await this.generateAudioHash(audioToTranscribe);
       const cacheKey = `captions_${audioHash}`;
-      const cached = localStorage.getItem(cacheKey);
+      const cached = forceRefresh ? null : localStorage.getItem(cacheKey);
 
       let result = null;
 
-      if (cached) {
+      if (forceRefresh) {
+        console.log('Force refresh: bypassing caption cache');
+        localStorage.removeItem(cacheKey); // Clear old cache entry
+      } else if (cached) {
         try {
           result = JSON.parse(cached);
           console.log('Caption transcription loaded from cache (FREE!)');
