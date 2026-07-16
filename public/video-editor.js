@@ -9904,7 +9904,8 @@ async function handleSegmentUpload(segmentNum, file) {
     }
 
     // Save to database for persistence across refreshes (including audio_url if available)
-    await fetch('/api/db/avatar-segments', {
+    console.log(`Saving segment ${segmentNum} to database with audioUrl:`, audioPublicUrl);
+    const dbResponse = await fetch('/api/db/avatar-segments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -9915,6 +9916,12 @@ async function handleSegmentUpload(segmentNum, file) {
         audioUrl: audioPublicUrl  // Now persists the extracted audio URL!
       })
     });
+    const dbResult = await dbResponse.json();
+    if (dbResponse.ok) {
+      console.log(`✓ Segment ${segmentNum} saved to database with audio_url`);
+    } else {
+      console.error(`✗ Failed to save segment ${segmentNum} to database:`, dbResult);
+    }
 
     // Update slot UI
     slot.style.background = 'rgba(34, 197, 94, 0.2)';
