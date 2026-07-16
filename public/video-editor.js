@@ -5386,14 +5386,24 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     try {
+      // Use stitched audio if we have replaced segments (so captions match export audio)
+      const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
+      let baseAudio = this.audioBlob;
+
+      if (hasReplacements) {
+        if (activeBtn) activeBtn.innerHTML = '⏳ Building stitched audio...';
+        console.log('Generating captions from STITCHED audio (has replaced segments)');
+        baseAudio = await this.stitchAudioForExport();
+      }
+
       // Trim audio if maxDuration specified (for test mode - saves API cost)
-      let audioToTranscribe = this.audioBlob;
+      let audioToTranscribe = baseAudio;
       if (isTestMode) {
         const effectiveEnd = Math.min(startOffset + maxDuration, this.audioDuration);
         const effectiveDuration = effectiveEnd - startOffset;
         if (effectiveDuration > 0) {
           if (activeBtn) activeBtn.innerHTML = '⏳ Trimming audio...';
-          audioToTranscribe = await this.trimAudioBlob(this.audioBlob, effectiveDuration, startOffset);
+          audioToTranscribe = await this.trimAudioBlob(baseAudio, effectiveDuration, startOffset);
           console.log(`Extracted audio from ${this.formatTime(startOffset)} to ${this.formatTime(effectiveEnd)} for test`);
         }
       }
