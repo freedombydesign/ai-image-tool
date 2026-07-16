@@ -2864,6 +2864,11 @@ class VideoEditor {
     const stitchedBlob = this.audioBufferToWav(combinedBuffer);
     console.log('Fast stitched audio created:', stitchedBlob.size, 'bytes', `${combinedBuffer.duration.toFixed(1)}s`);
 
+    // CRITICAL: Store the AudioBuffer for direct playback during export
+    // This avoids blob URL seeking issues with large files
+    this.stitchedAudioBuffer = combinedBuffer;
+    console.log('Stored AudioBuffer for direct export playback');
+
     return stitchedBlob;
   }
 
@@ -7525,8 +7530,44 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Set up MediaRecorder
       const stream = exportCanvas.captureStream(fps);
 
-      // Add audio track if available
-      if (audioElement) {
+      // Add audio track - prefer AudioBufferSourceNode for stitched audio (avoids blob URL seeking issues)
+      let audioBufferSource = null;
+      let useBufferSource = false;
+
+      if (this.stitchedAudioBuffer && hasReplacedSegments) {
+        // Use AudioBufferSourceNode - this is MUCH more reliable for large stitched audio
+        // It can start at any offset instantly without seeking issues
+        try {
+          console.log('Using AudioBufferSourceNode for stitched audio (instant offset playback)');
+          audioContext = new AudioContext();
+
+          if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+            console.log('AudioContext resumed');
+          }
+
+          audioBufferSource = audioContext.createBufferSource();
+          audioBufferSource.buffer = this.stitchedAudioBuffer;
+
+          const destination = audioContext.createMediaStreamDestination();
+          audioBufferSource.connect(destination);
+
+          const audioTracks = destination.stream.getAudioTracks();
+          console.log('AudioBufferSource tracks to add:', audioTracks.length);
+          audioTracks.forEach(track => stream.addTrack(track));
+
+          useBufferSource = true;
+          // Don't use audioElement for time - we'll use elapsed time
+          audioElement = null;
+          console.log(`AudioBufferSourceNode ready, duration: ${this.stitchedAudioBuffer.duration.toFixed(1)}s`);
+        } catch (e) {
+          console.error('AudioBufferSourceNode failed, falling back to element:', e.message);
+          useBufferSource = false;
+        }
+      }
+
+      // Fallback: use MediaElementSource if AudioBufferSource not available
+      if (!useBufferSource && audioElement) {
         try {
           console.log('Creating AudioContext for audio routing...');
           audioContext = new AudioContext();
@@ -7583,6 +7624,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Start audio playback - this drives the timeline
       // Seek to startTime for test exports from a specific position
       let audioPlaybackFailed = false;
+
+      // Start AudioBufferSourceNode if we're using it (instant offset - no seeking needed!)
+      if (useBufferSource && audioBufferSource) {
+        console.log(`Starting AudioBufferSource at offset ${startTime}s (instant, no seek needed)`);
+        // AudioBufferSourceNode.start(when, offset, duration) - starts at exact offset instantly
+        audioBufferSource.start(0, startTime);
+        console.log('AudioBufferSource playback started successfully');
+        // Time tracking will use elapsed time since audioElement is null
+      }
+
       if (audioElement) {
         try {
           // For blob URLs, we need to wait for seek to complete before playing
@@ -7673,6 +7724,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           // Done rendering
           mediaRecorder.stop();
           if (audioElement) audioElement.pause();
+          // Stop AudioBufferSourceNode if using it
+          if (audioBufferSource) {
+            try { audioBufferSource.stop(); } catch (e) { /* may already be stopped */ }
+          }
           // Stop all avatar videos
           for (const av of avatarVideoElements) {
             if (av && av.element) av.element.pause();
