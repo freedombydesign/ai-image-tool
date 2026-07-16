@@ -2748,6 +2748,73 @@ class VideoEditor {
     }
   }
 
+  // Compress WAV to WebM/Opus using MediaRecorder (for large files)
+  async compressAudioToWebM(wavBlob) {
+    console.log('Compressing audio from WAV to WebM...');
+    const startTime = Date.now();
+
+    // Decode WAV to AudioBuffer
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await wavBlob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    // Create a MediaStreamDestination to capture audio
+    const dest = audioContext.createMediaStreamDestination();
+
+    // Create a buffer source and connect to destination
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(dest);
+
+    // Set up MediaRecorder to capture as WebM
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
+
+    const mediaRecorder = new MediaRecorder(dest.stream, {
+      mimeType: mimeType,
+      audioBitsPerSecond: 128000 // 128kbps - good quality, much smaller than WAV
+    });
+
+    const chunks = [];
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+
+    return new Promise((resolve, reject) => {
+      mediaRecorder.onstop = () => {
+        const webmBlob = new Blob(chunks, { type: mimeType });
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`Compression complete in ${elapsed}s: ${(wavBlob.size / 1024 / 1024).toFixed(1)}MB -> ${(webmBlob.size / 1024 / 1024).toFixed(1)}MB`);
+        audioContext.close();
+        resolve(webmBlob);
+      };
+
+      mediaRecorder.onerror = (e) => {
+        audioContext.close();
+        reject(new Error('MediaRecorder error: ' + e.error));
+      };
+
+      // Start recording and play the audio
+      mediaRecorder.start();
+      source.start(0);
+
+      // Stop recording when audio ends
+      source.onended = () => {
+        mediaRecorder.stop();
+      };
+
+      // Fallback timeout (audio duration + 2 seconds buffer)
+      const timeout = (audioBuffer.duration + 2) * 1000;
+      setTimeout(() => {
+        if (mediaRecorder.state === 'recording') {
+          console.warn('Compression timeout, stopping recorder');
+          mediaRecorder.stop();
+        }
+      }, timeout);
+    });
+  }
+
   // Stitch audio segments together (using replaced segments where available)
   async stitchAudioForExport() {
     if (!this.audioBlob) return null;
@@ -5454,31 +5521,80 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       // Only call API if not cached
       if (!result) {
-        // Determine file extension based on mime type or filename
-        let extension = 'm4a'; // Default to m4a since that's the user's file
-        const mimeType = audioToTranscribe.type || '';
-        console.log('Audio blob MIME type:', mimeType, 'size:', audioToTranscribe.size);
+        // OPTIMIZATION: If we have a saved audio URL and don't need stitching/trimming,
+        // use it directly without re-uploading (the audio is already on Supabase!)
+        const canUseExistingUrl = !hasReplacements && !isTestMode && this.savedAudioUrl;
 
-        if (mimeType.includes('wav') || mimeType.includes('wave')) {
-          extension = 'wav';
-        } else if (mimeType.includes('m4a') || mimeType.includes('mp4') || mimeType.includes('x-m4a') || mimeType === 'audio/mp4') {
-          extension = 'm4a';
-        } else if (mimeType.includes('ogg') || mimeType.includes('oga')) {
-          extension = 'ogg';
-        } else if (mimeType.includes('webm')) {
-          extension = 'webm';
-        } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
-          extension = 'mp3';
-        } else if (mimeType.includes('flac')) {
-          extension = 'flac';
-        }
-        // If MIME type is empty or generic, keep m4a default
-        console.log('Using extension:', extension);
+        if (canUseExistingUrl) {
+          console.log('Using existing audio URL (no upload needed):', this.savedAudioUrl);
+          if (activeBtn) activeBtn.innerHTML = '⏳ Transcribing...';
 
-        if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
+          const transcribeResponse = await fetch('/api/transcribe-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioUrl: this.savedAudioUrl })
+          });
 
-        // Use signed upload URL to bypass Vercel's 4.5MB body limit
-        const fileName = `audio-${Date.now()}.${extension}`;
+          result = await transcribeResponse.json();
+
+          if (!transcribeResponse.ok || result.error) {
+            throw new Error(result.error || 'Transcription failed');
+          }
+
+          // Cache the result
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(result));
+            console.log('Caption transcription cached for future use');
+          } catch (e) {
+            console.warn('Could not cache transcription:', e);
+          }
+        } else {
+          // Need to upload audio (stitched or trimmed)
+          // Determine file extension based on mime type or filename
+          let extension = 'm4a'; // Default to m4a since that's the user's file
+          const mimeType = audioToTranscribe.type || '';
+          console.log('Audio blob MIME type:', mimeType, 'size:', audioToTranscribe.size);
+
+          if (mimeType.includes('wav') || mimeType.includes('wave')) {
+            extension = 'wav';
+          } else if (mimeType.includes('m4a') || mimeType.includes('mp4') || mimeType.includes('x-m4a') || mimeType === 'audio/mp4') {
+            extension = 'm4a';
+          } else if (mimeType.includes('ogg') || mimeType.includes('oga')) {
+            extension = 'ogg';
+          } else if (mimeType.includes('webm')) {
+            extension = 'webm';
+          } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+            extension = 'mp3';
+          } else if (mimeType.includes('flac')) {
+            extension = 'flac';
+          }
+          // If MIME type is empty or generic, keep m4a default
+          console.log('Using extension:', extension);
+
+          if (activeBtn) activeBtn.innerHTML = '⏳ Uploading...';
+
+          // Check file size before attempting upload (Supabase default limit is 50MB)
+          const fileSizeMB = audioToTranscribe.size / (1024 * 1024);
+          if (fileSizeMB > 50) {
+            console.warn(`Audio file is ${fileSizeMB.toFixed(1)}MB - may exceed Supabase limit`);
+            showToast(`Large audio file (${fileSizeMB.toFixed(0)}MB) - this may fail. Compressing...`, 'warning');
+
+            // Attempt to compress WAV to WebM using MediaRecorder
+            if (extension === 'wav') {
+              if (activeBtn) activeBtn.innerHTML = '⏳ Compressing audio...';
+              try {
+                audioToTranscribe = await this.compressAudioToWebM(audioToTranscribe);
+                extension = 'webm';
+                console.log('Compressed to WebM, new size:', (audioToTranscribe.size / (1024 * 1024)).toFixed(1) + 'MB');
+              } catch (compressError) {
+                console.error('Compression failed:', compressError);
+                // Continue with original WAV
+              }
+            }
+          }
+
+          // Use signed upload URL to bypass Vercel's 4.5MB body limit
+          const fileName = `audio-${Date.now()}.${extension}`;
 
         // Step 1: Get signed upload URL from server
         const signedUrlResponse = await fetch('/api/signed-upload-url', {
@@ -5516,6 +5632,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         if (!uploadResponse.ok) {
           const errorText = await uploadResponse.text().catch(() => 'No response body');
           console.error('Direct upload failed:', uploadResponse.status, errorText);
+
+          // Check if it's a file size limit error
+          if (errorText.includes('Payload too large') || errorText.includes('maximum allowed size')) {
+            const sizeMB = (audioToTranscribe.size / (1024 * 1024)).toFixed(1);
+            throw new Error(`Audio file too large (${sizeMB}MB). The stitched WAV is uncompressed. Try using the original TTS captions, or increase your Supabase bucket file size limit.`);
+          }
           throw new Error(`Failed to upload audio: ${errorText}`);
         }
 
@@ -5536,14 +5658,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           throw new Error(result.error || 'Transcription failed');
         }
 
-        // Cache the result to avoid future API costs
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(result));
-          console.log('Caption transcription cached for future use');
-        } catch (e) {
-          console.log('Could not cache transcription');
-        }
-      }
+          // Cache the result to avoid future API costs
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(result));
+            console.log('Caption transcription cached for future use');
+          } catch (e) {
+            console.log('Could not cache transcription');
+          }
+        } // end else (upload path)
+      } // end if (!result)
 
       console.log('Transcription for captions:', result);
       console.log('Word-level timestamps available:', result.words?.length || 0);
