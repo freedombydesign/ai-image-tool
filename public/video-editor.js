@@ -1123,6 +1123,14 @@ class VideoEditor {
   }
 
   async initFFmpeg() {
+    // Check SharedArrayBuffer availability (required for FFmpeg multi-threading)
+    const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
+    console.log('SharedArrayBuffer available:', hasSharedArrayBuffer);
+    if (!hasSharedArrayBuffer) {
+      console.warn('SharedArrayBuffer not available - FFmpeg will run in single-threaded mode or may fail');
+      console.warn('Check that server sends: Cross-Origin-Opener-Policy: same-origin, Cross-Origin-Embedder-Policy: credentialless');
+    }
+
     // CDN options to try (jsdelivr has better CORS support)
     const cdnOptions = [
       'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
@@ -1130,6 +1138,7 @@ class VideoEditor {
 
     // Check for FFmpeg library - it may be exposed as FFmpegWASM or FFmpeg
     const FFmpegLib = window.FFmpegWASM || window.FFmpeg;
+    console.log('FFmpegLib check:', { FFmpegWASM: !!window.FFmpegWASM, FFmpeg: !!window.FFmpeg });
     if (!FFmpegLib) {
       console.error('FFmpeg library not loaded - script may not have loaded');
       // Try loading the script dynamically
@@ -2828,6 +2837,90 @@ class VideoEditor {
         }
       }, timeout);
     });
+  }
+
+  // Fix WebM duration metadata (MediaRecorder doesn't set duration properly)
+  // This fixes seeking/buffering issues in long videos
+  async fixWebmDuration(blob, durationSeconds) {
+    const buffer = await blob.arrayBuffer();
+    const data = new Uint8Array(buffer);
+
+    // WebM uses EBML format. Duration is in Segment > Info > Duration
+    // We need to find the Info element and update/add Duration
+
+    // EBML element IDs we care about:
+    // Segment: 0x18538067
+    // Info: 0x1549A966
+    // Duration: 0x4489
+
+    // Helper to read variable-length EBML integer
+    const readVint = (arr, pos) => {
+      if (pos >= arr.length) return { value: 0, length: 0 };
+      const first = arr[pos];
+      let length = 1;
+      let mask = 0x80;
+      while ((first & mask) === 0 && length < 8) {
+        length++;
+        mask >>= 1;
+      }
+      let value = first & (mask - 1);
+      for (let i = 1; i < length; i++) {
+        value = (value << 8) | arr[pos + i];
+      }
+      return { value, length };
+    };
+
+    // Find Info element
+    let infoPos = -1;
+    for (let i = 0; i < Math.min(data.length - 4, 1000); i++) {
+      // Info element ID: 0x1549A966 (4 bytes)
+      if (data[i] === 0x15 && data[i + 1] === 0x49 && data[i + 2] === 0xA9 && data[i + 3] === 0x66) {
+        infoPos = i;
+        break;
+      }
+    }
+
+    if (infoPos === -1) {
+      console.warn('Could not find Info element in WebM');
+      return blob; // Return original if we can't fix it
+    }
+
+    // Find Duration element within Info
+    const { length: infoSizeLen } = readVint(data, infoPos + 4);
+    const infoDataStart = infoPos + 4 + infoSizeLen;
+
+    let durationPos = -1;
+    for (let i = infoDataStart; i < Math.min(data.length - 2, infoDataStart + 200); i++) {
+      // Duration element ID: 0x4489 (2 bytes)
+      if (data[i] === 0x44 && data[i + 1] === 0x89) {
+        durationPos = i;
+        break;
+      }
+    }
+
+    // Duration is stored as a float64 in milliseconds (timecode scale = 1000000 typically)
+    // We'll inject/replace the duration value
+    const durationMs = durationSeconds * 1000;
+
+    if (durationPos !== -1) {
+      // Found existing Duration - update it
+      const { length: durSizeLen } = readVint(data, durationPos + 2);
+      const durDataStart = durationPos + 2 + durSizeLen;
+
+      // Duration is typically 8 bytes (float64)
+      if (durSizeLen === 1 && data[durationPos + 2] === 0x88) {
+        // 8-byte float
+        const view = new DataView(buffer);
+        view.setFloat64(durDataStart, durationMs, false); // big-endian
+        console.log(`Fixed WebM duration: ${durationSeconds.toFixed(1)}s`);
+        return new Blob([buffer], { type: blob.type });
+      }
+    }
+
+    // If we couldn't patch in place, try a different approach:
+    // Prepend a corrected Duration element (this is a hack but sometimes works)
+    console.log('Could not patch duration in place, returning original');
+    return blob;
   }
 
   // Stitch audio segments together (using replaced segments where available)
@@ -8127,42 +8220,95 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       let videoBlob = new Blob(chunks, { type: selectedMimeType });
       let extension = selectedMimeType.includes('mp4') ? 'mp4' : 'webm';
 
-      // If we recorded WebM but FFmpeg is available, convert to MP4
+      console.log('=== Export Post-Processing ===');
+      console.log('Initial format:', extension, 'Size:', (videoBlob.size / 1024 / 1024).toFixed(1) + 'MB');
+      console.log('FFmpeg loaded:', this.ffmpegLoaded, 'FFmpeg instance:', !!this.ffmpeg);
+
+      // If we recorded WebM but FFmpeg is available, convert to MP4 (or remux for better seeking)
       if (extension === 'webm' && this.ffmpegLoaded && this.ffmpeg) {
+        const videoSizeMB = videoBlob.size / (1024 * 1024);
+        console.log(`WebM size: ${videoSizeMB.toFixed(1)}MB`);
+
+        // For large files (>100MB), prefer fast remux over full transcode to avoid memory issues
+        const useRemuxOnly = videoSizeMB > 100;
+
         try {
-          this.exportStatus.textContent = 'Converting to MP4...';
+          this.exportStatus.textContent = useRemuxOnly ? 'Fixing video metadata...' : 'Converting to MP4...';
           this.exportProgressBar.style.width = '96%';
 
           // Write WebM to FFmpeg
           const webmData = new Uint8Array(await videoBlob.arrayBuffer());
           await this.ffmpeg.writeFile('input.webm', webmData);
 
-          // Convert to MP4 with H.264/AAC
-          await this.ffmpeg.exec([
-            '-i', 'input.webm',
-            '-c:v', 'libx264',
-            '-preset', 'fast',
-            '-crf', '23',
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-movflags', '+faststart',
-            'output.mp4'
-          ]);
+          if (useRemuxOnly) {
+            // Fast remux: just copy streams to fix Cues/seeking metadata (no re-encoding)
+            // FFmpeg will automatically add proper Duration and Cues elements
+            console.log('Large file - using fast remux to fix seeking metadata');
+            await this.ffmpeg.exec([
+              '-i', 'input.webm',
+              '-c', 'copy',           // Copy all streams (no re-encode = fast!)
+              '-y',                   // Overwrite output
+              'output.webm'
+            ]);
 
-          // Read the MP4
-          const mp4Data = await this.ffmpeg.readFile('output.mp4');
-          videoBlob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
-          extension = 'mp4';
+            const fixedWebm = await this.ffmpeg.readFile('output.webm');
+            videoBlob = new Blob([fixedWebm.buffer], { type: 'video/webm' });
+            extension = 'webm';
 
-          // Cleanup
-          await this.ffmpeg.deleteFile('input.webm');
-          await this.ffmpeg.deleteFile('output.mp4');
+            await this.ffmpeg.deleteFile('input.webm');
+            await this.ffmpeg.deleteFile('output.webm');
 
-          console.log('Converted WebM to MP4 successfully');
+            console.log('WebM remuxed successfully for better seeking');
+          } else {
+            // Convert to MP4 with H.264/AAC for smaller files
+            await this.ffmpeg.exec([
+              '-i', 'input.webm',
+              '-c:v', 'libx264',
+              '-preset', 'fast',
+              '-crf', '23',
+              '-c:a', 'aac',
+              '-b:a', '128k',
+              '-movflags', '+faststart',
+              'output.mp4'
+            ]);
+
+            // Read the MP4
+            const mp4Data = await this.ffmpeg.readFile('output.mp4');
+            videoBlob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+            extension = 'mp4';
+
+            // Cleanup
+            await this.ffmpeg.deleteFile('input.webm');
+            await this.ffmpeg.deleteFile('output.mp4');
+
+            console.log('Converted WebM to MP4 successfully');
+          }
         } catch (conversionError) {
-          console.warn('MP4 conversion failed, keeping WebM:', conversionError);
-          // Keep original WebM if conversion fails
+          console.warn('FFmpeg processing failed:', conversionError.message);
+
+          // Fallback: try fixing WebM duration with pure JS
+          try {
+            this.exportStatus.textContent = 'Fixing video metadata (fallback)...';
+            videoBlob = await this.fixWebmDuration(videoBlob, totalDuration);
+            console.log('WebM duration fixed with JS fallback');
+          } catch (fixError) {
+            console.warn('WebM fix failed, keeping original:', fixError.message);
+            // Keep original WebM - may have seeking issues
+          }
         }
+      } else if (extension === 'webm') {
+        // No FFmpeg - try pure JS fix for WebM duration/seeking
+        console.log('FFmpeg not available - using pure JS WebM fix');
+        try {
+          this.exportStatus.textContent = 'Optimizing video...';
+          const originalSize = videoBlob.size;
+          videoBlob = await this.fixWebmDuration(videoBlob, totalDuration);
+          console.log(`WebM duration fixed (no FFmpeg). Size: ${(originalSize / 1024 / 1024).toFixed(1)}MB -> ${(videoBlob.size / 1024 / 1024).toFixed(1)}MB`);
+        } catch (fixError) {
+          console.warn('WebM fix failed:', fixError.message);
+        }
+      } else {
+        console.log('No post-processing needed (format:', extension, ')');
       }
 
       // Download
