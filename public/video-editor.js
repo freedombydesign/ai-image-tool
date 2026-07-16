@@ -5497,16 +5497,20 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         console.log('Got signed upload URL, uploading directly to Supabase...');
 
         // Step 2: Upload directly to Supabase using signed URL (bypasses Vercel limit)
+        // Supabase SDK wraps Blobs in FormData - we must do the same
         const contentType = audioToTranscribe.type || 'audio/wav';
         console.log('Uploading with content-type:', contentType, 'size:', audioToTranscribe.size);
+
+        const formData = new FormData();
+        formData.append('', audioToTranscribe);  // Empty key is what Supabase SDK uses
+        formData.append('cacheControl', '3600');
 
         const uploadResponse = await fetch(signedUrl, {
           method: 'PUT',
           headers: {
-            'Content-Type': contentType,
             'x-upsert': 'true'
           },
-          body: audioToTranscribe
+          body: formData
         });
 
         if (!uploadResponse.ok) {
