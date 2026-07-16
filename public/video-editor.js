@@ -5497,17 +5497,22 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         console.log('Got signed upload URL, uploading directly to Supabase...');
 
         // Step 2: Upload directly to Supabase using signed URL (bypasses Vercel limit)
+        const contentType = audioToTranscribe.type || 'audio/wav';
+        console.log('Uploading with content-type:', contentType, 'size:', audioToTranscribe.size);
+
         const uploadResponse = await fetch(signedUrl, {
           method: 'PUT',
           headers: {
-            'Content-Type': audioToTranscribe.type || 'audio/mp4'
+            'Content-Type': contentType,
+            'x-upsert': 'true'
           },
           body: audioToTranscribe
         });
 
         if (!uploadResponse.ok) {
-          console.error('Direct upload failed:', uploadResponse.status, uploadResponse.statusText);
-          throw new Error('Failed to upload audio to storage');
+          const errorText = await uploadResponse.text().catch(() => 'No response body');
+          console.error('Direct upload failed:', uploadResponse.status, errorText);
+          throw new Error(`Failed to upload audio: ${errorText}`);
         }
 
         console.log('Audio uploaded to:', publicUrl);

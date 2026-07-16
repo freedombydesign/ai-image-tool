@@ -3335,10 +3335,10 @@ app.post('/api/signed-upload-url', async (req, res) => {
 
     const filePath = `audio/${fileName}`;
 
-    // Create signed upload URL (valid for 1 hour)
+    // Create signed upload URL (valid for 1 hour, with upsert to allow overwrites)
     const { data, error } = await supabase.storage
       .from('ai-tool-images')
-      .createSignedUploadUrl(filePath);
+      .createSignedUploadUrl(filePath, { upsert: true });
 
     if (error) throw error;
 
