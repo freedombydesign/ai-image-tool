@@ -3315,7 +3315,7 @@ class VideoEditor {
       const supabaseClient = window.supabase.createClient(config.url, config.anonKey);
 
       // Determine correct file extension from blob type
-      const mimeType = audioToSync.type || 'audio/mpeg';
+      let mimeType = audioToSync.type || 'audio/mpeg';
       let extension = 'mp3';
       if (mimeType.includes('webm')) extension = 'webm';
       else if (mimeType.includes('wav')) extension = 'wav';
@@ -3323,6 +3323,23 @@ class VideoEditor {
       else if (mimeType.includes('m4a') || mimeType.includes('mp4')) extension = 'm4a';
       else if (mimeType.includes('flac')) extension = 'flac';
       else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) extension = 'mp3';
+
+      // Compress large WAV files to WebM (Supabase limit is 50MB)
+      const fileSizeMB = audioToSync.size / (1024 * 1024);
+      if (fileSizeMB > 50 && extension === 'wav') {
+        console.log(`Audio is ${fileSizeMB.toFixed(1)}MB - compressing to WebM...`);
+        if (this.syncToAudioBtn) this.syncToAudioBtn.textContent = '⏳ Compressing audio...';
+        showToast(`Compressing ${fileSizeMB.toFixed(0)}MB audio (this takes a while)...`, 'info');
+        try {
+          audioToSync = await this.compressAudioToWebM(audioToSync);
+          extension = 'webm';
+          mimeType = 'audio/webm';
+          console.log('Compressed to WebM:', (audioToSync.size / (1024 * 1024)).toFixed(1) + 'MB');
+        } catch (compressError) {
+          console.error('Compression failed:', compressError);
+          throw new Error('Audio too large and compression failed');
+        }
+      }
 
       const fileName = `audio/transcribe_${Date.now()}.${extension}`;
       console.log('Step 4: Uploading to Supabase:', fileName, 'mimeType:', mimeType, 'size:', audioToSync.size);
