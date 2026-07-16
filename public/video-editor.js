@@ -5428,15 +5428,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     try {
-      // Use stitched audio if we have replaced segments (so captions match export audio)
-      const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
+      // Use ORIGINAL audio for caption generation - it's smaller and already compressed
+      // TTS splits are identical to original audio, so captions will match
+      // This avoids 11-minute compression of 119MB WAV stitched audio
       let baseAudio = this.audioBlob;
-
-      if (hasReplacements) {
-        if (activeBtn) activeBtn.innerHTML = '⏳ Building stitched audio...';
-        console.log('Generating captions from STITCHED audio (has replaced segments)');
-        baseAudio = await this.stitchAudioForExport();
-      }
+      console.log('Using original audio for captions (TTS splits = original, no compression needed)');
 
       // Trim audio if maxDuration specified (for test mode - saves API cost)
       let audioToTranscribe = baseAudio;
