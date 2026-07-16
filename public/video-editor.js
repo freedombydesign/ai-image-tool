@@ -9870,9 +9870,8 @@ async function handleSegmentUpload(segmentNum, file) {
     try {
       const audioBlob = await extractAudioFromVideo(file);
       if (audioBlob && typeof videoEditor !== 'undefined') {
-        // Upload extracted audio to Supabase for persistence
-        const config = window.supabaseConfig;
-        if (config) {
+        // Upload extracted audio to Supabase for persistence (reuse config from above)
+        if (config && config.url && config.bucket) {
           const audioPath = `audio/avatar-segment-${segmentNum}-${Date.now()}.wav`;
           const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
 
