@@ -315,22 +315,37 @@ class VideoEditor {
     }
   }
 
-  // Load audio for avatar segments - ALWAYS uses TTS splits for consistent timing
-  // NOTE: We never load from saved audio_url because those may contain old lip-sync
-  // audio with incorrect timing (e.g., 90.8s instead of 90.0s), causing drift
+  // Load audio for avatar segments - uses saved audio_url if available, else TTS splits
   async extractAudioFromAvatarSegments(segments) {
     if (!segments || segments.length === 0) return;
 
-    console.log(`Loading audio for ${segments.length} avatar segments using TTS splits...`);
+    console.log(`Loading audio for ${segments.length} avatar segments...`);
     let loaded = 0;
+    let needsRepair = [];
 
-    // ALWAYS use TTS splits - never load from saved audio_url
-    // Saved URLs may contain old lip-sync audio with wrong timing
-    let needsRepair = [...segments];
+    // First pass: load segments that have saved audio_url (user-uploaded replacements)
+    for (const seg of segments) {
+      if (seg.audio_url) {
+        try {
+          const response = await fetch(seg.audio_url);
+          if (response.ok) {
+            const audioBlob = await response.blob();
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
+            loaded++;
+            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL`);
+            continue;
+          }
+        } catch (e) {
+          console.warn(`  Failed to fetch audio for segment ${seg.segment_num}:`, e.message);
+        }
+      }
+      // Track segments that need TTS split (no saved audio)
+      needsRepair.push(seg);
+    }
 
-    // Split TTS audio for ALL segments to ensure consistent timing
+    // Second pass: use TTS splits for segments without saved audio
     if (needsRepair.length > 0 && this.audioBlob) {
-      console.log(`🔊 Splitting TTS audio for ${needsRepair.length} segments (ensures exact timing)...`);
+      console.log(`🔊 Splitting TTS audio for ${needsRepair.length} segments without saved audio...`);
 
       try {
         // Split TTS audio into segments
@@ -5428,11 +5443,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     try {
-      // Use ORIGINAL audio for caption generation - it's smaller and already compressed
-      // TTS splits are identical to original audio, so captions will match
-      // This avoids 11-minute compression of 119MB WAV stitched audio
+      // Use stitched audio if we have replaced segments (so captions match export audio)
+      const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
       let baseAudio = this.audioBlob;
-      console.log('Using original audio for captions (TTS splits = original, no compression needed)');
+
+      if (hasReplacements) {
+        if (activeBtn) activeBtn.innerHTML = '⏳ Building stitched audio...';
+        console.log('Generating captions from STITCHED audio (has replaced segments)');
+        baseAudio = await this.stitchAudioForExport();
+      }
 
       // Trim audio if maxDuration specified (for test mode - saves API cost)
       let audioToTranscribe = baseAudio;
