@@ -9855,20 +9855,9 @@ async function handleSegmentUpload(segmentNum, file) {
       fileName: file.name
     };
 
-    // Extract audio from uploaded video and store for stitching
-    try {
-      const audioBlob = await extractAudioFromVideo(file);
-      if (audioBlob && typeof videoEditor !== 'undefined') {
-        videoEditor.replacedAudioSegments[segmentNum] = {
-          blob: audioBlob,
-          url: permanentUrl
-        };
-        videoEditor.stitchedAudioBlob = null; // Clear cache
-        console.log(`Extracted and stored audio from uploaded segment ${segmentNum}`);
-      }
-    } catch (audioErr) {
-      console.warn(`Could not extract audio from segment ${segmentNum}:`, audioErr);
-    }
+    // NOTE: Do NOT extract audio from uploaded avatar videos!
+    // We only need the VIDEO track. Clean TTS audio comes from the original TTS file
+    // and is split by extractAudioFromAvatarSegments() auto-repair.
 
     // Save to database for persistence across refreshes
     await fetch('/api/db/avatar-segments', {
