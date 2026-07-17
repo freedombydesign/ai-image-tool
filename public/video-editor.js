@@ -8944,25 +8944,24 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               // Video is close enough to expected position - sync and draw
               const now = performance.now();
 
-              // SIMPLIFIED SYNC: Constant playbackRate changes cause visual stutter!
-              // Instead: always play at 1.0 speed, only hard-seek if drift exceeds 0.5s
-              // Small drift (< 0.5s) is acceptable for lip sync and avoids stutter
+              // LIP SYNC FIX: Keep playbackRate at 1.0 (avoids stutter) but seek tightly
+              // Human perception detects lip sync issues at ~80ms, so threshold is 0.08s
 
-              // Add 500ms cooldown after resync to prevent feedback loop
-              const cooldownElapsed = now - lastAvatarResyncTime > 500;
+              // Add 200ms cooldown after resync to prevent seeking every frame
+              const cooldownElapsed = now - lastAvatarResyncTime > 200;
 
-              // Don't resync for 3 seconds after segment switch - let video stabilize
+              // Wait 1 second after segment switch to let video stabilize
               const timeSinceSwitchMs = avatarData._crossfadeStartTime ? now - avatarData._crossfadeStartTime : Infinity;
-              const allowResync = timeSinceSwitchMs > 3000 && avatarData.element.readyState >= 3;
+              const allowResync = timeSinceSwitchMs > 1000 && avatarData.element.readyState >= 3;
 
-              // Ensure playbackRate is always 1.0 to prevent stutter
+              // Ensure playbackRate is always 1.0 to prevent visual stutter
               if (avatarData.element.playbackRate !== 1.0) {
                 avatarData.element.playbackRate = 1.0;
               }
 
-              // Only hard-seek if drift is very large (> 0.5s) and video is stable
-              if (absDrift > 0.5 && !avatarData.element.seeking && cooldownElapsed && allowResync) {
-                console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+              // Hard-seek when drift exceeds 80ms (lip sync threshold) - no playbackRate adjustments
+              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed && allowResync) {
+                console.log(`Avatar lip-sync correction: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
                 avatarData.element.currentTime = expectedLocalTime;
                 lastAvatarResyncTime = now;
               }
@@ -8974,13 +8973,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
               }
 
-              // CROSS-FADE: Disabled to debug stutter - doing hard cut instead
-              // Drawing two videos with alpha blending may cause performance issues
-              const CROSSFADE_DURATION = 0; // DISABLED: was 1000ms - testing if crossfade causes stutter
+              // CROSS-FADE: Smooth transition between avatar segments
+              const CROSSFADE_DURATION = 1000; // 1 second crossfade
               const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
               const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
-              // DISABLED: Force hard cut by never crossfading
-              const shouldCrossfade = false; // was: crossfadeProgress < 1 && fallbackAvatar && ...
+              const shouldCrossfade = crossfadeProgress < 1 && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2;
 
               if (shouldCrossfade) {
                 const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 1000ms
