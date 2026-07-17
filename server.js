@@ -2153,14 +2153,37 @@ Return ONLY the JSON array.`;
     const validatedTimings = [];
 
     // First pass: Use AI's startTime but shift earlier by anticipation
+    console.log('=== GPT-4o RAW TIMINGS (first 10) ===');
+    for (let i = 0; i < Math.min(10, scenes.length); i++) {
+      const aiTiming = timings.find(t => t.sceneIndex === i);
+      if (aiTiming) {
+        console.log(`Scene ${i + 1}: GPT-4o returned startTime=${aiTiming.startTime?.toFixed(1)}s | reason="${aiTiming.reason}"`);
+      }
+    }
+    console.log('=== END GPT-4o RAW TIMINGS ===');
+
     for (let i = 0; i < scenes.length; i++) {
       const aiTiming = timings.find(t => t.sceneIndex === i);
 
       // Get AI's suggested time (when words are spoken) and shift EARLIER
       let startTime;
       if (aiTiming && typeof aiTiming.startTime === 'number') {
+        // Check if reason mentions a different timestamp - GPT-4o sometimes puts
+        // the correct time in reason but wrong time in startTime
+        let aiStart = aiTiming.startTime;
+        if (aiTiming.reason) {
+          const reasonMatch = aiTiming.reason.match(/(\d+\.?\d*)\s*s/);
+          if (reasonMatch) {
+            const reasonTime = parseFloat(reasonMatch[1]);
+            // If reason timestamp differs significantly from startTime, prefer reason
+            if (Math.abs(reasonTime - aiStart) > 2.0) {
+              console.log(`Scene ${i + 1}: Using reason time ${reasonTime}s instead of startTime ${aiStart}s`);
+              aiStart = reasonTime;
+            }
+          }
+        }
         // Shift earlier by anticipation, but not before 0
-        startTime = Math.max(0, aiTiming.startTime - ANTICIPATION);
+        startTime = Math.max(0, aiStart - ANTICIPATION);
       } else {
         // Fallback to proportional
         startTime = (i / scenes.length) * totalDuration;
@@ -2200,16 +2223,30 @@ Return ONLY the JSON array.`;
       `S${t.sceneIndex}@${t.startTime.toFixed(1)}s`
     ).join(' → '));
 
-    // Adjust if we exceed total duration
+    // Adjust if we exceed total duration - PRESERVE relative positions from GPT-4o
     const totalUsed = validatedTimings.reduce((sum, t) => sum + t.duration, 0);
     if (totalUsed > totalDuration) {
       const scale = totalDuration / totalUsed;
-      let runningTime = 0;
+      console.log(`Scaling scenes: totalUsed=${totalUsed.toFixed(1)}s > totalDuration=${totalDuration.toFixed(1)}s, scale=${scale.toFixed(3)}`);
+
+      // Scale BOTH startTime AND duration proportionally to preserve GPT-4o's matching
+      // This keeps scenes where GPT-4o found the text, just compressed
       for (const timing of validatedTimings) {
-        timing.startTime = runningTime;
+        timing.startTime = Math.max(0, timing.startTime * scale);
         timing.duration = Math.max(minDuration, timing.duration * scale);
-        runningTime += timing.duration;
       }
+
+      // Now fix any gaps/overlaps while preserving the relative order
+      validatedTimings.sort((a, b) => a.startTime - b.startTime);
+      for (let i = 0; i < validatedTimings.length; i++) {
+        if (i < validatedTimings.length - 1) {
+          const nextStart = validatedTimings[i + 1].startTime;
+          validatedTimings[i].duration = Math.max(minDuration, nextStart - validatedTimings[i].startTime);
+        } else {
+          validatedTimings[i].duration = Math.max(minDuration, totalDuration - validatedTimings[i].startTime);
+        }
+      }
+      validatedTimings.sort((a, b) => a.sceneIndex - b.sceneIndex);
     }
 
     // Ensure last scene ends at total duration
