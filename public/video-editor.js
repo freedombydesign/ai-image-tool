@@ -8415,12 +8415,21 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             }
             // Start new avatar at correct position - safe now because we checked video hasn't ended
             const localTime = currentTime - avatarData.startTime;
-            avatarData.element.currentTime = localTime;
-            // Set playback rate to catch up if we're behind (helps with sync)
-            avatarData.element.playbackRate = 1.0;
-            avatarData.element.play().catch(() => {});
-            lastActiveAvatar = avatarData;
-            console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s`);
+            const vidDur = avatarData.element.duration;
+            console.log(`AVATAR SWITCH at ${currentTime.toFixed(1)}s: seg ${avatarData.segmentIndex}, seeking to localTime=${localTime.toFixed(2)}s, videoDuration=${vidDur?.toFixed(1)}s, ended=${avatarData.element.ended}`);
+
+            // EXTRA SAFETY: Don't seek if localTime exceeds video duration
+            if (vidDur && localTime >= vidDur - 0.1) {
+              console.log(`BLOCKED: Would seek past video end. Skipping this avatar.`);
+              avatarData = null;
+            } else {
+              avatarData.element.currentTime = localTime;
+              // Set playback rate to catch up if we're behind (helps with sync)
+              avatarData.element.playbackRate = 1.0;
+              avatarData.element.play().catch(() => {});
+              lastActiveAvatar = avatarData;
+              console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s`);
+            }
           } else if (!avatarData && lastActiveAvatar) {
             // No avatar for this time (or video ended), pause current
             lastActiveAvatar.element.pause();
