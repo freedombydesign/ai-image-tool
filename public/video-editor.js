@@ -8562,14 +8562,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
 
-            // If video has ended or we're past its duration, treat as no avatar
-            if (avatarData.element.ended || expectedLocalTime >= videoDuration - 0.1) {
+            // If video has ended or we're past its duration, mark it but KEEP DRAWING
+            // Don't set avatarData = null - we want to keep showing the last frame
+            // until the next segment starts (prevents flash/gap at boundaries)
+            if (avatarData.element.ended || expectedLocalTime >= videoDuration - 0.05) {
               if (!avatarData._loggedEnd) {
-                console.log(`Avatar segment ${avatarData.segmentIndex} video ended at ${currentTime.toFixed(1)}s (video: ${videoDuration.toFixed(1)}s, expected: ${expectedLocalTime.toFixed(1)}s)`);
+                console.log(`Avatar segment ${avatarData.segmentIndex} video ended at ${currentTime.toFixed(1)}s (video: ${videoDuration.toFixed(1)}s, expected: ${expectedLocalTime.toFixed(1)}s) - holding last frame`);
                 avatarData._loggedEnd = true;
               }
-              // Don't use this avatar - it's finished
-              avatarData = null;
+              // Mark as ended but DON'T set to null - keep drawing last frame
+              avatarData._hasEnded = true;
             }
           } else if (!avatarData && frameCount % 30 === 0) {
             // Log when no avatar is found (every second)
