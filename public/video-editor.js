@@ -294,7 +294,7 @@ class VideoEditor {
           });
 
           // Sync to video editor
-          await this.syncUploadedAvatarSegments();
+          this.syncUploadedAvatarSegments();
           this.avatarEnabled = true;
 
           console.log(`Loaded ${data.segments.length} avatar segments from Supabase`);
@@ -6221,7 +6221,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Preview
-  async openPreview() {
+  openPreview() {
     // Avatar Only mode doesn't require scenes
     if (!this.avatarOnlyMode && this.scenes.length === 0) {
       showToast('Add scenes first to preview.');
@@ -6229,7 +6229,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Sync uploaded avatar segments to avatarVideos array for preview
-    await this.syncUploadedAvatarSegments();
+    this.syncUploadedAvatarSegments();
 
     this.previewModal.hidden = false;
     this.playbackTime = 0;
@@ -6389,79 +6389,39 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Sync uploaded avatar segments from window.uploadedAvatarSegments to this.avatarVideos
-  async syncUploadedAvatarSegments() {
+  syncUploadedAvatarSegments() {
     const uploadedSegments = window.uploadedAvatarSegments || {};
     const segmentKeys = Object.keys(uploadedSegments).map(Number).sort((a, b) => a - b);
 
     if (segmentKeys.length === 0) return;
 
-    const DEFAULT_SEGMENT_LENGTH = 90;
-    const segmentDurations = {};
-
-    // Get actual segment durations from replacedAudioSegments
-    // If durations aren't cached, decode audio blobs to get them
-    if (this.replacedAudioSegments) {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-      for (const key of Object.keys(this.replacedAudioSegments)) {
-        const segNum = parseInt(key);
-        const seg = this.replacedAudioSegments[segNum];
-
-        if (seg && seg.duration) {
-          // Already have duration cached
-          segmentDurations[segNum] = seg.duration;
-        } else if (seg && seg.blob) {
-          // Decode blob to get duration
-          try {
-            const arrayBuffer = await seg.blob.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            seg.duration = audioBuffer.duration; // Cache it
-            segmentDurations[segNum] = audioBuffer.duration;
-            console.log(`Decoded segment ${segNum} duration: ${audioBuffer.duration.toFixed(2)}s`);
-          } catch (e) {
-            console.warn(`Failed to decode segment ${segNum} for duration:`, e.message);
-            segmentDurations[segNum] = DEFAULT_SEGMENT_LENGTH;
-          }
-        }
-      }
-
-      audioContext.close();
-    }
-
+    // Each segment is 90 seconds (the length used during avatar generation)
+    const SEGMENT_LENGTH = 90;
     // Use audio duration, or calculate from scenes, or default to segment count * 90
-    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * DEFAULT_SEGMENT_LENGTH);
+    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
 
-    // Build avatarVideos array using cumulative actual durations
+    // Build avatarVideos array from uploaded segments
+    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
     this.avatarVideos = [];
-    let cumulativeStartTime = 0;
-    const maxSegment = Math.max(...segmentKeys);
-    const hasAnyDurations = Object.keys(segmentDurations).length > 0;
-
-    for (let segNum = 1; segNum <= maxSegment; segNum++) {
+    segmentKeys.forEach((segNum) => {
       const seg = uploadedSegments[segNum];
-      // Get actual duration or fallback
-      const segmentDuration = segmentDurations[segNum] || DEFAULT_SEGMENT_LENGTH;
-
       if (seg && seg.url) {
-        const startTime = cumulativeStartTime;
-        const endTime = Math.min(cumulativeStartTime + segmentDuration, totalDuration);
+        const segmentIndex = segNum - 1; // Convert to 0-indexed
+        const startTime = segmentIndex * SEGMENT_LENGTH;
+        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
 
         this.avatarVideos.push({
           videoUrl: seg.url,
           startTime: startTime,
           endTime: endTime,
-          duration: segmentDuration,
           segmentIndex: segNum
         });
 
-        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (duration: ${segmentDuration.toFixed(2)}s)`);
+        console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
       }
+    });
 
-      // Always advance cumulative time
-      cumulativeStartTime += segmentDuration;
-    }
-
-    console.log(`Synced ${this.avatarVideos.length} avatar segments ${hasAnyDurations ? 'using actual durations' : 'using default 90s'}`);
+    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview`);
   }
 
   closePreview() {
@@ -7608,8 +7568,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       exportCanvas.height = height;
       const ctx = exportCanvas.getContext('2d');
 
-      // Sync uploaded avatar segments (await to get accurate durations)
-      await this.syncUploadedAvatarSegments();
+      // Sync uploaded avatar segments
+      this.syncUploadedAvatarSegments();
 
       // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
@@ -7619,8 +7579,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const videosToLoad = isTestExport
           ? this.avatarVideos.filter(av => {
               if (!av.videoUrl) return false;
-              // Use actual endTime from avatar segment (not hardcoded 90s)
-              const segmentEnd = av.endTime || (av.startTime + (av.duration || 90));
+              const segmentEnd = av.startTime + 90; // Each segment is 90 seconds
               // Check if segment overlaps with export range [startTime, exportEndTime]
               return av.startTime < exportEndTime && segmentEnd > startTime;
             })
@@ -10280,7 +10239,7 @@ async function handleSegmentUpload(segmentNum, file) {
     // Enable avatar overlay when segments are uploaded
     if (typeof videoEditor !== 'undefined') {
       videoEditor.avatarEnabled = true;
-      await videoEditor.syncUploadedAvatarSegments();
+      videoEditor.syncUploadedAvatarSegments();
     }
 
     // Update status
