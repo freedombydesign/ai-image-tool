@@ -8731,11 +8731,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
-          // CLEAN CUT: Hide avatar at segment boundaries to mask the visual jump
-          // Like a film editor's splice - cut out the problematic transition
-          // Extended to cover buffering period (avatar videos take ~3s to buffer at boundary)
-          const CUT_BEFORE = 0.1; // Hide 100ms BEFORE boundary (trim end of previous segment)
-          const CUT_AFTER = 3.5; // Hide 3.5s AFTER boundary (covers buffering time)
+          // FREEZE ZONE: Freeze avatar briefly at segment boundaries to mask the visual jump
+          // Avatar stays visible but static for a brief moment during transition
+          const CUT_BEFORE = 0.2; // Freeze 200ms BEFORE boundary
+          const CUT_AFTER = 0.3; // Freeze 300ms AFTER boundary (500ms total)
 
           // Find the nearest segment boundary
           const segmentLength = 90;
@@ -8783,15 +8782,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             ctx.restore();
           };
 
-          // During cut zone: DON'T draw avatar - this hides the visual jump
-          if (inCutZone) {
+          // During cut zone: FREEZE avatar at last good frame to avoid visual jump
+          // This keeps the avatar visible but static, avoiding both the "jump" and "disappearing" effects
+          if (inCutZone && lastActiveAvatar && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
             if (frameCount % 10 === 0) {
               const boundary = inCutBeforeBoundary ? nextBoundary : prevBoundary;
-              console.log(`✂️ CUT ZONE at ${currentTime.toFixed(2)}s (boundary: ${boundary}s, ${inCutBeforeBoundary ? 'before' : 'after'})`);
+              console.log(`🧊 FREEZE ZONE at ${currentTime.toFixed(2)}s (boundary: ${boundary}s, ${inCutBeforeBoundary ? 'before' : 'after'})`);
             }
-            // Skip avatar drawing entirely - shows just the background scene
-            // This creates a clean "splice" effect
-            lastActiveAvatar = currentSegment || lastActiveAvatar;
+            // Draw the LAST ACTIVE avatar (frozen at its current position)
+            // This keeps a talking head visible but static during transition
+            drawAvatar(lastActiveAvatar.element);
+            // Don't update lastActiveAvatar - keep it frozen
           } else if (currentSegment && currentSegment.element) {
             // Normal drawing outside cut zone
             drawAvatar(currentSegment.element);
