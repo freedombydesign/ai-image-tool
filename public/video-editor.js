@@ -324,59 +324,15 @@ class VideoEditor {
     let needsRepair = [];
 
     // First pass: load segments that have saved audio_url (user-uploaded replacements)
-    // IMPORTANT: Validate duration matches expected 90s to prevent audio/video desync
-    const expectedSegmentDuration = 90; // seconds
-    const durationTolerance = 0.5; // Allow up to 0.5s deviation
-
     for (const seg of segments) {
       if (seg.audio_url) {
         try {
           const response = await fetch(seg.audio_url);
           if (response.ok) {
             const audioBlob = await response.blob();
-
-            // Decode audio to get its actual duration (needed for dynamic segment timing)
-            let actualDuration = expectedSegmentDuration; // Default if decode fails
-            try {
-              const tempContext = new (window.AudioContext || window.webkitAudioContext)();
-              const arrayBuffer = await audioBlob.arrayBuffer();
-              const tempBuffer = await tempContext.decodeAudioData(arrayBuffer);
-              actualDuration = tempBuffer.duration;
-              tempContext.close();
-
-              // Warn if duration differs significantly (for debugging)
-              const durationDiff = Math.abs(actualDuration - expectedSegmentDuration);
-              if (durationDiff > durationTolerance) {
-                console.log(`ℹ️ Segment ${seg.segment_num} has custom duration: ${actualDuration.toFixed(2)}s (standard is ${expectedSegmentDuration}s)`);
-                console.log(`   Timeline will adjust to accommodate this segment's length`);
-              }
-
-              // SAFEGUARD: Detect if audio was extracted from avatar video (common video durations)
-              // Video-extracted audio has duration like 90.815986s (video codec frame alignment)
-              // TTS audio has clean durations like 90.82s or exact splits
-              const fractionalPart = actualDuration % 1;
-              const looksLikeVideoAudio = fractionalPart > 0.8 && fractionalPart < 0.82 &&
-                Math.abs(actualDuration - 90.816) < 0.01;
-
-              if (looksLikeVideoAudio) {
-                console.warn(`⚠️ Segment ${seg.segment_num} audio appears to be video-extracted (${actualDuration.toFixed(4)}s). Will use TTS split instead.`);
-                needsRepair.push(seg);
-                continue; // Skip this audio and use TTS split
-              }
-
-              console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (${actualDuration.toFixed(2)}s, blob size: ${audioBlob.size})`);
-            } catch (decodeErr) {
-              console.warn(`  Failed to decode segment ${seg.segment_num} duration:`, decodeErr.message);
-              console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
-            }
-
-            // Store blob AND duration for dynamic segment timing
-            this.replacedAudioSegments[seg.segment_num] = {
-              blob: audioBlob,
-              url: seg.audio_url,
-              duration: actualDuration  // IMPORTANT: Store actual duration for timeline sync
-            };
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
             loaded++;
+            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
             continue;
           }
         } catch (e) {
@@ -404,11 +360,10 @@ class VideoEditor {
           if (segmentIndex >= 0 && segmentIndex < audioSegments.length) {
             const audioSeg = audioSegments[segmentIndex];
 
-            // Store in memory immediately (include duration for sync calculations)
-            const segDuration = audioSeg.endTime - audioSeg.startTime;
-            this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null, duration: segDuration };
+            // Store in memory immediately
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null };
             loaded++;
-            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split (${segDuration.toFixed(2)}s, blob size: ${audioSeg.blob.size})`);
+            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split (blob size: ${audioSeg.blob.size})`);
 
             // Upload to Supabase if available
             if (userId && config) {
@@ -6754,42 +6709,20 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     if (segmentKeys.length === 0) return;
 
-    // Default segment length (used when actual duration unknown)
-    const DEFAULT_SEGMENT_LENGTH = 90;
+    // Each segment is 90 seconds (the length used during avatar generation)
+    const SEGMENT_LENGTH = 90;
+    // Use audio duration, or calculate from scenes, or default to segment count * 90
+    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
 
     // Build avatarVideos array from uploaded segments
-    // Use ACTUAL audio durations to calculate start times (handles segments with different lengths)
+    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
     this.avatarVideos = [];
-    let cumulativeTime = 0; // Track cumulative time based on actual audio durations
-
-    for (const segNum of segmentKeys) {
+    segmentKeys.forEach((segNum) => {
       const seg = uploadedSegments[segNum];
       if (seg && seg.url) {
-        // Get actual audio duration for this segment (if available)
-        const audioData = this.replacedAudioSegments?.[segNum];
-        let segmentDuration = audioData?.duration || DEFAULT_SEGMENT_LENGTH;
-
-        // CRITICAL: If duration is close to DEFAULT but not exact (e.g., 90.82s from video-extracted audio),
-        // force it to exactly DEFAULT_SEGMENT_LENGTH to prevent segment boundary drift
-        // This fixes the issue where video-extracted audio (90.82s) caused all subsequent segments to start late
-        if (Math.abs(segmentDuration - DEFAULT_SEGMENT_LENGTH) < 1.0 && segmentDuration !== DEFAULT_SEGMENT_LENGTH) {
-          console.log(`🔧 Forcing segment ${segNum} duration from ${segmentDuration.toFixed(2)}s to exactly ${DEFAULT_SEGMENT_LENGTH}s`);
-          segmentDuration = DEFAULT_SEGMENT_LENGTH;
-        }
-
-        // For segments before this one that we skipped, add their duration to cumulative time
-        // This handles cases where segment numbers aren't contiguous
-        const expectedSegNum = this.avatarVideos.length + 1;
-        if (segNum > expectedSegNum) {
-          // Fill in missing segments with default duration
-          for (let missing = expectedSegNum; missing < segNum; missing++) {
-            const missingAudioData = this.replacedAudioSegments?.[missing];
-            cumulativeTime += missingAudioData?.duration || DEFAULT_SEGMENT_LENGTH;
-          }
-        }
-
-        const startTime = cumulativeTime;
-        const endTime = startTime + segmentDuration;
+        const segmentIndex = segNum - 1; // Convert to 0-indexed
+        const startTime = segmentIndex * SEGMENT_LENGTH;
+        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
 
         this.avatarVideos.push({
           videoUrl: seg.url,
@@ -6798,42 +6731,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           segmentIndex: segNum
         });
 
-        // Log with indicator if using non-standard duration
-        if (Math.abs(segmentDuration - DEFAULT_SEGMENT_LENGTH) > 0.5) {
-          console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (audio: ${segmentDuration.toFixed(2)}s ⚠️)`);
-        } else {
-          console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
-        }
-
-        cumulativeTime = endTime;
+        console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
       }
-    }
+    });
 
-    // CRITICAL: Ensure segments are perfectly contiguous (fixes floating point drift)
-    // Each segment's startTime must equal the previous segment's endTime
-    let fixesApplied = 0;
-    for (let i = 1; i < this.avatarVideos.length; i++) {
-      const prevEndTime = this.avatarVideos[i - 1].endTime;
-      const currStartTime = this.avatarVideos[i].startTime;
-      const diff = prevEndTime - currStartTime;
-      if (Math.abs(diff) > 0.001) {
-        console.log(`[CONTIGUOUS FIX] Segment ${this.avatarVideos[i].segmentIndex}: ${currStartTime.toFixed(3)}s -> ${prevEndTime.toFixed(3)}s (gap: ${diff.toFixed(3)}s)`);
-        const duration = this.avatarVideos[i].endTime - this.avatarVideos[i].startTime;
-        this.avatarVideos[i].startTime = prevEndTime;
-        this.avatarVideos[i].endTime = prevEndTime + duration;
-        fixesApplied++;
-      }
-    }
-
-    // Log final corrected boundaries
-    if (fixesApplied > 0) {
-      console.log(`Applied ${fixesApplied} contiguous fixes. Final boundaries:`);
-      this.avatarVideos.forEach(av => {
-        console.log(`  Segment ${av.segmentIndex}: ${av.startTime.toFixed(3)}s - ${av.endTime.toFixed(3)}s`);
-      });
-    }
-
-    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview (using actual audio durations)`);
+    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview`);
   }
 
   closePreview() {
@@ -7983,30 +7885,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Sync uploaded avatar segments
       this.syncUploadedAvatarSegments();
 
-      // DIAGNOSTIC: Dump all scene timings to find gaps at 180s
-      console.log('=== SCENE TIMINGS AT EXPORT START ===');
-      this.scenes.forEach((scene, i) => {
-        const sceneEnd = scene.startTime + scene.duration;
-        console.log(`Scene ${i}: ${scene.startTime.toFixed(2)}s - ${sceneEnd.toFixed(2)}s (duration: ${scene.duration.toFixed(2)}s)`);
-        // Check for gap with previous scene
-        if (i > 0) {
-          const prevScene = this.scenes[i - 1];
-          const prevEnd = prevScene.startTime + prevScene.duration;
-          if (Math.abs(prevEnd - scene.startTime) > 0.01) {
-            console.warn(`⚠️ GAP between scene ${i-1} and ${i}: ${prevEnd.toFixed(2)}s to ${scene.startTime.toFixed(2)}s = ${(scene.startTime - prevEnd).toFixed(2)}s`);
-          }
-        }
-      });
-      // Check scene at 180s specifically
-      const sceneAt180 = this.scenes.find(s => 180 >= s.startTime && 180 < s.startTime + s.duration);
-      if (sceneAt180) {
-        const idx = this.scenes.indexOf(sceneAt180);
-        console.log(`Scene at 180s: Scene ${idx} (${sceneAt180.startTime.toFixed(2)}s - ${(sceneAt180.startTime + sceneAt180.duration).toFixed(2)}s)`);
-      } else {
-        console.error('❌ NO SCENE FOUND AT 180s! This will cause stutter!');
-      }
-      console.log('=====================================');
-
       // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
       const exportEndTime = startTime + totalDuration;
@@ -8051,13 +7929,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const loadedVideos = await Promise.all(videoLoadPromises);
         // Sort by startTime to maintain order
         avatarVideoElements.push(...loadedVideos.filter(v => v !== null).sort((a, b) => a.startTime - b.startTime));
-
-        // Reset crossfade flags for all segments (fresh export)
-        avatarVideoElements.forEach(av => {
-          av._pausedForCrossfade = false;
-          av._crossfadeStartTime = null;
-        });
-
         this.exportProgressBar.style.width = '20%';
       }
 
@@ -8485,7 +8356,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Pre-initialize lastActiveAvatar to avoid triggering "switch" on first frame
       // Find the avatar segment that should be active at startTime
       let lastActiveAvatar = null;
-      let fallbackAvatar = null; // Previous avatar to use as fallback when new one isn't ready
       for (const av of avatarVideoElements) {
         if (av && startTime >= av.startTime && startTime < av.endTime) {
           lastActiveAvatar = av;
@@ -8558,11 +8428,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         const sceneIndex = this.scenes.indexOf(scene);
         const sceneImg = sceneImages[sceneIndex];
-
-        // DIAGNOSTIC: Log scene state at critical 180s boundary (segment 2→3 transition)
-        if (currentTime >= 179 && currentTime <= 183 && frameCount % 5 === 0) {
-          console.log(`[180s REGION] t=${currentTime.toFixed(2)}s, scene=${sceneIndex} (${scene.startTime.toFixed(1)}s-${(scene.startTime + scene.duration).toFixed(1)}s), imgLoaded=${sceneImg ? 'yes' : 'NO!'}`);
-        }
 
         // Clear canvas
         ctx.fillStyle = '#000';
@@ -8652,42 +8517,6 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
-          // PRE-BUFFER upcoming segments 8 seconds before they're needed
-          // This actually downloads/buffers video content, not just warms decoder
-          const PREWARM_AHEAD = 8; // seconds before segment switch to start buffering
-          for (const av of avatarVideoElements) {
-            if (!av || !av.element) continue;
-            const timeUntilNeeded = av.startTime - currentTime;
-
-            // If segment is 0-8 seconds away and hasn't been pre-warmed yet
-            if (timeUntilNeeded > 0 && timeUntilNeeded <= PREWARM_AHEAD && !av._prewarmed) {
-              av._prewarmed = true;
-              const vid = av.element;
-
-              // Start playing to force buffering, then pause at position 0 before switch
-              console.log(`PRE-BUFFERING segment ${av.segmentIndex} (${timeUntilNeeded.toFixed(1)}s until needed, readyState=${vid.readyState})`);
-
-              vid.currentTime = 0;
-              vid.muted = true;
-              vid.playbackRate = 1.0;
-              vid.play().then(() => {
-                // Play for 3 seconds to actually buffer content, then pause
-                // This forces the browser to download video data
-                setTimeout(() => {
-                  vid.pause();
-                  vid.currentTime = 0; // Reset to start for seamless switch
-                  av._warmedUp = true;
-                  console.log(`Segment ${av.segmentIndex} pre-buffered and ready at position 0 (readyState=${vid.readyState}, buffered=${vid.buffered.length > 0 ? vid.buffered.end(0).toFixed(1) + 's' : 'none'})`);
-                }, 3000); // 3 seconds of playback to buffer content
-              }).catch(() => {
-                console.log(`Segment ${av.segmentIndex} pre-buffer failed, will try on switch`);
-              });
-
-              // Mark switch time as old so we don't skip frames when we switch
-              av.switchTime = performance.now() - 2000;
-            }
-          }
-
           // Find avatar for current time, but also check if video has ended
           let avatarData = avatarVideoElements.find(av =>
             av && currentTime >= av.startTime && currentTime < av.endTime
@@ -8708,27 +8537,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
 
-            // If video has ACTUALLY ended, try to find the NEXT segment
-            // This fixes stutter when video ends before audio (video=90.815s vs audio=90.82s)
-            if (avatarData.element.ended || expectedLocalTime >= videoDuration) {
+            // If video has ended or we're past its duration, treat as no avatar
+            if (avatarData.element.ended || expectedLocalTime >= videoDuration - 0.1) {
               if (!avatarData._loggedEnd) {
                 console.log(`Avatar segment ${avatarData.segmentIndex} video ended at ${currentTime.toFixed(1)}s (video: ${videoDuration.toFixed(1)}s, expected: ${expectedLocalTime.toFixed(1)}s)`);
                 avatarData._loggedEnd = true;
               }
-
-              // CRITICAL FIX: Find the NEXT segment instead of showing nothing
-              // This handles the gap when video duration < audio duration
-              const endedSegmentIndex = avatarData.segmentIndex;
-              const nextSegment = avatarVideoElements.find(av =>
-                av && av.segmentIndex > endedSegmentIndex && currentTime >= av.startTime - 0.1
-              );
-
-              if (nextSegment && nextSegment.element && nextSegment.element.readyState >= 2) {
-                console.log(`[EARLY SWITCH] Segment ${endedSegmentIndex} video ended, switching to segment ${nextSegment.segmentIndex} at ${currentTime.toFixed(2)}s`);
-                avatarData = nextSegment;
-              } else {
-                avatarData = null;
-              }
+              // Don't use this avatar - it's finished
+              avatarData = null;
             }
           } else if (!avatarData && frameCount % 30 === 0) {
             // Log when no avatar is found (every second)
@@ -8737,113 +8553,47 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Handle avatar video switching
           if (avatarData && avatarData !== lastActiveAvatar) {
-            // CHECK: Is the new segment's video sufficiently buffered?
-            // If not, delay the switch and keep using the old segment
-            const newVid = avatarData.element;
-            let bufferedSeconds = 0;
-            if (newVid.buffered && newVid.buffered.length > 0) {
-              // Find buffer range that starts at or before position 0
-              for (let i = 0; i < newVid.buffered.length; i++) {
-                if (newVid.buffered.start(i) <= 0.1) {
-                  bufferedSeconds = newVid.buffered.end(i);
-                  break;
-                }
-              }
+            // Pause previous avatar
+            if (lastActiveAvatar && lastActiveAvatar.element) {
+              lastActiveAvatar.element.pause();
             }
-            const MIN_BUFFER_SECONDS = 5; // Require at least 5 seconds buffered before switching
+            // Start new avatar at correct position - safe now because we checked video hasn't ended
+            const localTime = currentTime - avatarData.startTime;
+            const vidDur = avatarData.element.duration;
+            console.log(`AVATAR SWITCH at ${currentTime.toFixed(1)}s: seg ${avatarData.segmentIndex}, seeking to localTime=${localTime.toFixed(2)}s, videoDuration=${vidDur?.toFixed(1)}s, ended=${avatarData.element.ended}`);
 
-            if (bufferedSeconds < MIN_BUFFER_SECONDS && newVid.readyState < 4) {
-              // Not enough data buffered - delay switch, keep using old segment
-              if (frameCount % 30 === 0) { // Log every second
-                console.log(`⏳ DELAY SWITCH: segment ${avatarData.segmentIndex} only has ${bufferedSeconds.toFixed(1)}s buffered (need ${MIN_BUFFER_SECONDS}s), readyState=${newVid.readyState}`);
-              }
-              // Keep drawing the old segment instead - DON'T switch
-              if (lastActiveAvatar && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
-                avatarData = lastActiveAvatar;
-              } else {
-                avatarData = null;
-              }
-              // Skip the switch logic below by NOT entering the else block
+            // EXTRA SAFETY: Don't seek if localTime exceeds video duration
+            if (vidDur && localTime >= vidDur - 0.1) {
+              console.log(`BLOCKED: Would seek past video end. Skipping this avatar.`);
+              avatarData = null;
             } else {
-              // Enough data buffered - proceed with switch
-              // Save current as fallback before switching (for crossfade blending)
-              if (lastActiveAvatar && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
-                fallbackAvatar = lastActiveAvatar;
-                // PAUSE the old segment - if it keeps playing, it might reach its END during crossfade
-                // and show garbage/black frames. Freezing on last good frame is safer.
-                fallbackAvatar.element.pause();
-                console.log(`[SWITCH] Pausing segment ${lastActiveAvatar.segmentIndex} at ${fallbackAvatar.element.currentTime.toFixed(2)}s for crossfade (frozen frame)`);
-              }
-
-              // Start new avatar at correct position - safe now because we checked video hasn't ended
-              // CLAMP to 0 in case of early switch (video duration < audio duration causes negative localTime)
-              const localTime = Math.max(0, currentTime - avatarData.startTime);
-              const vidDur = avatarData.element.duration;
-              console.log(`AVATAR SWITCH at ${currentTime.toFixed(1)}s: seg ${avatarData.segmentIndex}, seeking to localTime=${localTime.toFixed(2)}s, videoDuration=${vidDur?.toFixed(1)}s, ended=${avatarData.element.ended}, buffered=${bufferedSeconds.toFixed(1)}s`);
-
-              // EXTRA SAFETY: Don't seek if localTime exceeds video duration
-              if (vidDur && localTime >= vidDur - 0.1) {
-                console.log(`BLOCKED: Would seek past video end. Skipping this avatar.`);
-                avatarData = null;
+              avatarData.element.currentTime = localTime;
+              // Set playback rate to catch up if we're behind (helps with sync)
+              avatarData.element.playbackRate = 1.0;
+              avatarData.element.play().catch(() => {});
+              lastActiveAvatar = avatarData;
+              // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
+              // If switchTime is already > 1 second old, keep it (pre-seeked)
+              const timeSincePreSeek = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
+              if (timeSincePreSeek > 1000) {
+                // Pre-seeked segment - keep the old switchTime so we don't skip frames
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s (pre-seeked, no skip)`);
               } else {
-                // Check if video is already at the right position (pre-seeked)
-                const currentPos = avatarData.element.currentTime;
-                const alreadyAtPosition = Math.abs(currentPos - localTime) < 0.5;
-
-                if (alreadyAtPosition) {
-                  // Already at correct position - just start playing without seeking
-                  // SAFETY: If this is segment start (localTime near 0), force position to exactly 0
-                  if (localTime < 0.1 && currentPos > 0.05) {
-                    console.log(`FORCE RESET: segment ${avatarData.segmentIndex} was at ${currentPos.toFixed(2)}s, forcing to 0 (localTime=${localTime.toFixed(2)}s)`);
-                    avatarData.element.currentTime = 0;
-                  }
-                  avatarData.element.playbackRate = 1.0;
-                  avatarData.element.play().catch(() => {});
-                  console.log(`Avatar switch: segment ${avatarData.segmentIndex}, at ${currentPos.toFixed(2)}s (no seek, just play), warmedUp=${avatarData._warmedUp}, readyState=${avatarData.element.readyState}`);
-                } else {
-                  // Need to seek first, then play
-                  avatarData.element.currentTime = localTime;
-                  avatarData.element.playbackRate = 1.0;
-                  avatarData.element.play().catch(() => {});
-                  console.log(`Avatar switch: segment ${avatarData.segmentIndex}, seeking to ${localTime.toFixed(2)}s, warmedUp=${avatarData._warmedUp}, readyState=${avatarData.element.readyState}`);
-                }
-
-                // Track when switch happened for debug logging
-                avatarData._switchedAt = currentTime;
-                avatarData._loggedGap = false; // Reset gap logging flag for this new segment
-                // Track ACTUAL switch time for crossfade (separate from switchTime used for skip logic)
-                avatarData._crossfadeStartTime = performance.now();
-
-                lastActiveAvatar = avatarData;
-                // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
-                // If switchTime is already > 1 second old, keep it (pre-seeked)
-                const timeSincePreSeek = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
-                if (timeSincePreSeek > 1000) {
-                  // Pre-seeked segment - keep the old switchTime so we don't skip frames
-                } else {
-                  // Not pre-seeked or very recent - set new switchTime
-                  avatarData.switchTime = performance.now();
-                }
+                // Not pre-seeked or very recent - set new switchTime
+                avatarData.switchTime = performance.now();
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s (NEW switchTime)`);
               }
             }
           } else if (!avatarData && lastActiveAvatar) {
-            // No avatar for this time (or video ended), pause current BUT keep it for fallback drawing
-            // This prevents the gap between segment 2 ending and segment 3 starting
+            // No avatar for this time (or video ended), pause current
             lastActiveAvatar.element.pause();
-            // DON'T clear lastActiveAvatar - we'll use it to draw the last frame during the gap
-            fallbackAvatar = lastActiveAvatar;
-            // Only log once when transitioning to gap
-            if (!lastActiveAvatar._loggedGap) {
-              console.log(`[${currentTime.toFixed(1)}s] Avatar segment ${lastActiveAvatar.segmentIndex} video ended - keeping last frame as fallback until next segment`);
-              lastActiveAvatar._loggedGap = true;
-            }
+            lastActiveAvatar = null;
           }
 
           if (avatarData && avatarData.element) {
             // TIGHT sync: continuously sync avatar video to audio timeline
             // This is critical for lip sync - we force the video to match audio time
-            // CLAMP to 0 in case of early switch (handles video/audio duration mismatch)
-            const expectedLocalTime = Math.max(0, currentTime - avatarData.startTime);
+            const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
             const actualVideoTime = avatarData.element.currentTime;
             const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
@@ -8852,21 +8602,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // Check if we just switched segments
             const timeSinceSwitch = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
 
-            // DEBUG: Log first 3 seconds after any switch to diagnose stutter
-            const timeSinceContentSwitch = avatarData._switchedAt ? currentTime - avatarData._switchedAt : Infinity;
-            if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 10 === 0) {
-              console.log(`[SWITCH+${timeSinceContentSwitch.toFixed(1)}s] video.currentTime=${actualVideoTime.toFixed(2)}s, expected=${expectedLocalTime.toFixed(2)}s, drift=${drift.toFixed(3)}s, paused=${avatarData.element.paused}, readyState=${avatarData.element.readyState}`);
-            }
-
-            // DEBUG: Log every second for ALL segments to diagnose stutter
-            if (frameCount % 30 === 0) {
-              console.log(`[SEG ${avatarData.segmentIndex} @ ${currentTime.toFixed(1)}s] video=${actualVideoTime.toFixed(2)}s, expected=${expectedLocalTime.toFixed(2)}s, drift=${drift.toFixed(3)}s, paused=${avatarData.element.paused}, playing=${!avatarData.element.paused && !avatarData.element.ended}`);
-            }
-
-            // CRITICAL: Only skip if video isn't ready yet
-            // If readyState >= 3 (HAVE_FUTURE_DATA), video is decoded and ready to draw immediately
-            // Old logic skipped for 100ms regardless - THIS CAUSED THE STUTTER by drawing fallback frames!
-            const tooSoonAfterSwitch = timeSinceSwitch < 100 && avatarData.element.readyState < 3;
+            // CRITICAL: Always skip first 100ms after switch to let video element update its frame
+            // This gives time for video decode and buffer - prevents "loop" visual artifact
+            const tooSoonAfterSwitch = timeSinceSwitch < 100;  // ~6 frames at 60fps, ~3 at 30fps
 
             // Also check if video has decoded data for current position (readyState >= 2)
             // readyState: 0=NOTHING, 1=METADATA, 2=CURRENT_DATA, 3=FUTURE_DATA, 4=ENOUGH_DATA
@@ -8877,20 +8615,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // 2. Too soon after switch (< 100ms) - video element hasn't fully updated yet
             // 3. Video not ready (readyState < 2) - no decoded frame available yet
             // 4. Recently switched (< 200ms) AND drift > 0.1s - still syncing after initial buffer
-            const skipConditions = {
-              driftTooLarge: absDrift > 1.0,
-              tooSoon: tooSoonAfterSwitch,
-              notReady: videoNotReady,
-              recentSwitchWithDrift: timeSinceSwitch < 200 && absDrift > 0.1
-            };
-            const shouldSkip = skipConditions.driftTooLarge || skipConditions.tooSoon || skipConditions.notReady || skipConditions.recentSwitchWithDrift;
-
-            // Log skip conditions for first 3 seconds after switch
-            if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 15 === 0) {
-              console.log(`[DRAW ${timeSinceContentSwitch.toFixed(1)}s] shouldSkip=${shouldSkip}, seg=${avatarData.segmentIndex}, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms, conditions:`, skipConditions);
-            }
-
-            if (shouldSkip) {
+            if (absDrift > 1.0 || tooSoonAfterSwitch || videoNotReady || (timeSinceSwitch < 200 && absDrift > 0.1)) {
               if (videoNotReady) {
                 // DON'T seek when video not ready - seeking prevents buffering!
                 // Just let the video buffer at current position and play() to trigger download
@@ -8909,180 +8634,66 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                   avatarData.element.currentTime = expectedLocalTime;
                 }
               }
-
-              // FALLBACK: Draw previous avatar's last frame to prevent stutter
-              // This ensures we always show SOMETHING instead of a blank avatar spot
-              if (fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2) {
-                const rect = this.getAvatarOverlayRect(width, height);
-                ctx.save();
-                if (this.avatarShape === 'circle') {
-                  const centerX = rect.x + rect.width / 2;
-                  const centerY = rect.y + rect.height / 2;
-                  const radius = Math.min(rect.width, rect.height) / 2;
-                  ctx.beginPath();
-                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                  ctx.closePath();
-                  ctx.clip();
-                  ctx.drawImage(
-                    fallbackAvatar.element,
-                    rect.x + (rect.width - radius * 2) / 2,
-                    rect.y + (rect.height - radius * 2) / 2,
-                    radius * 2,
-                    radius * 2
-                  );
-                } else {
-                  ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
-                }
-                ctx.restore();
-                // Log EVERY fallback draw in first 3 seconds after switch - this is the stutter!
-                if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 15 === 0) {
-                  console.log(`[FALLBACK! Drawing segment ${fallbackAvatar.segmentIndex}] instead of segment ${avatarData.segmentIndex} - THIS CAUSES STUTTER`);
-                }
-              }
-              // If no fallback, skip to next frame (will show blank avatar spot)
+              // Don't draw - skip to next frame
             } else {
               // Video is close enough to expected position - sync and draw
               const now = performance.now();
 
-              // LIP SYNC FIX: Keep playbackRate at 1.0 (avoids stutter) but seek tightly
-              // Human perception detects lip sync issues at ~80ms, so threshold is 0.08s
-
-              // Add 200ms cooldown after resync to prevent seeking every frame
+              // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
+              // Add 200ms cooldown after resync to prevent feedback loop
               const cooldownElapsed = now - lastAvatarResyncTime > 200;
 
-              // Wait 1 second after segment switch to let video stabilize
-              const timeSinceSwitchMs = avatarData._crossfadeStartTime ? now - avatarData._crossfadeStartTime : Infinity;
-              const allowResync = timeSinceSwitchMs > 1000 && avatarData.element.readyState >= 3;
+              // Don't hard resync in first 3 seconds - let video buffer and catch up naturally
+              const exportElapsed = (performance.now() - recordingStartTime) / 1000;
+              const allowHardResync = exportElapsed > 3.0 && avatarData.element.readyState >= 3;
 
-              // Ensure playbackRate is always 1.0 to prevent visual stutter
-              if (avatarData.element.playbackRate !== 1.0) {
-                avatarData.element.playbackRate = 1.0;
-              }
-
-              // Hard-seek when drift exceeds 80ms (lip sync threshold) - no playbackRate adjustments
-              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed && allowResync) {
-                console.log(`Avatar lip-sync correction: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
-                avatarData.element.currentTime = expectedLocalTime;
+              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
+                if (absDrift > 0.3 && allowHardResync) {
+                  // Large drift - hard resync by seeking (only after video is stable)
+                  console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+                  avatarData.element.currentTime = expectedLocalTime;
+                  avatarData.element.playbackRate = 1.0;
+                } else if (absDrift > 0.3) {
+                  // Large drift but too early - just speed up instead of seeking
+                  avatarData.element.playbackRate = drift < 0 ? 1.15 : 0.85;
+                } else if (drift < 0) {
+                  // Video is behind audio - speed up slightly to catch up
+                  avatarData.element.playbackRate = 1.05;
+                } else {
+                  // Video is ahead of audio - slow down slightly
+                  avatarData.element.playbackRate = 0.95;
+                }
                 lastAvatarResyncTime = now;
+              } else if (absDrift <= 0.05 && avatarData.element.playbackRate !== 1.0) {
+                // Drift is minimal - return to normal speed
+                avatarData.element.playbackRate = 1.0;
               }
 
               const rect = this.getAvatarOverlayRect(width, height);
 
-              // Log what we're drawing for first 3 seconds after switch
-              if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 15 === 0) {
-                console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
-              }
-
-              // CROSS-FADE: Smooth transition between avatar segments
-              const CROSSFADE_DURATION = 1000; // 1 second crossfade
-              const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
-              const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
-              const shouldCrossfade = crossfadeProgress < 1 && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2;
-
-              if (shouldCrossfade) {
-                const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 1000ms
-                const oldAlpha = 1 - newAlpha; // 1 → 0 over 1000ms
-
-                // Log every frame during crossfade to debug
-                const oldVidTime = fallbackAvatar.element.currentTime;
-                const newVidTime = avatarData.element.currentTime;
-                const oldEnded = fallbackAvatar.element.ended;
-                const oldPaused = fallbackAvatar.element.paused;
-
-                if (frameCount % 10 === 0) {
-                  console.log(`[CROSSFADE] seg ${fallbackAvatar.segmentIndex}(${oldVidTime.toFixed(2)}s,paused=${oldPaused},ended=${oldEnded}) → seg ${avatarData.segmentIndex}(${newVidTime.toFixed(2)}s), progress=${(crossfadeProgress * 100).toFixed(0)}%`);
-                }
-
-                // Draw old segment (fading out) - now frozen on last frame
-                ctx.save();
-                ctx.globalAlpha = oldAlpha;
-                if (this.avatarShape === 'circle') {
-                  const centerX = rect.x + rect.width / 2;
-                  const centerY = rect.y + rect.height / 2;
-                  const radius = Math.min(rect.width, rect.height) / 2;
-                  ctx.beginPath();
-                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                  ctx.closePath();
-                  ctx.clip();
-                  ctx.drawImage(fallbackAvatar.element, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
-                } else {
-                  ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
-                }
-                ctx.restore();
-
-                // Draw new segment (fading in)
-                ctx.save();
-                ctx.globalAlpha = newAlpha;
-                if (this.avatarShape === 'circle') {
-                  const centerX = rect.x + rect.width / 2;
-                  const centerY = rect.y + rect.height / 2;
-                  const radius = Math.min(rect.width, rect.height) / 2;
-                  ctx.beginPath();
-                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                  ctx.closePath();
-                  ctx.clip();
-                  ctx.drawImage(avatarData.element, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
-                } else {
-                  ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
-                }
-                ctx.restore();
+              // Match preview exactly - simple stretch to fit, no aspect ratio preservation
+              ctx.save();
+              if (this.avatarShape === 'circle') {
+                const centerX = rect.x + rect.width / 2;
+                const centerY = rect.y + rect.height / 2;
+                const radius = Math.min(rect.width, rect.height) / 2;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.closePath();
+                ctx.clip();
+                // Draw same as preview: stretch to fit circle
+                ctx.drawImage(
+                  avatarData.element,
+                  rect.x + (rect.width - radius * 2) / 2,
+                  rect.y + (rect.height - radius * 2) / 2,
+                  radius * 2,
+                  radius * 2
+                );
               } else {
-                // Normal drawing (no crossfade needed)
-                ctx.save();
-                if (this.avatarShape === 'circle') {
-                  const centerX = rect.x + rect.width / 2;
-                  const centerY = rect.y + rect.height / 2;
-                  const radius = Math.min(rect.width, rect.height) / 2;
-                  ctx.beginPath();
-                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                  ctx.closePath();
-                  ctx.clip();
-                  // Draw same as preview: stretch to fit circle
-                  ctx.drawImage(
-                    avatarData.element,
-                    rect.x + (rect.width - radius * 2) / 2,
-                    rect.y + (rect.height - radius * 2) / 2,
-                    radius * 2,
-                    radius * 2
-                  );
-                } else {
-                  // Rectangle - stretch to fit rect (same as preview)
-                  ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
-                }
-                ctx.restore();
+                // Rectangle - stretch to fit rect (same as preview)
+                ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
               }
-
-              // Clear fallback after crossfade completes (use same timing source)
-              if (fallbackAvatar && fallbackAvatar !== avatarData && timeSinceCrossfadeStart >= CROSSFADE_DURATION) {
-                fallbackAvatar = null;
-              }
-            }
-          } else if (!avatarData && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2) {
-            // NO current avatar but we have a fallback (previous segment ended, next hasn't started)
-            // Draw the last frame from the ended segment to prevent blank gap
-            const rect = this.getAvatarOverlayRect(width, height);
-            ctx.save();
-            if (this.avatarShape === 'circle') {
-              const centerX = rect.x + rect.width / 2;
-              const centerY = rect.y + rect.height / 2;
-              const radius = Math.min(rect.width, rect.height) / 2;
-              ctx.beginPath();
-              ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-              ctx.closePath();
-              ctx.clip();
-              ctx.drawImage(
-                fallbackAvatar.element,
-                rect.x + (rect.width - radius * 2) / 2,
-                rect.y + (rect.height - radius * 2) / 2,
-                radius * 2,
-                radius * 2
-              );
-            } else {
-              ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
-            }
-            ctx.restore();
-            if (frameCount % 30 === 0) {
-              console.log(`[${currentTime.toFixed(1)}s] Drawing fallback from segment ${fallbackAvatar.segmentIndex} (gap between segments)`);
+              ctx.restore();
             }
           }
         }
