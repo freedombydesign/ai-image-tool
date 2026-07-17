@@ -8626,15 +8626,27 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
 
-            // If video has ACTUALLY ended, treat as no avatar
-            // Don't use -0.1 tolerance here - let video play to its real end to avoid freezing
+            // If video has ACTUALLY ended, try to find the NEXT segment
+            // This fixes stutter when video ends before audio (video=90.815s vs audio=90.82s)
             if (avatarData.element.ended || expectedLocalTime >= videoDuration) {
               if (!avatarData._loggedEnd) {
                 console.log(`Avatar segment ${avatarData.segmentIndex} video ended at ${currentTime.toFixed(1)}s (video: ${videoDuration.toFixed(1)}s, expected: ${expectedLocalTime.toFixed(1)}s)`);
                 avatarData._loggedEnd = true;
               }
-              // Don't use this avatar - it's finished
-              avatarData = null;
+
+              // CRITICAL FIX: Find the NEXT segment instead of showing nothing
+              // This handles the gap when video duration < audio duration
+              const endedSegmentIndex = avatarData.segmentIndex;
+              const nextSegment = avatarVideoElements.find(av =>
+                av && av.segmentIndex > endedSegmentIndex && currentTime >= av.startTime - 0.1
+              );
+
+              if (nextSegment && nextSegment.element && nextSegment.element.readyState >= 2) {
+                console.log(`[EARLY SWITCH] Segment ${endedSegmentIndex} video ended, switching to segment ${nextSegment.segmentIndex} at ${currentTime.toFixed(2)}s`);
+                avatarData = nextSegment;
+              } else {
+                avatarData = null;
+              }
             }
           } else if (!avatarData && frameCount % 30 === 0) {
             // Log when no avatar is found (every second)
@@ -8652,7 +8664,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               lastActiveAvatar.element.pause();
             }
             // Start new avatar at correct position - safe now because we checked video hasn't ended
-            const localTime = currentTime - avatarData.startTime;
+            // CLAMP to 0 in case of early switch (video duration < audio duration causes negative localTime)
+            const localTime = Math.max(0, currentTime - avatarData.startTime);
             const vidDur = avatarData.element.duration;
             console.log(`AVATAR SWITCH at ${currentTime.toFixed(1)}s: seg ${avatarData.segmentIndex}, seeking to localTime=${localTime.toFixed(2)}s, videoDuration=${vidDur?.toFixed(1)}s, ended=${avatarData.element.ended}`);
 
@@ -8711,7 +8724,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           if (avatarData && avatarData.element) {
             // TIGHT sync: continuously sync avatar video to audio timeline
             // This is critical for lip sync - we force the video to match audio time
-            const expectedLocalTime = currentTime - avatarData.startTime;
+            // CLAMP to 0 in case of early switch (handles video/audio duration mismatch)
+            const expectedLocalTime = Math.max(0, currentTime - avatarData.startTime);
             const videoDuration = avatarData.element.duration || 90;
             const actualVideoTime = avatarData.element.currentTime;
             const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
