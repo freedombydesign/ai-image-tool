@@ -12,9 +12,16 @@
   <script type="module">
     import fixWebmModule from 'https://cdn.jsdelivr.net/npm/fix-webm-metainfo@1.0.8/+esm';
     // ESM bundle wraps the function - extract the actual function
-    const fn = fixWebmModule.default || fixWebmModule;
-    window.fixWebmMetaInfo = fn;
-    console.log('fix-webm-metainfo library loaded, type:', typeof fn);
+    console.log('fixWebmModule:', typeof fixWebmModule, fixWebmModule);
+    console.log('fixWebmModule.default:', typeof fixWebmModule.default);
+    const fn = typeof fixWebmModule.default === 'function' ? fixWebmModule.default :
+               typeof fixWebmModule === 'function' ? fixWebmModule : null;
+    if (fn) {
+      window.fixWebmMetaInfo = fn;
+      console.log('fix-webm-metainfo loaded as function ✓');
+    } else {
+      console.error('fix-webm-metainfo: could not extract function!', fixWebmModule);
+    }
   </script>
 </head>
 <body>
