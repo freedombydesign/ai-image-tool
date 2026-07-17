@@ -8637,27 +8637,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               // Don't draw - skip to next frame
             } else {
               // Video is close enough to expected position - sync and draw
-              const now = performance.now();
-
-              // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
-              // Add 200ms cooldown after resync to prevent feedback loop
-              const cooldownElapsed = now - lastAvatarResyncTime > 200;
-
-              // Don't hard resync in first 3 seconds - let video buffer and catch up naturally
-              const exportElapsed = (performance.now() - recordingStartTime) / 1000;
-              const allowHardResync = exportElapsed > 3.0 && avatarData.element.readyState >= 3;
-
               // Keep playbackRate at 1.0 always - adjustments cause visual stutter
               if (avatarData.element.playbackRate !== 1.0) {
                 avatarData.element.playbackRate = 1.0;
               }
 
-              // Only hard-seek for large drift (>80ms) to maintain lip sync
-              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed && allowHardResync) {
-                console.log(`Avatar lip-sync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
-                avatarData.element.currentTime = expectedLocalTime;
-                lastAvatarResyncTime = now;
-              }
+              // DISABLE ALL SEEKING during playback - seeking causes stutter
+              // The video is pre-seeked to correct position, just let it play
+              // Small drift (<0.5s) is acceptable - human perception is forgiving
 
               const rect = this.getAvatarOverlayRect(width, height);
 
