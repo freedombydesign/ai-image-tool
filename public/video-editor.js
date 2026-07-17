@@ -8700,13 +8700,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Handle avatar video switching
           if (avatarData && avatarData !== lastActiveAvatar) {
-            // Save current as fallback before switching (for drawing if new one isn't ready)
+            // Save current as fallback before switching (for crossfade blending)
             if (lastActiveAvatar && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
               fallbackAvatar = lastActiveAvatar;
-            }
-            // Pause previous avatar (but keep it paused at last frame for fallback)
-            if (lastActiveAvatar && lastActiveAvatar.element) {
-              lastActiveAvatar.element.pause();
+              // DON'T pause - let it keep playing during crossfade for smoother visual continuity
+              // The crossfade will blend both segments, and after 1s the old one fades out completely
+              console.log(`[SWITCH] Keeping segment ${lastActiveAvatar.segmentIndex} playing for crossfade`);
             }
             // Start new avatar at correct position - safe now because we checked video hasn't ended
             // CLAMP to 0 in case of early switch (video duration < audio duration causes negative localTime)
@@ -8916,17 +8915,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               const shouldCrossfade = crossfadeProgress < 1 && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2 && fallbackAvatar !== avatarData;
 
               if (shouldCrossfade) {
-                const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 500ms
-                const oldAlpha = 1 - newAlpha; // 1 → 0 over 500ms
+                const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 1000ms
+                const oldAlpha = 1 - newAlpha; // 1 → 0 over 1000ms
 
-                // Let the old segment CONTINUE playing during crossfade (don't pause)
-                // This allows it to reach its natural end frame which may match better
-                // with the new segment's start frame (smoother visual transition)
-                if (fallbackAvatar.element.paused && !fallbackAvatar.element.ended) {
-                  // Resume if it was paused (e.g., from pre-switch pause)
-                  fallbackAvatar.element.play().catch(() => {});
-                  console.log(`[CROSSFADE] Resumed segment ${fallbackAvatar.segmentIndex} to continue during fade`);
-                }
+                // Both segments play simultaneously during crossfade
+                // Old segment continues from ~90s toward its end (~90.8s)
+                // New segment plays from 0s onward
+                // This creates smooth visual blending as both videos are "live"
 
                 if (frameCount % 15 === 0) {
                   console.log(`[CROSSFADE] seg ${fallbackAvatar.segmentIndex} → seg ${avatarData.segmentIndex}, progress=${(crossfadeProgress * 100).toFixed(0)}%, oldAlpha=${oldAlpha.toFixed(2)}, newAlpha=${newAlpha.toFixed(2)}`);
