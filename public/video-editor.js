@@ -8918,13 +8918,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 1000ms
                 const oldAlpha = 1 - newAlpha; // 1 → 0 over 1000ms
 
-                // Both segments play simultaneously during crossfade
-                // Old segment continues from ~90s toward its end (~90.8s)
-                // New segment plays from 0s onward
-                // This creates smooth visual blending as both videos are "live"
+                // Log every frame during crossfade to debug
+                const oldVidTime = fallbackAvatar.element.currentTime;
+                const newVidTime = avatarData.element.currentTime;
+                const oldEnded = fallbackAvatar.element.ended;
+                const oldPaused = fallbackAvatar.element.paused;
 
-                if (frameCount % 15 === 0) {
-                  console.log(`[CROSSFADE] seg ${fallbackAvatar.segmentIndex} → seg ${avatarData.segmentIndex}, progress=${(crossfadeProgress * 100).toFixed(0)}%, oldAlpha=${oldAlpha.toFixed(2)}, newAlpha=${newAlpha.toFixed(2)}`);
+                if (frameCount % 10 === 0) {
+                  console.log(`[CROSSFADE] seg ${fallbackAvatar.segmentIndex}(${oldVidTime.toFixed(2)}s,paused=${oldPaused},ended=${oldEnded}) → seg ${avatarData.segmentIndex}(${newVidTime.toFixed(2)}s), progress=${(crossfadeProgress * 100).toFixed(0)}%`);
                 }
 
                 // Draw old segment (fading out) - now frozen on last frame
