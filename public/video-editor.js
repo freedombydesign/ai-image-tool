@@ -335,25 +335,46 @@ class VideoEditor {
           if (response.ok) {
             const audioBlob = await response.blob();
 
-            // VALIDATE: Check audio duration before accepting
+            // VALIDATE: Check audio duration and TRIM if too long
             try {
               const tempContext = new (window.AudioContext || window.webkitAudioContext)();
               const arrayBuffer = await audioBlob.arrayBuffer();
               const tempBuffer = await tempContext.decodeAudioData(arrayBuffer);
               const actualDuration = tempBuffer.duration;
-              tempContext.close();
 
               // Check if this is NOT the last segment (last segment can be shorter)
               const isLastSegment = seg.segment_num === segments.length;
-              const durationDiff = Math.abs(actualDuration - expectedSegmentDuration);
 
-              if (!isLastSegment && durationDiff > durationTolerance) {
-                console.warn(`⚠️ Segment ${seg.segment_num} audio duration MISMATCH: ${actualDuration.toFixed(2)}s (expected ~${expectedSegmentDuration}s, diff: ${durationDiff.toFixed(2)}s)`);
-                console.warn(`   Rejecting saved audio - will use TTS split instead to prevent desync`);
-                needsRepair.push(seg);
-                continue; // Skip this segment, use TTS split instead
+              // If audio is TOO LONG, trim it to exactly 90s to prevent desync
+              if (!isLastSegment && actualDuration > expectedSegmentDuration + durationTolerance) {
+                console.warn(`⚠️ Segment ${seg.segment_num} audio TOO LONG: ${actualDuration.toFixed(2)}s (expected ${expectedSegmentDuration}s)`);
+                console.log(`   Trimming to ${expectedSegmentDuration}s to prevent audio/video desync...`);
+
+                // Trim the audio buffer to exactly 90 seconds
+                const sampleRate = tempBuffer.sampleRate;
+                const numChannels = tempBuffer.numberOfChannels;
+                const targetSamples = Math.floor(expectedSegmentDuration * sampleRate);
+                const trimmedBuffer = tempContext.createBuffer(numChannels, targetSamples, sampleRate);
+
+                for (let channel = 0; channel < numChannels; channel++) {
+                  const sourceData = tempBuffer.getChannelData(channel);
+                  const destData = trimmedBuffer.getChannelData(channel);
+                  for (let i = 0; i < targetSamples; i++) {
+                    destData[i] = sourceData[i];
+                  }
+                }
+
+                // Convert trimmed buffer to WAV blob
+                const trimmedWav = this.audioBufferToWav(trimmedBuffer);
+                console.log(`✓ Trimmed segment ${seg.segment_num} audio: ${actualDuration.toFixed(2)}s → ${expectedSegmentDuration}s (${trimmedWav.size} bytes)`);
+
+                tempContext.close();
+                this.replacedAudioSegments[seg.segment_num] = { blob: trimmedWav, url: seg.audio_url };
+                loaded++;
+                continue;
               }
 
+              tempContext.close();
               console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (${actualDuration.toFixed(2)}s, blob size: ${audioBlob.size})`);
             } catch (decodeErr) {
               console.warn(`  Failed to validate segment ${seg.segment_num} duration:`, decodeErr.message);
