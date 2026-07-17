@@ -8676,7 +8676,20 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // 2. Too soon after switch (< 100ms) - video element hasn't fully updated yet
             // 3. Video not ready (readyState < 2) - no decoded frame available yet
             // 4. Recently switched (< 200ms) AND drift > 0.1s - still syncing after initial buffer
-            if (absDrift > 1.0 || tooSoonAfterSwitch || videoNotReady || (timeSinceSwitch < 200 && absDrift > 0.1)) {
+            const skipConditions = {
+              driftTooLarge: absDrift > 1.0,
+              tooSoon: tooSoonAfterSwitch,
+              notReady: videoNotReady,
+              recentSwitchWithDrift: timeSinceSwitch < 200 && absDrift > 0.1
+            };
+            const shouldSkip = skipConditions.driftTooLarge || skipConditions.tooSoon || skipConditions.notReady || skipConditions.recentSwitchWithDrift;
+
+            // Log skip conditions for first 3 seconds after switch
+            if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 15 === 0) {
+              console.log(`[DRAW ${timeSinceContentSwitch.toFixed(1)}s] shouldSkip=${shouldSkip}, seg=${avatarData.segmentIndex}, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms, conditions:`, skipConditions);
+            }
+
+            if (shouldSkip) {
               if (videoNotReady) {
                 // DON'T seek when video not ready - seeking prevents buffering!
                 // Just let the video buffer at current position and play() to trigger download
@@ -8720,8 +8733,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                   ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
                 }
                 ctx.restore();
-                if (frameCount % 30 === 0) {
-                  console.log(`Drawing fallback avatar (segment ${fallbackAvatar.segmentIndex}) while new segment buffers`);
+                // Log EVERY fallback draw in first 3 seconds after switch - this is the stutter!
+                if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 15 === 0) {
+                  console.log(`[FALLBACK! Drawing segment ${fallbackAvatar.segmentIndex}] instead of segment ${avatarData.segmentIndex} - THIS CAUSES STUTTER`);
                 }
               }
               // If no fallback, skip to next frame (will show blank avatar spot)
@@ -8760,6 +8774,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               }
 
               const rect = this.getAvatarOverlayRect(width, height);
+
+              // Log what we're drawing for first 3 seconds after switch
+              if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 15 === 0) {
+                console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
+              }
 
               // Match preview exactly - simple stretch to fit, no aspect ratio preservation
               ctx.save();
