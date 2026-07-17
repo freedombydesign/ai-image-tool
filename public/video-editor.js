@@ -8703,9 +8703,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // Save current as fallback before switching (for crossfade blending)
             if (lastActiveAvatar && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
               fallbackAvatar = lastActiveAvatar;
-              // DON'T pause - let it keep playing during crossfade for smoother visual continuity
-              // The crossfade will blend both segments, and after 1s the old one fades out completely
-              console.log(`[SWITCH] Keeping segment ${lastActiveAvatar.segmentIndex} playing for crossfade`);
+              // PAUSE the old segment - if it keeps playing, it might reach its END during crossfade
+              // and show garbage/black frames. Freezing on last good frame is safer.
+              fallbackAvatar.element.pause();
+              console.log(`[SWITCH] Pausing segment ${lastActiveAvatar.segmentIndex} at ${fallbackAvatar.element.currentTime.toFixed(2)}s for crossfade (frozen frame)`);
             }
             // Start new avatar at correct position - safe now because we checked video hasn't ended
             // CLAMP to 0 in case of early switch (video duration < audio duration causes negative localTime)
