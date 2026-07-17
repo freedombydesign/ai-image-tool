@@ -8729,9 +8729,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               console.log(`[SEG ${avatarData.segmentIndex} @ ${currentTime.toFixed(1)}s] video=${actualVideoTime.toFixed(2)}s, expected=${expectedLocalTime.toFixed(2)}s, drift=${drift.toFixed(3)}s, paused=${avatarData.element.paused}, playing=${!avatarData.element.paused && !avatarData.element.ended}`);
             }
 
-            // CRITICAL: Always skip first 100ms after switch to let video element update its frame
-            // This gives time for video decode and buffer - prevents "loop" visual artifact
-            const tooSoonAfterSwitch = timeSinceSwitch < 100;  // ~6 frames at 60fps, ~3 at 30fps
+            // CRITICAL: Only skip if video isn't ready yet
+            // If readyState >= 3 (HAVE_FUTURE_DATA), video is decoded and ready to draw immediately
+            // Old logic skipped for 100ms regardless - THIS CAUSED THE STUTTER by drawing fallback frames!
+            const tooSoonAfterSwitch = timeSinceSwitch < 100 && avatarData.element.readyState < 3;
 
             // Also check if video has decoded data for current position (readyState >= 2)
             // readyState: 0=NOTHING, 1=METADATA, 2=CURRENT_DATA, 3=FUTURE_DATA, 4=ENOUGH_DATA
