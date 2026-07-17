@@ -8241,25 +8241,87 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         audioElement = null; // Force elapsed time calculation
       }
 
-      // Pre-seek all avatar videos and WAIT for seeks to complete
-      // This is critical for lip sync - videos must be ready at exact positions
+      // Pre-seek all avatar videos and WAIT for seeks AND frame data to be ready
+      // This is critical for lip sync - videos must have actual frame data, not just metadata
       this.exportStatus.textContent = 'Syncing avatar videos...';
       const seekPromises = avatarVideoElements.map(av => {
         if (av && av.element) {
           const localTime = Math.max(0, startTime - av.startTime);
           return new Promise(resolve => {
-            // Wait for seek to complete
-            const onSeeked = () => {
-              av.element.removeEventListener('seeked', onSeeked);
-              console.log(`Avatar segment ${av.segmentIndex}: ready at ${localTime.toFixed(2)}s`);
-              resolve();
+            const vid = av.element;
+
+            // Helper to check if video is truly ready (has frame data)
+            const checkReady = () => {
+              if (vid.readyState >= 2) {
+                console.log(`Avatar segment ${av.segmentIndex}: READY at ${localTime.toFixed(2)}s (readyState=${vid.readyState})`);
+                return true;
+              }
+              return false;
             };
-            av.element.addEventListener('seeked', onSeeked);
-            av.element.currentTime = localTime;
-            av.element.pause();
-            // Timeout fallback
+
+            // Step 1: Wait for seek to complete
+            const onSeeked = () => {
+              vid.removeEventListener('seeked', onSeeked);
+              console.log(`Avatar segment ${av.segmentIndex}: seeked to ${localTime.toFixed(2)}s (readyState=${vid.readyState})`);
+
+              // Step 2: Check if frame data is ready
+              if (checkReady()) {
+                resolve();
+                return;
+              }
+
+              // Step 3: Need to wait for frame data - try play/pause to trigger buffering
+              console.log(`Avatar segment ${av.segmentIndex}: waiting for frame data (readyState=${vid.readyState})...`);
+
+              const onCanPlay = () => {
+                vid.removeEventListener('canplay', onCanPlay);
+                vid.removeEventListener('canplaythrough', onCanPlay);
+                vid.pause();
+                vid.currentTime = localTime; // Re-seek after play triggered buffering
+                if (checkReady()) {
+                  resolve();
+                } else {
+                  // One more wait for the re-seek
+                  setTimeout(() => {
+                    checkReady();
+                    resolve();
+                  }, 100);
+                }
+              };
+
+              vid.addEventListener('canplay', onCanPlay);
+              vid.addEventListener('canplaythrough', onCanPlay);
+
+              // Trigger buffering by briefly playing
+              vid.play().then(() => {
+                // Play started, wait for canplay event
+              }).catch(() => {
+                // Autoplay blocked, try muted
+                vid.muted = true;
+                vid.play().catch(() => {
+                  console.log(`Avatar segment ${av.segmentIndex}: play failed, continuing anyway`);
+                  resolve();
+                });
+              });
+
+              // Timeout fallback for frame data
+              setTimeout(() => {
+                vid.removeEventListener('canplay', onCanPlay);
+                vid.removeEventListener('canplaythrough', onCanPlay);
+                vid.pause();
+                console.log(`Avatar segment ${av.segmentIndex}: timeout waiting for frame data (readyState=${vid.readyState})`);
+                resolve();
+              }, 3000);
+            };
+
+            vid.addEventListener('seeked', onSeeked);
+            vid.currentTime = localTime;
+            vid.pause();
+
+            // Timeout fallback for seek
             setTimeout(() => {
-              av.element.removeEventListener('seeked', onSeeked);
+              vid.removeEventListener('seeked', onSeeked);
+              console.log(`Avatar segment ${av.segmentIndex}: seek timeout (readyState=${vid.readyState})`);
               resolve();
             }, 2000);
           });
