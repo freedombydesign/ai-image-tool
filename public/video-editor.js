@@ -8557,6 +8557,58 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           lastBoundaryCheck = currentBoundary;
         }
 
+        // PRE-BUFFER next segment ~10 seconds before boundary to prevent stutter
+        // Video elements release buffer data when idle - we need to re-trigger buffering
+        const PREBUFFER_LEAD = 10; // seconds before boundary (increased from 5)
+        const nextBoundary = (currentBoundary + 1) * 90;
+        const timeToNextBoundary = nextBoundary - currentTime;
+
+        if (timeToNextBoundary > 0 && timeToNextBoundary <= PREBUFFER_LEAD) {
+          // Find the NEXT segment (the one that starts at nextBoundary)
+          const nextSegment = avatarVideoElements.find(av =>
+            av && av.startTime === nextBoundary
+          );
+
+          // Only pre-buffer if not already being buffered and has video element
+          if (nextSegment && nextSegment.element && !nextSegment._preBuffering) {
+            const vid = nextSegment.element;
+
+            // Check if video needs buffering (readyState < 3 means not enough data)
+            if (vid.readyState < 3) {
+              nextSegment._preBuffering = true;
+              console.log(`🔄 PRE-BUFFERING segment ${nextSegment.segmentIndex} at t=${currentTime.toFixed(1)}s (${timeToNextBoundary.toFixed(1)}s before boundary, readyState=${vid.readyState})`);
+
+              // Seek to start and trigger aggressive buffering
+              vid.currentTime = 0;
+              vid.muted = true;
+
+              // Use canplaythrough event for more reliable buffering
+              const onReady = () => {
+                vid.removeEventListener('canplaythrough', onReady);
+                vid.pause();
+                vid.currentTime = 0;
+                nextSegment._preBuffered = true;
+                console.log(`✅ PRE-BUFFERED segment ${nextSegment.segmentIndex} (readyState=${vid.readyState})`);
+              };
+              vid.addEventListener('canplaythrough', onReady);
+
+              vid.play().then(() => {
+                // Fallback timeout if canplaythrough never fires
+                setTimeout(() => {
+                  vid.removeEventListener('canplaythrough', onReady);
+                  if (!nextSegment._preBuffered) {
+                    vid.pause();
+                    vid.currentTime = 0;
+                    console.log(`⏱️ PRE-BUFFER timeout for segment ${nextSegment.segmentIndex} (readyState=${vid.readyState})`);
+                  }
+                }, 3000);
+              }).catch(() => {
+                console.log(`⚠️ Pre-buffer play failed for segment ${nextSegment.segmentIndex}`);
+              });
+            }
+          }
+        }
+
         if (currentTime >= exportEndTime || (audioElement && audioElement.ended)) {
           // Done rendering
           mediaRecorder.stop();
@@ -8717,10 +8769,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Handle avatar video switching
           if (avatarData && avatarData !== lastActiveAvatar) {
-            // Pause previous avatar
-            if (lastActiveAvatar && lastActiveAvatar.element) {
-              lastActiveAvatar.element.pause();
-            }
+            // DON'T pause previous avatar immediately - keep it for fallback drawing
+            // We'll pause it later once new segment is confirmed ready
+            // (This prevents visual gap during segment transition)
+
             // Start new avatar at correct position - safe now because we checked video hasn't ended
             const localTime = currentTime - avatarData.startTime;
             const vidDur = avatarData.element.duration;
@@ -8791,6 +8843,27 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 if (frameCount % 30 === 0) { // Log every second
                   console.log(`Avatar buffering: readyState=${avatarData.element.readyState}, waiting for data...`);
                 }
+
+                // CRITICAL FIX: Draw the LAST frame of previous segment while buffering
+                // This prevents visual gap/stutter in the exported video
+                if (lastActiveAvatar && lastActiveAvatar !== avatarData && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
+                  // Draw from previous segment to fill the gap
+                  const rect = this.getAvatarOverlayRect(width, height);
+                  ctx.save();
+                  if (this.avatarShape === 'circle') {
+                    const centerX = rect.x + rect.width / 2;
+                    const centerY = rect.y + rect.height / 2;
+                    const radius = Math.min(rect.width, rect.height) / 2;
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                    ctx.closePath();
+                    ctx.clip();
+                    ctx.drawImage(lastActiveAvatar.element, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
+                  } else {
+                    ctx.drawImage(lastActiveAvatar.element, rect.x, rect.y, rect.width, rect.height);
+                  }
+                  ctx.restore();
+                }
               } else {
                 console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
                 // Only seek if video has enough data to seek without re-buffering
@@ -8798,12 +8871,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                   avatarData.element.currentTime = expectedLocalTime;
                 }
               }
-              // Don't draw - skip to next frame
+              // Don't draw current - but we may have drawn previous segment above
             } else {
               // Video is close enough to expected position - sync and draw
               // Keep playbackRate at 1.0 always - adjustments cause visual stutter
               if (avatarData.element.playbackRate !== 1.0) {
                 avatarData.element.playbackRate = 1.0;
+              }
+
+              // NOW pause the previous avatar since current is ready
+              if (lastActiveAvatar && lastActiveAvatar !== avatarData && lastActiveAvatar.element && !lastActiveAvatar.element.paused) {
+                lastActiveAvatar.element.pause();
               }
 
               // DISABLE ALL SEEKING during playback - seeking causes stutter
