@@ -8724,6 +8724,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
               if (alreadyAtPosition) {
                 // Already at correct position - just start playing without seeking
+                // SAFETY: If this is segment start (localTime near 0), force position to exactly 0
+                if (localTime < 0.1 && currentPos > 0.05) {
+                  console.log(`FORCE RESET: segment ${avatarData.segmentIndex} was at ${currentPos.toFixed(2)}s, forcing to 0 (localTime=${localTime.toFixed(2)}s)`);
+                  avatarData.element.currentTime = 0;
+                }
                 avatarData.element.playbackRate = 1.0;
                 avatarData.element.play().catch(() => {});
                 console.log(`Avatar switch: segment ${avatarData.segmentIndex}, at ${currentPos.toFixed(2)}s (no seek, just play), warmedUp=${avatarData._warmedUp}, readyState=${avatarData.element.readyState}`);
