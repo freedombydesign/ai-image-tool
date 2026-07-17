@@ -6909,20 +6909,39 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // Native Layered Mode (Avatar + Scenes) - smooth native video with scene switching
     if (this.previewNativeLayered && !this.previewNativeLayered.hidden) {
-      // Reset to first segment if starting from beginning
-      if (this.playbackTime < 1 && this.avatarVideos && this.avatarVideos.length > 0) {
-        const firstSegment = this.avatarVideos[0];
-        if (firstSegment && firstSegment.videoUrl) {
-          this.currentAvatarSegmentUrl = firstSegment.videoUrl;
-          this.previewAvatarVideo.src = firstSegment.videoUrl;
-          this.previewAvatarVideo.load();
-        }
-      }
+      // Find the correct segment for current playback time
+      const targetSegment = this.avatarVideos?.find(av =>
+        this.playbackTime >= av.startTime && this.playbackTime < av.endTime
+      ) || (this.avatarVideos && this.avatarVideos[0]);
 
-      // Start avatar video from correct position
-      if (this.previewAvatarVideo) {
-        this.previewAvatarVideo.currentTime = this.playbackTime;
-        this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
+      if (targetSegment && this.previewAvatarVideo) {
+        // Calculate LOCAL time within this segment
+        const localTime = Math.max(0, this.playbackTime - targetSegment.startTime);
+
+        // Switch to correct segment if needed
+        if (targetSegment.videoUrl !== this.currentAvatarSegmentUrl) {
+          console.log(`Starting playback: loading segment ${targetSegment.startTime}s-${targetSegment.endTime}s, local time: ${localTime.toFixed(2)}s`);
+          this.currentAvatarSegmentUrl = targetSegment.videoUrl;
+          this.previewAvatarVideo.src = targetSegment.videoUrl;
+
+          // Wait for video to load, then seek and play
+          this.previewAvatarVideo.onloadeddata = () => {
+            const seekTime = Math.min(localTime, this.previewAvatarVideo.duration - 0.1);
+            if (isFinite(seekTime) && seekTime >= 0) {
+              this.previewAvatarVideo.currentTime = seekTime;
+            }
+            this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
+            this.previewAvatarVideo.onloadeddata = null;
+          };
+          this.previewAvatarVideo.load();
+        } else {
+          // Already on correct segment - just seek to local time and play
+          const seekTime = Math.min(localTime, this.previewAvatarVideo.duration || 90);
+          if (isFinite(seekTime) && seekTime >= 0) {
+            this.previewAvatarVideo.currentTime = seekTime;
+          }
+          this.previewAvatarVideo.play().catch(e => console.log('Avatar video play error:', e));
+        }
       }
 
       // Start voiceover audio - but MUTE it if avatar videos have their own audio
