@@ -8681,6 +8681,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               // Track when switch happened for debug logging
               avatarData._switchedAt = currentTime;
               avatarData._loggedGap = false; // Reset gap logging flag for this new segment
+              // Track ACTUAL switch time for crossfade (separate from switchTime used for skip logic)
+              avatarData._crossfadeStartTime = performance.now();
 
               lastActiveAvatar = avatarData;
               // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
@@ -8847,32 +8849,82 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
               }
 
-              // Match preview exactly - simple stretch to fit, no aspect ratio preservation
-              ctx.save();
-              if (this.avatarShape === 'circle') {
-                const centerX = rect.x + rect.width / 2;
-                const centerY = rect.y + rect.height / 2;
-                const radius = Math.min(rect.width, rect.height) / 2;
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                ctx.closePath();
-                ctx.clip();
-                // Draw same as preview: stretch to fit circle
-                ctx.drawImage(
-                  avatarData.element,
-                  rect.x + (rect.width - radius * 2) / 2,
-                  rect.y + (rect.height - radius * 2) / 2,
-                  radius * 2,
-                  radius * 2
-                );
-              } else {
-                // Rectangle - stretch to fit rect (same as preview)
-                ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
-              }
-              ctx.restore();
+              // CROSS-FADE: Blend previous segment with new segment over 150ms to smooth discontinuity
+              const CROSSFADE_DURATION = 150; // ms
+              // Use _crossfadeStartTime (actual switch time) not switchTime (may be set during pre-warm)
+              const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
+              const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
+              const shouldCrossfade = crossfadeProgress < 1 && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2 && fallbackAvatar !== avatarData;
 
-              // Successfully drew new segment - clear fallback
-              if (fallbackAvatar && fallbackAvatar !== avatarData) {
+              if (shouldCrossfade) {
+                const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 150ms
+                const oldAlpha = 1 - newAlpha; // 1 → 0 over 150ms
+
+                if (frameCount % 15 === 0) {
+                  console.log(`[CROSSFADE] seg ${fallbackAvatar.segmentIndex} → seg ${avatarData.segmentIndex}, progress=${(crossfadeProgress * 100).toFixed(0)}%, oldAlpha=${oldAlpha.toFixed(2)}, newAlpha=${newAlpha.toFixed(2)}`);
+                }
+
+                // Draw old segment (fading out)
+                ctx.save();
+                ctx.globalAlpha = oldAlpha;
+                if (this.avatarShape === 'circle') {
+                  const centerX = rect.x + rect.width / 2;
+                  const centerY = rect.y + rect.height / 2;
+                  const radius = Math.min(rect.width, rect.height) / 2;
+                  ctx.beginPath();
+                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                  ctx.drawImage(fallbackAvatar.element, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
+                } else {
+                  ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
+                }
+                ctx.restore();
+
+                // Draw new segment (fading in)
+                ctx.save();
+                ctx.globalAlpha = newAlpha;
+                if (this.avatarShape === 'circle') {
+                  const centerX = rect.x + rect.width / 2;
+                  const centerY = rect.y + rect.height / 2;
+                  const radius = Math.min(rect.width, rect.height) / 2;
+                  ctx.beginPath();
+                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                  ctx.drawImage(avatarData.element, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
+                } else {
+                  ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+                }
+                ctx.restore();
+              } else {
+                // Normal drawing (no crossfade needed)
+                ctx.save();
+                if (this.avatarShape === 'circle') {
+                  const centerX = rect.x + rect.width / 2;
+                  const centerY = rect.y + rect.height / 2;
+                  const radius = Math.min(rect.width, rect.height) / 2;
+                  ctx.beginPath();
+                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                  // Draw same as preview: stretch to fit circle
+                  ctx.drawImage(
+                    avatarData.element,
+                    rect.x + (rect.width - radius * 2) / 2,
+                    rect.y + (rect.height - radius * 2) / 2,
+                    radius * 2,
+                    radius * 2
+                  );
+                } else {
+                  // Rectangle - stretch to fit rect (same as preview)
+                  ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+                }
+                ctx.restore();
+              }
+
+              // Clear fallback after crossfade completes (use same timing source)
+              if (fallbackAvatar && fallbackAvatar !== avatarData && timeSinceCrossfadeStart >= CROSSFADE_DURATION) {
                 fallbackAvatar = null;
               }
             }
