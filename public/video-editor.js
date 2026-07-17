@@ -7985,6 +7985,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           if (hasReplacedSegments) {
             console.log('Re-syncing avatar segments with actual audio durations...');
             this.syncUploadedAvatarSegments();
+
+            // CRITICAL: Also update avatarVideoElements with new boundaries!
+            // The video elements are already loaded, just need to update timing
+            avatarVideoElements.forEach(avEl => {
+              const updated = this.avatarVideos.find(av => av.segmentIndex === avEl.segmentIndex);
+              if (updated) {
+                const oldStart = avEl.startTime;
+                const oldEnd = avEl.endTime;
+                avEl.startTime = updated.startTime;
+                avEl.endTime = updated.endTime;
+                console.log(`Updated avatarVideoElement seg ${avEl.segmentIndex}: ${oldStart.toFixed(2)}-${oldEnd.toFixed(2)} -> ${avEl.startTime.toFixed(2)}-${avEl.endTime.toFixed(2)}`);
+              }
+            });
           }
         } catch (e) {
           console.warn('Audio stitching failed or timed out, using original audio:', e.message);
