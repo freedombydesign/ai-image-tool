@@ -6744,25 +6744,20 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     if (segmentKeys.length === 0) return;
 
-    // Use actual audio segment durations if available (from stitching), else default 90s
-    // This ensures video segment boundaries match audio boundaries exactly
-    const DEFAULT_SEGMENT_LENGTH = 90;
-    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * DEFAULT_SEGMENT_LENGTH);
+    // Each segment is 90 seconds (the length used during avatar generation)
+    // SIMPLE 90s boundaries - do NOT use dynamic audio durations (causes timing issues)
+    const SEGMENT_LENGTH = 90;
+    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
 
     // Build avatarVideos array from uploaded segments
-    // Use cumulative audio durations for accurate boundaries
+    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
     this.avatarVideos = [];
-    let cumulativeTime = 0;
-
     segmentKeys.forEach((segNum) => {
       const seg = uploadedSegments[segNum];
       if (seg && seg.url) {
-        // Get actual audio duration for this segment if available
-        const audioSeg = this.replacedAudioSegments ? this.replacedAudioSegments[segNum] : null;
-        const segmentDuration = (audioSeg && audioSeg.duration) ? audioSeg.duration : DEFAULT_SEGMENT_LENGTH;
-
-        const startTime = cumulativeTime;
-        const endTime = Math.min(cumulativeTime + segmentDuration, totalDuration);
+        const segmentIndex = segNum - 1; // Convert to 0-indexed
+        const startTime = segmentIndex * SEGMENT_LENGTH;
+        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
 
         this.avatarVideos.push({
           videoUrl: seg.url,
@@ -6771,8 +6766,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           segmentIndex: segNum
         });
 
-        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (duration: ${segmentDuration.toFixed(2)}s)`);
-        cumulativeTime = endTime;
+        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
       }
     });
 
