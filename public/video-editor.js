@@ -8908,23 +8908,24 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
               }
 
-              // CROSS-FADE: Blend previous segment with new segment over 500ms to smooth discontinuity
-              const CROSSFADE_DURATION = 500; // ms (doubled for much smoother transition)
+              // CROSS-FADE: Blend previous segment with new segment over 1000ms to smooth discontinuity
+              const CROSSFADE_DURATION = 1000; // ms (1 second for very smooth transition)
               // Use _crossfadeStartTime (actual switch time) not switchTime (may be set during pre-warm)
               const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
               const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
               const shouldCrossfade = crossfadeProgress < 1 && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2 && fallbackAvatar !== avatarData;
 
               if (shouldCrossfade) {
-                const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 150ms
-                const oldAlpha = 1 - newAlpha; // 1 → 0 over 150ms
+                const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 500ms
+                const oldAlpha = 1 - newAlpha; // 1 → 0 over 500ms
 
-                // CRITICAL: Pause the old segment so it freezes on its last frame
-                // This prevents visual discontinuity from two moving videos competing
-                if (!fallbackAvatar.element.paused && !fallbackAvatar._pausedForCrossfade) {
-                  fallbackAvatar.element.pause();
-                  fallbackAvatar._pausedForCrossfade = true;
-                  console.log(`[CROSSFADE] Paused segment ${fallbackAvatar.segmentIndex} to freeze on last frame`);
+                // Let the old segment CONTINUE playing during crossfade (don't pause)
+                // This allows it to reach its natural end frame which may match better
+                // with the new segment's start frame (smoother visual transition)
+                if (fallbackAvatar.element.paused && !fallbackAvatar.element.ended) {
+                  // Resume if it was paused (e.g., from pre-switch pause)
+                  fallbackAvatar.element.play().catch(() => {});
+                  console.log(`[CROSSFADE] Resumed segment ${fallbackAvatar.segmentIndex} to continue during fade`);
                 }
 
                 if (frameCount % 15 === 0) {
