@@ -6795,9 +6795,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
     // Native Layered mode - seek avatar video and audio
     else if (this.previewNativeLayered && !this.previewNativeLayered.hidden) {
-      if (this.previewAvatarVideo) {
-        this.previewAvatarVideo.currentTime = this.playbackTime;
+      // Find the correct avatar segment for this time
+      const targetSegment = this.avatarVideos?.find(av =>
+        this.playbackTime >= av.startTime && this.playbackTime < av.endTime
+      );
+
+      if (targetSegment && this.previewAvatarVideo) {
+        // Calculate LOCAL time within this segment
+        const localTime = this.playbackTime - targetSegment.startTime;
+
+        // Switch to correct segment video if needed
+        if (targetSegment.videoUrl !== this.currentAvatarSegmentUrl) {
+          console.log(`Seek: switching to segment ${targetSegment.startTime}s-${targetSegment.endTime}s, local time: ${localTime.toFixed(2)}s`);
+          this.currentAvatarSegmentUrl = targetSegment.videoUrl;
+          this.previewAvatarVideo.src = targetSegment.videoUrl;
+          this.previewAvatarVideo.load();
+
+          // Wait for video to load then seek to local time
+          this.previewAvatarVideo.onloadeddata = () => {
+            this.previewAvatarVideo.currentTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
+            this.previewAvatarVideo.onloadeddata = null;
+          };
+        } else {
+          // Same segment - just seek to local time
+          this.previewAvatarVideo.currentTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
+        }
       }
+
       if (this.audioPlayer && this.audioPlayer.duration) {
         this.audioPlayer.currentTime = this.playbackTime;
       }
