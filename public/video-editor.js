@@ -2909,9 +2909,17 @@ class VideoEditor {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const segmentBuffers = [];
 
+    // DIAGNOSTIC: Log all segment blobs BEFORE decoding to detect duplicates
+    console.log('=== SEGMENT BLOB DIAGNOSTIC ===');
+    for (const segNum of replacedKeys) {
+      const blob = this.replacedAudioSegments[segNum]?.blob;
+      console.log(`  Segment ${segNum}: blob=${blob ? blob.size + ' bytes' : 'MISSING!'}`);
+    }
+    console.log('=== END SEGMENT BLOB DIAGNOSTIC ===');
+
     for (const segmentNum of replacedKeys) {
       const audioBlob = this.replacedAudioSegments[segmentNum].blob;
-      console.log(`Fast stitch: decoding segment ${segmentNum}...`);
+      console.log(`Fast stitch: decoding segment ${segmentNum} (blob size: ${audioBlob?.size || 0} bytes)...`);
       try {
         const arrayBuffer = await audioBlob.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
