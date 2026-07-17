@@ -8078,6 +8078,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Add audio track - prefer AudioBufferSourceNode for stitched audio (avoids blob URL seeking issues)
       let audioBufferSource = null;
       let useBufferSource = false;
+      let audioBufferStartContextTime = 0; // Track when AudioBufferSource started (in AudioContext time)
 
       if (this.stitchedAudioBuffer && hasReplacedSegments) {
         // Use AudioBufferSourceNode - this is MUCH more reliable for large stitched audio
@@ -8175,8 +8176,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         console.log(`Starting AudioBufferSource at offset ${startTime}s (instant, no seek needed)`);
         // AudioBufferSourceNode.start(when, offset, duration) - starts at exact offset instantly
         audioBufferSource.start(0, startTime);
-        console.log('AudioBufferSource playback started successfully');
-        // Time tracking will use elapsed time since audioElement is null
+        // CRITICAL: Record AudioContext time when we started - this is the sync anchor
+        // Using AudioContext.currentTime ensures we sync to the actual audio clock
+        audioBufferStartContextTime = audioContext.currentTime;
+        console.log(`AudioBufferSource playback started at audioContext.currentTime=${audioBufferStartContextTime.toFixed(3)}s`);
       }
 
       if (audioElement) {
@@ -8276,10 +8279,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
       const renderFrame = () => {
         frameCount++;
-        // Use audio time if available, otherwise calculate from elapsed time + startTime offset
-        const currentTime = audioElement
-          ? audioElement.currentTime
-          : startTime + (performance.now() - recordingStartTime) / 1000;
+        // Use audio time if available, otherwise calculate from AudioContext time (synced to audio)
+        // CRITICAL: When using AudioBufferSourceNode, we MUST use AudioContext time, not performance.now()
+        // AudioContext.currentTime is synced to the audio hardware clock, ensuring perfect sync
+        let currentTime;
+        if (audioElement) {
+          currentTime = audioElement.currentTime;
+        } else if (useBufferSource && audioContext) {
+          // Use AudioContext clock - this is synced to the actual audio playback
+          currentTime = startTime + (audioContext.currentTime - audioBufferStartContextTime);
+
+          // DIAGNOSTIC: Log clock drift every 30 seconds to verify sync
+          if (frameCount % 900 === 1) { // Every 30s at 30fps
+            const perfTime = startTime + (performance.now() - recordingStartTime) / 1000;
+            const clockDrift = currentTime - perfTime;
+            console.log(`[SYNC CHECK ${currentTime.toFixed(1)}s] AudioContext=${currentTime.toFixed(3)}s, performance.now=${perfTime.toFixed(3)}s, drift=${clockDrift.toFixed(3)}s`);
+          }
+        } else {
+          // Fallback to wall clock (less accurate but better than nothing)
+          currentTime = startTime + (performance.now() - recordingStartTime) / 1000;
+        }
 
         if (currentTime >= exportEndTime || (audioElement && audioElement.ended)) {
           // Done rendering
@@ -8480,15 +8499,23 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // Check if we just switched segments
             const timeSinceSwitch = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
 
-            // CRITICAL: Always skip first 50ms after switch to let video element update its frame
-            // Then check drift for sync issues
-            const tooSoonAfterSwitch = timeSinceSwitch < 50;  // ~3 frames at 60fps
+            // CRITICAL: Always skip first 100ms after switch to let video element update its frame
+            // This gives time for video decode and buffer - prevents "loop" visual artifact
+            const tooSoonAfterSwitch = timeSinceSwitch < 100;  // ~6 frames at 60fps, ~3 at 30fps
+
+            // Also check if video has decoded data for current position (readyState >= 2)
+            // readyState: 0=NOTHING, 1=METADATA, 2=CURRENT_DATA, 3=FUTURE_DATA, 4=ENOUGH_DATA
+            const videoNotReady = avatarData.element.readyState < 2;
 
             // Skip frame if:
             // 1. Way off position (drift > 1s) - major sync issue
-            // 2. Too soon after switch (< 50ms) - video element hasn't updated yet
-            // 3. Recently switched (< 150ms) AND drift > 0.1s - still syncing
-            if (absDrift > 1.0 || tooSoonAfterSwitch || (timeSinceSwitch < 150 && absDrift > 0.1)) {
+            // 2. Too soon after switch (< 100ms) - video element hasn't fully updated yet
+            // 3. Video not ready (readyState < 2) - no decoded frame available yet
+            // 4. Recently switched (< 200ms) AND drift > 0.1s - still syncing after initial buffer
+            if (absDrift > 1.0 || tooSoonAfterSwitch || videoNotReady || (timeSinceSwitch < 200 && absDrift > 0.1)) {
+              if (videoNotReady && timeSinceSwitch >= 100) {
+                console.log(`Avatar skip frame: readyState=${avatarData.element.readyState} (waiting for decode)`);
+              }
               console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
               // Force seek to correct position
               avatarData.element.currentTime = expectedLocalTime;
