@@ -8626,8 +8626,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
 
-            // If video has ended or we're past its duration, treat as no avatar
-            if (avatarData.element.ended || expectedLocalTime >= videoDuration - 0.1) {
+            // If video has ACTUALLY ended, treat as no avatar
+            // Don't use -0.1 tolerance here - let video play to its real end to avoid freezing
+            if (avatarData.element.ended || expectedLocalTime >= videoDuration) {
               if (!avatarData._loggedEnd) {
                 console.log(`Avatar segment ${avatarData.segmentIndex} video ended at ${currentTime.toFixed(1)}s (video: ${videoDuration.toFixed(1)}s, expected: ${expectedLocalTime.toFixed(1)}s)`);
                 avatarData._loggedEnd = true;
