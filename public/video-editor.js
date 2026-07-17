@@ -2809,20 +2809,21 @@ class VideoEditor {
   // Uses fix-webm-metainfo library which adds Duration, SeekHead, AND Cues
   // Cues are critical for seeking - without them, browser must load entire file
   async fixWebmDuration(blob, durationSeconds) {
-    // Try using fix-webm-metainfo library (adds Duration + Cues for seeking)
+    // Try using fix-webm-duration library (adds Duration for seekable playback)
     if (typeof fixWebmMetaInfo === 'function') {
       try {
-        console.log(`Fixing WebM metadata with fix-webm-metainfo library...`);
+        console.log(`Fixing WebM metadata...`);
         console.log(`Video size: ${(blob.size / 1024 / 1024).toFixed(1)}MB, duration: ${durationSeconds.toFixed(1)}s`);
-        const fixedBlob = await fixWebmMetaInfo(blob);
+        // Pass duration in milliseconds as required by fix-webm-duration
+        const durationMs = durationSeconds * 1000;
+        const fixedBlob = await fixWebmMetaInfo(blob, durationMs);
         console.log(`WebM metadata fixed! Size: ${(fixedBlob.size / 1024 / 1024).toFixed(1)}MB`);
-        console.log('Added: Duration, SeekHead, Cues (seeking index)');
         return fixedBlob;
       } catch (err) {
-        console.warn('fix-webm-metainfo failed:', err.message);
+        console.warn('fix-webm-duration failed:', err.message);
       }
     } else {
-      console.warn('fix-webm-metainfo library not loaded');
+      console.warn('fix-webm-duration library not loaded');
     }
 
     // Return original if library not available or failed

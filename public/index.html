@@ -9,23 +9,21 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Fix WebM metadata for seekable videos -->
-  <script src="https://unpkg.com/webm-duration-fix@1.0.4/dist/webm-duration-fix.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.2/fix-webm-duration.min.js"></script>
   <script>
-    // webm-duration-fix provides window.WebmDurationFix
-    if (typeof WebmDurationFix !== 'undefined') {
-      window.fixWebmMetaInfo = async function(blob) {
-        try {
-          const fixed = await WebmDurationFix(blob);
-          console.log('WebM duration fixed successfully');
-          return fixed;
-        } catch (err) {
-          console.warn('WebM duration fix failed:', err.message);
-          return blob;
-        }
+    // fix-webm-duration provides window.ysFixWebmDuration
+    if (typeof ysFixWebmDuration !== 'undefined') {
+      window.fixWebmMetaInfo = function(blob, duration) {
+        return new Promise((resolve) => {
+          ysFixWebmDuration(blob, duration || 0, (fixedBlob) => {
+            console.log('WebM duration fixed successfully');
+            resolve(fixedBlob);
+          });
+        });
       };
-      console.log('webm-duration-fix loaded ✓');
+      console.log('fix-webm-duration loaded ✓');
     } else {
-      console.warn('webm-duration-fix not available');
+      console.warn('fix-webm-duration not available');
     }
   </script>
 </head>
