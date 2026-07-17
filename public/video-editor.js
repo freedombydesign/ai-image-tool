@@ -3300,28 +3300,51 @@ class VideoEditor {
       let audioToSync = this.audioBlob;
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
 
-      // Generate LOGICAL cache key based on project state INCLUDING audio sizes
-      // This invalidates cache when any segment audio changes (e.g., re-recorded segment)
+      // Generate STABLE cache key (v3) using segment numbers - doesn't depend on blob sizes
+      const segmentNums = Object.keys(this.replacedAudioSegments || {})
+        .map(Number)
+        .sort((a, b) => a - b)
+        .join(',');
+      const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
+      const stableCacheKey = `stitched_transcription_v3_${baseAudioKey}_segs_${segmentNums}`;
+
+      // Legacy v2 key for backwards compatibility
       const segmentSizes = Object.entries(this.replacedAudioSegments || {})
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
         .map(([num, seg]) => `${num}:${seg.blob?.size || 0}`)
         .join(',');
-      const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
-      const logicalCacheKey = `stitched_transcription_v2_${baseAudioKey}_segsizes_${segmentSizes}`;
+      const legacyCacheKey = `stitched_transcription_v2_${baseAudioKey}_segsizes_${segmentSizes}`;
 
-      console.log('Logical cache key:', logicalCacheKey);
+      console.log('Stable cache key (v3):', stableCacheKey);
+      console.log('Legacy cache key (v2):', legacyCacheKey);
 
       let result = null;
 
-      // Check logical cache FIRST (before any audio processing)
-      const cachedLogical = localStorage.getItem(logicalCacheKey);
-      if (cachedLogical) {
+      // Check v3 stable cache FIRST, then v2 legacy (before any audio processing)
+      const cachedV3 = localStorage.getItem(stableCacheKey);
+      if (cachedV3) {
         try {
-          result = JSON.parse(cachedLogical);
-          console.log('✓ INSTANT: Using logical cache (no stitch/compress needed!)', result.segments?.length, 'segments');
+          result = JSON.parse(cachedV3);
+          console.log('✓ INSTANT: Using v3 stable cache (no stitch/compress needed!)', result.segments?.length, 'segments');
           showToast('Using cached transcription - instant!', 'success');
         } catch (e) {
-          console.log('Logical cache invalid');
+          console.log('V3 cache invalid');
+        }
+      }
+      // Fall back to v2 legacy cache
+      if (!result) {
+        const cachedV2 = localStorage.getItem(legacyCacheKey);
+        if (cachedV2) {
+          try {
+            result = JSON.parse(cachedV2);
+            console.log('✓ INSTANT: Using v2 legacy cache (no stitch/compress needed!)', result.segments?.length, 'segments');
+            showToast('Using cached transcription - instant!', 'success');
+            // Migrate to v3
+            localStorage.setItem(stableCacheKey, cachedV2);
+            console.log('Migrated cache to v3 stable key');
+          } catch (e) {
+            console.log('V2 cache invalid');
+          }
         }
       }
 
@@ -3483,9 +3506,9 @@ class VideoEditor {
         // Cache the result for future syncs
         const resultJson = JSON.stringify(result);
         localStorage.setItem(transcriptionCacheKey, resultJson);
-        // ALSO save to logical cache key for instant future lookups
-        localStorage.setItem(logicalCacheKey, resultJson);
-        console.log('Transcription cached (both hash and logical keys)');
+        // ALSO save to v3 stable cache key for instant future lookups
+        localStorage.setItem(stableCacheKey, resultJson);
+        console.log('Transcription cached (hash + v3 stable key)');
       } // end if (!result) - upload/transcribe
       } // end if (!result) - fallback hash cache check
 
@@ -5529,45 +5552,74 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       console.log(`Is test mode: ${isTestMode}`);
       console.log(`Force refresh: ${forceRefresh}`);
 
-      // Generate LOGICAL cache key (same as syncToAudio uses - v2 with segment sizes)
+      // Generate STABLE cache key using segment numbers and audio file name (v3)
+      // V3 is more stable - doesn't depend on blob sizes which change on page reload
+      const segmentNums = Object.keys(this.replacedAudioSegments || {})
+        .map(Number)
+        .sort((a, b) => a - b)
+        .join(',');
+      const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
+      const stableCacheKey = hasReplacements && !isTestMode
+        ? `stitched_transcription_v3_${baseAudioKey}_segs_${segmentNums}`
+        : null;
+
+      // Also check v2 key for backwards compatibility (with blob sizes)
       const segmentSizes = Object.entries(this.replacedAudioSegments || {})
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
         .map(([num, seg]) => `${num}:${seg.blob?.size || 0}`)
         .join(',');
-      const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
-      const logicalCacheKey = hasReplacements && !isTestMode
+      const legacyCacheKey = hasReplacements && !isTestMode
         ? `stitched_transcription_v2_${baseAudioKey}_segsizes_${segmentSizes}`
         : null;
 
-      console.log(`Segment sizes string: ${segmentSizes}`);
-      console.log(`Base audio key: ${baseAudioKey}`);
-      console.log(`Logical cache key: ${logicalCacheKey ? logicalCacheKey.substring(0, 80) + '...' : 'NONE (no replacements or test mode)'}`);
+      console.log(`Segment nums: ${segmentNums}`);
+      console.log(`Stable cache key (v3): ${stableCacheKey ? stableCacheKey.substring(0, 80) + '...' : 'NONE'}`);
+      console.log(`Legacy cache key (v2): ${legacyCacheKey ? legacyCacheKey.substring(0, 80) + '...' : 'NONE'}`);
 
-      // Check logical cache FIRST (before any audio processing) - only for full audio with replacements
+      // Check caches - try stable v3 first, then legacy v2
       let result = null;
-      if (logicalCacheKey && !forceRefresh) {
-        const cachedLogical = localStorage.getItem(logicalCacheKey);
-        if (cachedLogical) {
-          try {
-            result = JSON.parse(cachedLogical);
-            console.log('✓ INSTANT: Using logical cache for captions!', result.segments?.length, 'segments');
-            showToast('Using cached transcription - instant!', 'success');
-            // Skip audio processing, go straight to caption application below
-          } catch (e) {
-            console.log('Logical cache invalid, will need to process');
-            result = null;
+      if (!forceRefresh && !isTestMode && hasReplacements) {
+        // Try v3 stable key first
+        if (stableCacheKey) {
+          const cachedV3 = localStorage.getItem(stableCacheKey);
+          if (cachedV3) {
+            try {
+              result = JSON.parse(cachedV3);
+              console.log('✓ INSTANT: Using v3 stable cache for captions!', result.segments?.length, 'segments');
+              showToast('Using cached transcription - instant!', 'success');
+            } catch (e) {
+              result = null;
+            }
           }
-        } else {
-          console.log('⚠️ CACHE MISS: No logical cache found - will need to process audio');
-          // Show all cache keys to debug
+        }
+        // Fall back to v2 legacy key
+        if (!result && legacyCacheKey) {
+          const cachedV2 = localStorage.getItem(legacyCacheKey);
+          if (cachedV2) {
+            try {
+              result = JSON.parse(cachedV2);
+              console.log('✓ INSTANT: Using v2 legacy cache for captions!', result.segments?.length, 'segments');
+              showToast('Using cached transcription - instant!', 'success');
+              // Also save to v3 for future
+              if (stableCacheKey) {
+                localStorage.setItem(stableCacheKey, cachedV2);
+                console.log('Migrated cache to v3 stable key');
+              }
+            } catch (e) {
+              result = null;
+            }
+          }
+        }
+        if (!result) {
+          console.log('⚠️ CACHE MISS: No cache found - will need to process audio');
           const allKeys = Object.keys(localStorage).filter(k => k.startsWith('stitched_transcription'));
           console.log(`Available transcription cache keys (${allKeys.length}):`);
-          allKeys.forEach(k => console.log(`  - ${k.substring(0, 80)}...`));
+          allKeys.slice(0, 5).forEach(k => console.log(`  - ${k.substring(0, 80)}...`));
         }
       } else if (forceRefresh) {
         console.log('⚠️ Force refresh requested - bypassing cache');
       } else {
-        console.log('⚠️ No logical cache key (test mode or no replacements)');
+        console.log('⚠️ No cache key (test mode or no replacements)');
       }
 
       // Only do audio processing if no cache hit
@@ -5636,10 +5688,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           try {
             const resultJson = JSON.stringify(result);
             localStorage.setItem(cacheKey, resultJson);
-            // Also save to logical cache key
-            if (logicalCacheKey) {
-              localStorage.setItem(logicalCacheKey, resultJson);
-              console.log('Caption transcription cached (both hash and logical keys)');
+            // Also save to stable v3 cache key for instant future lookups
+            if (stableCacheKey) {
+              localStorage.setItem(stableCacheKey, resultJson);
+              console.log('Caption transcription cached (hash + v3 stable key)');
             } else {
               console.log('Caption transcription cached for future use');
             }
@@ -5760,10 +5812,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           try {
             const resultJson = JSON.stringify(result);
             localStorage.setItem(cacheKey, resultJson);
-            // Also save to logical cache key for instant future lookups
-            if (logicalCacheKey) {
-              localStorage.setItem(logicalCacheKey, resultJson);
-              console.log('Caption transcription cached (both hash and logical keys)');
+            // Also save to stable v3 cache key for instant future lookups
+            if (stableCacheKey) {
+              localStorage.setItem(stableCacheKey, resultJson);
+              console.log('Caption transcription cached (hash + v3 stable key)');
             } else {
               console.log('Caption transcription cached for future use');
             }
