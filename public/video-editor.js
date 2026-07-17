@@ -2012,13 +2012,19 @@ class VideoEditor {
     // Load saved trim settings from localStorage
     try {
       const savedTrim = localStorage.getItem('video_editor_trim');
+      console.log(`Trim restore: audioDuration=${this.audioDuration}, savedTrim=${savedTrim}`);
       if (savedTrim) {
         const { start, end } = JSON.parse(savedTrim);
-        // Only restore if values are within current audio duration
-        if (start >= 0 && end <= this.audioDuration && start < end) {
+        console.log(`Trim restore check: start=${start}, end=${end}, audioDuration=${this.audioDuration}`);
+        // Only restore if values are within current audio duration (with small tolerance)
+        // Allow end to be slightly larger than audioDuration due to rounding
+        if (start >= 0 && end <= this.audioDuration + 1 && start < end) {
           this.trimStartTime = start;
-          this.trimEndTime = end;
-          console.log(`Restored trim settings: ${this.formatTime(start)} - ${this.formatTime(end)}`);
+          // Clamp end to audioDuration if it's slightly over
+          this.trimEndTime = Math.min(end, this.audioDuration);
+          console.log(`✓ Restored trim settings: ${this.formatTime(start)} - ${this.formatTime(this.trimEndTime)}`);
+        } else {
+          console.log(`✗ Trim not restored: end (${end}) > audioDuration (${this.audioDuration})?`);
         }
       }
     } catch (e) {
@@ -8264,6 +8270,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               vid.removeEventListener('seeked', onSeeked);
               console.log(`Avatar segment ${av.segmentIndex}: seeked to ${localTime.toFixed(2)}s (readyState=${vid.readyState})`);
 
+              // Pre-set switchTime so this segment won't trigger skip frames when activated
+              // Use -2000 to make it appear "old enough" when export starts
+              av.switchTime = performance.now() - 2000;
+
               // Step 2: Check if frame data is ready
               if (checkReady()) {
                 resolve();
@@ -8334,7 +8344,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Render frames synced to real time (driven by audio)
       this.exportStatus.textContent = 'Recording video...';
       const recordingStartTime = performance.now();
+
+      // Pre-initialize lastActiveAvatar to avoid triggering "switch" on first frame
+      // Find the avatar segment that should be active at startTime
       let lastActiveAvatar = null;
+      for (const av of avatarVideoElements) {
+        if (av && startTime >= av.startTime && startTime < av.endTime) {
+          lastActiveAvatar = av;
+          // Set switchTime to "already old" so we don't skip frames
+          av.switchTime = recordingStartTime - 1000;
+          console.log(`Pre-initialized active avatar: segment ${av.segmentIndex} (switchTime already set)`);
+          break;
+        }
+      }
       let frameCount = 0;
       let lastSceneIndex = -1;
       let lastAvatarResyncTime = 0; // Track when we last resynced to prevent feedback loop
@@ -8539,9 +8561,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               avatarData.element.playbackRate = 1.0;
               avatarData.element.play().catch(() => {});
               lastActiveAvatar = avatarData;
-              // Track when we switched - skip frames for 150ms after switch
-              avatarData.switchTime = performance.now();
-              console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s`);
+              // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
+              // If switchTime is already > 1 second old, keep it (pre-seeked)
+              const timeSincePreSeek = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
+              if (timeSincePreSeek > 1000) {
+                // Pre-seeked segment - keep the old switchTime so we don't skip frames
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s (pre-seeked, no skip)`);
+              } else {
+                // Not pre-seeked or very recent - set new switchTime
+                avatarData.switchTime = performance.now();
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s (NEW switchTime)`);
+              }
             }
           } else if (!avatarData && lastActiveAvatar) {
             // No avatar for this time (or video ended), pause current
