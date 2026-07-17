@@ -335,54 +335,34 @@ class VideoEditor {
           if (response.ok) {
             const audioBlob = await response.blob();
 
-            // VALIDATE: Check audio duration and TRIM if too long
+            // Decode audio to get its actual duration (needed for dynamic segment timing)
+            let actualDuration = expectedSegmentDuration; // Default if decode fails
             try {
               const tempContext = new (window.AudioContext || window.webkitAudioContext)();
               const arrayBuffer = await audioBlob.arrayBuffer();
               const tempBuffer = await tempContext.decodeAudioData(arrayBuffer);
-              const actualDuration = tempBuffer.duration;
+              actualDuration = tempBuffer.duration;
+              tempContext.close();
 
-              // Check if this is NOT the last segment (last segment can be shorter)
-              const isLastSegment = seg.segment_num === segments.length;
-
-              // If audio is TOO LONG, trim it to exactly 90s to prevent desync
-              if (!isLastSegment && actualDuration > expectedSegmentDuration + durationTolerance) {
-                console.warn(`⚠️ Segment ${seg.segment_num} audio TOO LONG: ${actualDuration.toFixed(2)}s (expected ${expectedSegmentDuration}s)`);
-                console.log(`   Trimming to ${expectedSegmentDuration}s to prevent audio/video desync...`);
-
-                // Trim the audio buffer to exactly 90 seconds
-                const sampleRate = tempBuffer.sampleRate;
-                const numChannels = tempBuffer.numberOfChannels;
-                const targetSamples = Math.floor(expectedSegmentDuration * sampleRate);
-                const trimmedBuffer = tempContext.createBuffer(numChannels, targetSamples, sampleRate);
-
-                for (let channel = 0; channel < numChannels; channel++) {
-                  const sourceData = tempBuffer.getChannelData(channel);
-                  const destData = trimmedBuffer.getChannelData(channel);
-                  for (let i = 0; i < targetSamples; i++) {
-                    destData[i] = sourceData[i];
-                  }
-                }
-
-                // Convert trimmed buffer to WAV blob
-                const trimmedWav = this.audioBufferToWav(trimmedBuffer);
-                console.log(`✓ Trimmed segment ${seg.segment_num} audio: ${actualDuration.toFixed(2)}s → ${expectedSegmentDuration}s (${trimmedWav.size} bytes)`);
-
-                tempContext.close();
-                this.replacedAudioSegments[seg.segment_num] = { blob: trimmedWav, url: seg.audio_url };
-                loaded++;
-                continue;
+              // Warn if duration differs significantly (for debugging)
+              const durationDiff = Math.abs(actualDuration - expectedSegmentDuration);
+              if (durationDiff > durationTolerance) {
+                console.log(`ℹ️ Segment ${seg.segment_num} has custom duration: ${actualDuration.toFixed(2)}s (standard is ${expectedSegmentDuration}s)`);
+                console.log(`   Timeline will adjust to accommodate this segment's length`);
               }
 
-              tempContext.close();
               console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (${actualDuration.toFixed(2)}s, blob size: ${audioBlob.size})`);
             } catch (decodeErr) {
-              console.warn(`  Failed to validate segment ${seg.segment_num} duration:`, decodeErr.message);
-              // If we can't validate, use the saved audio anyway (safer than failing)
+              console.warn(`  Failed to decode segment ${seg.segment_num} duration:`, decodeErr.message);
               console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
             }
 
-            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
+            // Store blob AND duration for dynamic segment timing
+            this.replacedAudioSegments[seg.segment_num] = {
+              blob: audioBlob,
+              url: seg.audio_url,
+              duration: actualDuration  // IMPORTANT: Store actual duration for timeline sync
+            };
             loaded++;
             continue;
           }
@@ -6760,20 +6740,34 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     if (segmentKeys.length === 0) return;
 
-    // Each segment is 90 seconds (the length used during avatar generation)
-    const SEGMENT_LENGTH = 90;
-    // Use audio duration, or calculate from scenes, or default to segment count * 90
-    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
+    // Default segment length (used when actual duration unknown)
+    const DEFAULT_SEGMENT_LENGTH = 90;
 
     // Build avatarVideos array from uploaded segments
-    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
+    // Use ACTUAL audio durations to calculate start times (handles segments with different lengths)
     this.avatarVideos = [];
-    segmentKeys.forEach((segNum) => {
+    let cumulativeTime = 0; // Track cumulative time based on actual audio durations
+
+    for (const segNum of segmentKeys) {
       const seg = uploadedSegments[segNum];
       if (seg && seg.url) {
-        const segmentIndex = segNum - 1; // Convert to 0-indexed
-        const startTime = segmentIndex * SEGMENT_LENGTH;
-        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
+        // Get actual audio duration for this segment (if available)
+        const audioData = this.replacedAudioSegments?.[segNum];
+        const segmentDuration = audioData?.duration || DEFAULT_SEGMENT_LENGTH;
+
+        // For segments before this one that we skipped, add their duration to cumulative time
+        // This handles cases where segment numbers aren't contiguous
+        const expectedSegNum = this.avatarVideos.length + 1;
+        if (segNum > expectedSegNum) {
+          // Fill in missing segments with default duration
+          for (let missing = expectedSegNum; missing < segNum; missing++) {
+            const missingAudioData = this.replacedAudioSegments?.[missing];
+            cumulativeTime += missingAudioData?.duration || DEFAULT_SEGMENT_LENGTH;
+          }
+        }
+
+        const startTime = cumulativeTime;
+        const endTime = startTime + segmentDuration;
 
         this.avatarVideos.push({
           videoUrl: seg.url,
@@ -6782,11 +6776,18 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           segmentIndex: segNum
         });
 
-        console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
-      }
-    });
+        // Log with indicator if using non-standard duration
+        if (Math.abs(segmentDuration - DEFAULT_SEGMENT_LENGTH) > 0.5) {
+          console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (audio: ${segmentDuration.toFixed(2)}s ⚠️)`);
+        } else {
+          console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
+        }
 
-    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview`);
+        cumulativeTime = endTime;
+      }
+    }
+
+    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview (using actual audio durations)`);
   }
 
   closePreview() {
