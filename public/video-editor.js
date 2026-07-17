@@ -7995,6 +7995,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const loadedVideos = await Promise.all(videoLoadPromises);
         // Sort by startTime to maintain order
         avatarVideoElements.push(...loadedVideos.filter(v => v !== null).sort((a, b) => a.startTime - b.startTime));
+
+        // Reset crossfade flags for all segments (fresh export)
+        avatarVideoElements.forEach(av => {
+          av._pausedForCrossfade = false;
+          av._crossfadeStartTime = null;
+        });
+
         this.exportProgressBar.style.width = '20%';
       }
 
@@ -8877,8 +8884,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
               }
 
-              // CROSS-FADE: Blend previous segment with new segment over 150ms to smooth discontinuity
-              const CROSSFADE_DURATION = 150; // ms
+              // CROSS-FADE: Blend previous segment with new segment over 250ms to smooth discontinuity
+              const CROSSFADE_DURATION = 250; // ms (increased from 150ms for smoother transition)
               // Use _crossfadeStartTime (actual switch time) not switchTime (may be set during pre-warm)
               const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
               const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
@@ -8888,11 +8895,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 150ms
                 const oldAlpha = 1 - newAlpha; // 1 → 0 over 150ms
 
+                // CRITICAL: Pause the old segment so it freezes on its last frame
+                // This prevents visual discontinuity from two moving videos competing
+                if (!fallbackAvatar.element.paused && !fallbackAvatar._pausedForCrossfade) {
+                  fallbackAvatar.element.pause();
+                  fallbackAvatar._pausedForCrossfade = true;
+                  console.log(`[CROSSFADE] Paused segment ${fallbackAvatar.segmentIndex} to freeze on last frame`);
+                }
+
                 if (frameCount % 15 === 0) {
                   console.log(`[CROSSFADE] seg ${fallbackAvatar.segmentIndex} → seg ${avatarData.segmentIndex}, progress=${(crossfadeProgress * 100).toFixed(0)}%, oldAlpha=${oldAlpha.toFixed(2)}, newAlpha=${newAlpha.toFixed(2)}`);
                 }
 
-                // Draw old segment (fading out)
+                // Draw old segment (fading out) - now frozen on last frame
                 ctx.save();
                 ctx.globalAlpha = oldAlpha;
                 if (this.avatarShape === 'circle') {
