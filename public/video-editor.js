@@ -324,15 +324,45 @@ class VideoEditor {
     let needsRepair = [];
 
     // First pass: load segments that have saved audio_url (user-uploaded replacements)
+    // IMPORTANT: Validate duration matches expected 90s to prevent audio/video desync
+    const expectedSegmentDuration = 90; // seconds
+    const durationTolerance = 0.5; // Allow up to 0.5s deviation
+
     for (const seg of segments) {
       if (seg.audio_url) {
         try {
           const response = await fetch(seg.audio_url);
           if (response.ok) {
             const audioBlob = await response.blob();
+
+            // VALIDATE: Check audio duration before accepting
+            try {
+              const tempContext = new (window.AudioContext || window.webkitAudioContext)();
+              const arrayBuffer = await audioBlob.arrayBuffer();
+              const tempBuffer = await tempContext.decodeAudioData(arrayBuffer);
+              const actualDuration = tempBuffer.duration;
+              tempContext.close();
+
+              // Check if this is NOT the last segment (last segment can be shorter)
+              const isLastSegment = seg.segment_num === segments.length;
+              const durationDiff = Math.abs(actualDuration - expectedSegmentDuration);
+
+              if (!isLastSegment && durationDiff > durationTolerance) {
+                console.warn(`⚠️ Segment ${seg.segment_num} audio duration MISMATCH: ${actualDuration.toFixed(2)}s (expected ~${expectedSegmentDuration}s, diff: ${durationDiff.toFixed(2)}s)`);
+                console.warn(`   Rejecting saved audio - will use TTS split instead to prevent desync`);
+                needsRepair.push(seg);
+                continue; // Skip this segment, use TTS split instead
+              }
+
+              console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (${actualDuration.toFixed(2)}s, blob size: ${audioBlob.size})`);
+            } catch (decodeErr) {
+              console.warn(`  Failed to validate segment ${seg.segment_num} duration:`, decodeErr.message);
+              // If we can't validate, use the saved audio anyway (safer than failing)
+              console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
+            }
+
             this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
             loaded++;
-            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
             continue;
           }
         } catch (e) {
