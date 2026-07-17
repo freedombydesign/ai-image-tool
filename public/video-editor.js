@@ -6709,20 +6709,25 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     if (segmentKeys.length === 0) return;
 
-    // Each segment is 90 seconds (the length used during avatar generation)
-    const SEGMENT_LENGTH = 90;
-    // Use audio duration, or calculate from scenes, or default to segment count * 90
-    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
+    // Use actual audio segment durations if available (from stitching), else default 90s
+    // This ensures video segment boundaries match audio boundaries exactly
+    const DEFAULT_SEGMENT_LENGTH = 90;
+    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * DEFAULT_SEGMENT_LENGTH);
 
     // Build avatarVideos array from uploaded segments
-    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
+    // Use cumulative audio durations for accurate boundaries
     this.avatarVideos = [];
+    let cumulativeTime = 0;
+
     segmentKeys.forEach((segNum) => {
       const seg = uploadedSegments[segNum];
       if (seg && seg.url) {
-        const segmentIndex = segNum - 1; // Convert to 0-indexed
-        const startTime = segmentIndex * SEGMENT_LENGTH;
-        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
+        // Get actual audio duration for this segment if available
+        const audioSeg = this.replacedAudioSegments ? this.replacedAudioSegments[segNum] : null;
+        const segmentDuration = (audioSeg && audioSeg.duration) ? audioSeg.duration : DEFAULT_SEGMENT_LENGTH;
+
+        const startTime = cumulativeTime;
+        const endTime = Math.min(cumulativeTime + segmentDuration, totalDuration);
 
         this.avatarVideos.push({
           videoUrl: seg.url,
@@ -6731,7 +6736,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           segmentIndex: segNum
         });
 
-        console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
+        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (duration: ${segmentDuration.toFixed(2)}s)`);
+        cumulativeTime = endTime;
       }
     });
 
@@ -7893,9 +7899,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const videosToLoad = isTestExport
           ? this.avatarVideos.filter(av => {
               if (!av.videoUrl) return false;
-              const segmentEnd = av.startTime + 90; // Each segment is 90 seconds
-              // Check if segment overlaps with export range [startTime, exportEndTime]
-              return av.startTime < exportEndTime && segmentEnd > startTime;
+              // Use actual endTime from avatar data (not fixed 90s)
+              return av.startTime < exportEndTime && av.endTime > startTime;
             })
           : this.avatarVideos.filter(av => av.videoUrl);
 
@@ -7974,6 +7979,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             new Promise((_, reject) => setTimeout(() => reject(new Error('Stitching timeout')), 45000))
           ]);
           console.log('Audio stitched, size:', audioToUse?.size);
+
+          // RE-SYNC avatar segment boundaries AFTER stitching
+          // Stitching sets actual audio durations, so boundaries need updating
+          if (hasReplacedSegments) {
+            console.log('Re-syncing avatar segments with actual audio durations...');
+            this.syncUploadedAvatarSegments();
+          }
         } catch (e) {
           console.warn('Audio stitching failed or timed out, using original audio:', e.message);
           this.exportStatus.textContent = 'Using original audio (stitching timed out)...';
