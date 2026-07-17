@@ -8,40 +8,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Fix WebM metadata for seekable videos using ts-ebml -->
-  <script type="module">
-    import * as ebml from 'https://cdn.jsdelivr.net/npm/ts-ebml@3.0.0/+esm';
-
-    // Create a WebM duration fixer using ts-ebml
-    async function fixWebmWithTsEbml(blob) {
-      const buffer = await blob.arrayBuffer();
-      const decoder = new ebml.Decoder();
-      const reader = new ebml.Reader();
-      reader.logging = false;
-      reader.drop_default_duration = false;
-
-      // Decode the WebM
-      const elms = decoder.decode(buffer);
-      elms.forEach(elm => reader.read(elm));
-      reader.stop();
-
-      // Get refined metadata with duration info
-      const refinedMetadataBuf = ebml.tools.makeMetadataSeekable(
-        reader.metadatas,
-        reader.duration,
-        reader.cues
-      );
-
-      // Combine refined metadata with media data
-      const body = buffer.slice(reader.metadataSize);
-      const result = new Blob([refinedMetadataBuf, body], { type: blob.type });
-
-      console.log(`ts-ebml: Fixed WebM duration: ${(reader.duration / 1000).toFixed(1)}s`);
-      return result;
+  <!-- Fix WebM metadata for seekable videos -->
+  <script src="https://cdn.jsdelivr.net/npm/webm-duration-fix@1.0.4/dist/webm-duration-fix.umd.js"></script>
+  <script>
+    // webm-duration-fix provides window.WebmDurationFix
+    if (typeof WebmDurationFix !== 'undefined') {
+      window.fixWebmMetaInfo = async function(blob) {
+        try {
+          const fixed = await WebmDurationFix(blob);
+          console.log('WebM duration fixed successfully');
+          return fixed;
+        } catch (err) {
+          console.warn('WebM duration fix failed:', err.message);
+          return blob;
+        }
+      };
+      console.log('webm-duration-fix loaded ✓');
+    } else {
+      console.warn('webm-duration-fix not available');
     }
-
-    window.fixWebmMetaInfo = fixWebmWithTsEbml;
-    console.log('ts-ebml WebM fixer loaded ✓');
   </script>
 </head>
 <body>
