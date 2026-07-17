@@ -8518,36 +8518,39 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
-          // PRE-BUFFER upcoming segments 5 seconds before they're needed
-          // This prevents stutter at segment boundaries due to re-buffering
-          const PREBUFFER_AHEAD = 5; // seconds before segment switch to start buffering
+          // PRE-WARM upcoming segments 2 seconds before they're needed
+          // Play briefly then pause - this "warms up" the video decoder
+          // so it can instantly produce frames when we actually switch
+          const PREWARM_AHEAD = 2; // seconds before segment switch to warm up
           for (const av of avatarVideoElements) {
             if (!av || !av.element) continue;
             const timeUntilNeeded = av.startTime - currentTime;
 
-            // If segment is 0-5 seconds away and hasn't been pre-buffered yet
-            if (timeUntilNeeded > 0 && timeUntilNeeded <= PREBUFFER_AHEAD && !av._prebufferedDuringExport) {
-              av._prebufferedDuringExport = true;
+            // If segment is 0-2 seconds away and hasn't been pre-warmed yet
+            if (timeUntilNeeded > 0 && timeUntilNeeded <= PREWARM_AHEAD && !av._prewarmed) {
+              av._prewarmed = true;
               const vid = av.element;
 
-              // Ensure video is at start position and trigger buffering
-              console.log(`Pre-buffering upcoming segment ${av.segmentIndex} (${timeUntilNeeded.toFixed(1)}s until needed, readyState=${vid.readyState})`);
+              // Warm up the video decoder by playing briefly then pausing at frame 0
+              console.log(`PRE-WARMING segment ${av.segmentIndex} (${timeUntilNeeded.toFixed(1)}s until needed, readyState=${vid.readyState})`);
 
-              if (vid.readyState < 3) {
-                // Video needs buffering - trigger it with a brief play
-                vid.currentTime = 0;
-                vid.muted = true;
-                vid.play().then(() => {
-                  // Let it buffer for a moment, then pause
-                  setTimeout(() => {
-                    vid.pause();
-                    vid.currentTime = 0;
-                    console.log(`Segment ${av.segmentIndex} pre-buffered (readyState=${vid.readyState})`);
-                  }, 500);
-                }).catch(() => {
-                  console.log(`Segment ${av.segmentIndex} pre-buffer play failed, will try on switch`);
-                });
-              }
+              vid.currentTime = 0;
+              vid.muted = true;
+              vid.playbackRate = 1.0;
+              vid.play().then(() => {
+                // Play for just 100ms to warm up decoder, then pause at position 0
+                setTimeout(() => {
+                  vid.pause();
+                  vid.currentTime = 0; // Reset to start
+                  av._warmedUp = true;
+                  console.log(`Segment ${av.segmentIndex} warmed up and ready at position 0 (readyState=${vid.readyState})`);
+                }, 100);
+              }).catch(() => {
+                console.log(`Segment ${av.segmentIndex} pre-warm failed, will try on switch`);
+              });
+
+              // Mark switch time as old so we don't skip frames when we switch
+              av.switchTime = performance.now() - 2000;
             }
           }
 
@@ -8613,14 +8616,17 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 // Already at correct position - just start playing without seeking
                 avatarData.element.playbackRate = 1.0;
                 avatarData.element.play().catch(() => {});
-                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, at ${currentPos.toFixed(2)}s (no seek, just play)`);
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, at ${currentPos.toFixed(2)}s (no seek, just play), warmedUp=${avatarData._warmedUp}, readyState=${avatarData.element.readyState}`);
               } else {
                 // Need to seek first, then play
                 avatarData.element.currentTime = localTime;
                 avatarData.element.playbackRate = 1.0;
                 avatarData.element.play().catch(() => {});
-                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, seeking to ${localTime.toFixed(2)}s`);
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, seeking to ${localTime.toFixed(2)}s, warmedUp=${avatarData._warmedUp}, readyState=${avatarData.element.readyState}`);
               }
+
+              // Track when switch happened for debug logging
+              avatarData._switchedAt = currentTime;
 
               lastActiveAvatar = avatarData;
               // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
@@ -8650,6 +8656,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
             // Check if we just switched segments
             const timeSinceSwitch = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
+
+            // DEBUG: Log first 3 seconds after any switch to diagnose stutter
+            const timeSinceContentSwitch = avatarData._switchedAt ? currentTime - avatarData._switchedAt : Infinity;
+            if (timeSinceContentSwitch >= 0 && timeSinceContentSwitch <= 3 && frameCount % 10 === 0) {
+              console.log(`[SWITCH+${timeSinceContentSwitch.toFixed(1)}s] video.currentTime=${actualVideoTime.toFixed(2)}s, expected=${expectedLocalTime.toFixed(2)}s, drift=${drift.toFixed(3)}s, paused=${avatarData.element.paused}, readyState=${avatarData.element.readyState}`);
+            }
 
             // CRITICAL: Always skip first 100ms after switch to let video element update its frame
             // This gives time for video decode and buffer - prevents "loop" visual artifact
