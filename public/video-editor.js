@@ -750,6 +750,7 @@ class VideoEditor {
     this.syncToSpeechBtn = document.getElementById('sync-to-speech-btn');
     this.syncToAudioBtn = document.getElementById('sync-to-audio-btn');
     this.distributeEvenlyBtn = document.getElementById('distribute-evenly-btn');
+    this.matchToScriptBtn = document.getElementById('match-to-script-btn');
     this.totalDuration = document.getElementById('total-duration');
     this.waveformContainer = document.getElementById('waveform-container');
     this.timeline = document.getElementById('timeline');
@@ -917,6 +918,9 @@ class VideoEditor {
     }
     if (this.distributeEvenlyBtn) {
       this.distributeEvenlyBtn.addEventListener('click', () => this.distributeEvenly());
+    }
+    if (this.matchToScriptBtn) {
+      this.matchToScriptBtn.addEventListener('click', () => this.matchScenesToScript());
     }
 
     // Force Re-sync button - always clears cache
@@ -4088,6 +4092,163 @@ class VideoEditor {
     showToast(`Distributed ${this.scenes.length} scenes (~${durationPerScene.toFixed(1)}s each, shifted ${anticipation}s earlier)`, 'success');
 
     console.log('distributeEvenly completed. First 5 scenes:', this.scenes.slice(0, 5).map(s => ({start: s.startTime, dur: s.duration})));
+  }
+
+  // Match scenes to script using DIRECT text matching (find exact phrases in transcript)
+  async matchScenesToScript() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first.');
+      return;
+    }
+
+    // Get the cached transcription
+    const segmentNums = Object.keys(this.replacedAudioSegments || {}).map(Number).sort((a, b) => a - b).join(',');
+    const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
+    const stableCacheKey = `stitched_transcription_v3_${baseAudioKey}_segs_${segmentNums}`;
+
+    let transcription = null;
+    const cached = localStorage.getItem(stableCacheKey);
+    if (cached) {
+      try {
+        transcription = JSON.parse(cached);
+      } catch (e) {}
+    }
+
+    if (!transcription || !transcription.words || transcription.words.length === 0) {
+      showToast('Run "Full Captions" first to get word timestamps.');
+      return;
+    }
+
+    console.log('=== MATCHING SCENES TO SCRIPT (DIRECT TEXT MATCH) ===');
+    console.log(`Scenes: ${this.scenes.length}, Words in transcript: ${transcription.words.length}`);
+
+    const words = transcription.words;
+    const anticipation = 2; // Show scene 2 seconds before words are spoken
+    let matchedCount = 0;
+
+    // Build a full transcript text with word positions
+    const fullText = words.map(w => w.word.toLowerCase().replace(/[^\w]/g, '')).join(' ');
+
+    this.scenes.forEach((scene, index) => {
+      const sceneText = (scene.text || '').toLowerCase();
+      if (!sceneText || sceneText.length < 10) {
+        console.log(`Scene ${index + 1}: No text, skipping`);
+        return;
+      }
+
+      // Extract key phrases (first 5-8 significant words)
+      const sceneWords = sceneText
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3)
+        .slice(0, 8);
+
+      if (sceneWords.length < 3) {
+        console.log(`Scene ${index + 1}: Too few words, skipping`);
+        return;
+      }
+
+      // Search for these words in sequence in the transcript
+      const searchPhrase = sceneWords.slice(0, 5).join(' ');
+      let bestMatchTime = null;
+      let bestMatchScore = 0;
+
+      // Sliding window search through transcript words
+      for (let i = 0; i < words.length - 3; i++) {
+        let matchScore = 0;
+        const windowWords = words.slice(i, i + 10).map(w => w.word.toLowerCase().replace(/[^\w]/g, ''));
+
+        // Count how many scene words appear in this window
+        for (const sw of sceneWords) {
+          if (windowWords.includes(sw)) {
+            matchScore++;
+          }
+        }
+
+        // Check for sequence matches (consecutive words)
+        const windowText = windowWords.join(' ');
+        for (let len = Math.min(5, sceneWords.length); len >= 3; len--) {
+          const phrase = sceneWords.slice(0, len).join(' ');
+          if (windowText.includes(phrase)) {
+            matchScore += len * 2; // Bonus for phrase match
+            break;
+          }
+        }
+
+        if (matchScore > bestMatchScore) {
+          bestMatchScore = matchScore;
+          bestMatchTime = words[i].start;
+        }
+      }
+
+      if (bestMatchTime !== null && bestMatchScore >= 3) {
+        const newStartTime = Math.max(0, bestMatchTime - anticipation);
+        console.log(`Scene ${index + 1} MATCHED: ${scene.startTime?.toFixed(1) || '?'}s → ${newStartTime.toFixed(1)}s (score: ${bestMatchScore})`);
+        console.log(`  Text: "${sceneText.substring(0, 60)}..."`);
+        scene.matchedTime = newStartTime;
+        scene.matchScore = bestMatchScore;
+        matchedCount++;
+      } else {
+        console.log(`Scene ${index + 1}: No good match found (best score: ${bestMatchScore})`);
+        console.log(`  Text: "${sceneText.substring(0, 60)}..."`);
+        scene.matchedTime = null;
+      }
+    });
+
+    console.log(`=== MATCHED ${matchedCount}/${this.scenes.length} SCENES ===`);
+
+    if (matchedCount === 0) {
+      showToast('No scenes could be matched to script. Check that scenes have script text attached.');
+      return;
+    }
+
+    // Reorder scenes by matched time
+    const matchedScenes = this.scenes.filter(s => s.matchedTime !== null);
+    const unmatchedScenes = this.scenes.filter(s => s.matchedTime === null);
+
+    // Sort matched scenes by their matched time
+    matchedScenes.sort((a, b) => a.matchedTime - b.matchedTime);
+
+    // Assign actual start times based on sorted order
+    let currentTime = 0;
+    const totalDuration = this.audioDuration || 656;
+    const durationPerScene = totalDuration / this.scenes.length;
+
+    matchedScenes.forEach((scene, i) => {
+      scene.startTime = scene.matchedTime;
+    });
+
+    // Calculate durations (each scene runs until the next one starts)
+    for (let i = 0; i < matchedScenes.length - 1; i++) {
+      matchedScenes[i].duration = matchedScenes[i + 1].startTime - matchedScenes[i].startTime;
+    }
+    if (matchedScenes.length > 0) {
+      matchedScenes[matchedScenes.length - 1].duration = totalDuration - matchedScenes[matchedScenes.length - 1].startTime;
+    }
+
+    // Put unmatched scenes at the end
+    let endTime = matchedScenes.length > 0 ? matchedScenes[matchedScenes.length - 1].startTime + matchedScenes[matchedScenes.length - 1].duration : 0;
+    unmatchedScenes.forEach(scene => {
+      scene.startTime = endTime;
+      scene.duration = durationPerScene;
+      endTime += durationPerScene;
+    });
+
+    // Rebuild scenes array in new order
+    this.scenes = [...matchedScenes, ...unmatchedScenes];
+
+    // Cleanup temp properties
+    this.scenes.forEach(s => {
+      delete s.matchedTime;
+      delete s.matchScore;
+    });
+
+    this.renderTimeline();
+    this.renderCaptions();
+    this.updateTotalDuration();
+    this.saveScenesToSupabase();
+
+    showToast(`Matched ${matchedCount}/${this.scenes.length} scenes to script! Check console for details.`, 'success');
   }
 
   // Fix any scenes that are too short to be visible
