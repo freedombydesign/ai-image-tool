@@ -315,17 +315,37 @@ class VideoEditor {
     }
   }
 
-  // Load audio for avatar segments - ALWAYS uses clean TTS splits
-  // NOTE: We ignore saved audio_url because it may contain bad lip-sync audio from avatar videos
+  // Load audio for avatar segments - uses saved audio_url if available, else TTS splits
   async extractAudioFromAvatarSegments(segments) {
     if (!segments || segments.length === 0) return;
 
-    console.log(`Loading CLEAN TTS audio for ${segments.length} avatar segments (ignoring saved audio_url)...`);
+    console.log(`Loading audio for ${segments.length} avatar segments...`);
     let loaded = 0;
+    let needsRepair = [];
 
-    // ALWAYS use clean TTS splits - saved audio_url might contain bad lip-sync audio
-    if (this.audioBlob) {
-      console.log(`🔊 Splitting original TTS audio for ALL ${segments.length} segments...`);
+    // First pass: load segments that have saved audio_url (user-uploaded replacements)
+    for (const seg of segments) {
+      if (seg.audio_url) {
+        try {
+          const response = await fetch(seg.audio_url);
+          if (response.ok) {
+            const audioBlob = await response.blob();
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
+            loaded++;
+            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
+            continue;
+          }
+        } catch (e) {
+          console.warn(`  Failed to fetch audio for segment ${seg.segment_num}:`, e.message);
+        }
+      }
+      // Track segments that need TTS split (no saved audio)
+      needsRepair.push(seg);
+    }
+
+    // Second pass: use TTS splits for segments without saved audio
+    if (needsRepair.length > 0 && this.audioBlob) {
+      console.log(`🔊 Splitting TTS audio for ${needsRepair.length} segments without saved audio...`);
 
       try {
         // Split TTS audio into segments
@@ -335,15 +355,15 @@ class VideoEditor {
         const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
         const config = window.supabaseConfig;
 
-        for (const seg of segments) {
+        for (const seg of needsRepair) {
           const segmentIndex = seg.segment_num - 1;
           if (segmentIndex >= 0 && segmentIndex < audioSegments.length) {
             const audioSeg = audioSegments[segmentIndex];
 
-            // Store in memory immediately - ALWAYS use clean TTS, never lip-sync audio
+            // Store in memory immediately
             this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null };
             loaded++;
-            console.log(`✓ Using CLEAN TTS audio for segment ${seg.segment_num} (${audioSeg.blob.size} bytes, ignoring any saved lip-sync)`);
+            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split (blob size: ${audioSeg.blob.size})`);
 
             // Upload to Supabase if available
             if (userId && config) {
@@ -394,8 +414,7 @@ class VideoEditor {
 
     if (loaded > 0) {
       this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
-      this.stitchedAudioBuffer = null; // Also clear AudioBuffer cache
-      console.log(`✓ Loaded CLEAN TTS audio for ${loaded}/${segments.length} avatar segments. NO lip-sync audio used!`);
+      console.log(`✓ Loaded audio for ${loaded}/${segments.length} avatar segments. Clean audio ready!`);
 
       // Show all segment blob sizes for cache key debugging
       const segmentSizes = Object.entries(this.replacedAudioSegments || {})
@@ -2816,34 +2835,6 @@ class VideoEditor {
   async stitchAudioForExport() {
     if (!this.audioBlob) return null;
 
-    // CRITICAL: Force clean TTS audio for ALL avatar segments
-    // This ensures we NEVER use bad lip-sync audio from avatar videos
-    const numAvatarSegments = this.avatarVideos?.length || Math.ceil((this.audioDuration || 600) / 90);
-    if (numAvatarSegments > 0) {
-      console.log('🔊 FORCING clean TTS audio for export (ignoring any cached lip-sync audio)...');
-
-      // Split fresh TTS audio
-      const freshSegments = await this.splitAudioForAvatar();
-      console.log(`Split fresh TTS audio into ${freshSegments.length} segments`);
-
-      // Replace ALL segments with clean TTS audio
-      for (let i = 0; i < freshSegments.length; i++) {
-        const segmentNum = i + 1;
-        const oldSize = this.replacedAudioSegments?.[segmentNum]?.blob?.size || 0;
-        this.replacedAudioSegments[segmentNum] = {
-          blob: freshSegments[i].blob,
-          url: null,
-          duration: null // Will be set during decode
-        };
-        console.log(`Segment ${segmentNum}: replaced ${oldSize} bytes with clean TTS (${freshSegments[i].blob.size} bytes)`);
-      }
-
-      // Clear cached stitched audio to force rebuild
-      this.stitchedAudioBlob = null;
-      this.stitchedAudioBuffer = null;
-      console.log('✓ All segments now use clean TTS audio');
-    }
-
     // Check if we have any replaced segments
     const replacedKeys = Object.keys(this.replacedAudioSegments || {});
     if (replacedKeys.length === 0) {
@@ -2852,6 +2843,7 @@ class VideoEditor {
     }
 
     // If ALL segments are replaced, just concatenate the replaced audio (faster)
+    const numAvatarSegments = this.avatarVideos?.length || 8;
     if (replacedKeys.length === numAvatarSegments) {
       console.log('All segments replaced - using fast concatenation');
       return this.fastStitchReplacedAudio();
