@@ -6767,7 +6767,15 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       if (seg && seg.url) {
         // Get actual audio duration for this segment (if available)
         const audioData = this.replacedAudioSegments?.[segNum];
-        const segmentDuration = audioData?.duration || DEFAULT_SEGMENT_LENGTH;
+        let segmentDuration = audioData?.duration || DEFAULT_SEGMENT_LENGTH;
+
+        // CRITICAL: If duration is close to DEFAULT but not exact (e.g., 90.82s from video-extracted audio),
+        // force it to exactly DEFAULT_SEGMENT_LENGTH to prevent segment boundary drift
+        // This fixes the issue where video-extracted audio (90.82s) caused all subsequent segments to start late
+        if (Math.abs(segmentDuration - DEFAULT_SEGMENT_LENGTH) < 1.0 && segmentDuration !== DEFAULT_SEGMENT_LENGTH) {
+          console.log(`🔧 Forcing segment ${segNum} duration from ${segmentDuration.toFixed(2)}s to exactly ${DEFAULT_SEGMENT_LENGTH}s`);
+          segmentDuration = DEFAULT_SEGMENT_LENGTH;
+        }
 
         // For segments before this one that we skipped, add their duration to cumulative time
         // This handles cases where segment numbers aren't contiguous
