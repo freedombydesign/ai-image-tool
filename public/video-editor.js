@@ -351,6 +351,19 @@ class VideoEditor {
                 console.log(`   Timeline will adjust to accommodate this segment's length`);
               }
 
+              // SAFEGUARD: Detect if audio was extracted from avatar video (common video durations)
+              // Video-extracted audio has duration like 90.815986s (video codec frame alignment)
+              // TTS audio has clean durations like 90.82s or exact splits
+              const fractionalPart = actualDuration % 1;
+              const looksLikeVideoAudio = fractionalPart > 0.8 && fractionalPart < 0.82 &&
+                Math.abs(actualDuration - 90.816) < 0.01;
+
+              if (looksLikeVideoAudio) {
+                console.warn(`⚠️ Segment ${seg.segment_num} audio appears to be video-extracted (${actualDuration.toFixed(4)}s). Will use TTS split instead.`);
+                needsRepair.push(seg);
+                continue; // Skip this audio and use TTS split
+              }
+
               console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (${actualDuration.toFixed(2)}s, blob size: ${audioBlob.size})`);
             } catch (decodeErr) {
               console.warn(`  Failed to decode segment ${seg.segment_num} duration:`, decodeErr.message);
@@ -6790,15 +6803,26 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // CRITICAL: Ensure segments are perfectly contiguous (fixes floating point drift)
     // Each segment's startTime must equal the previous segment's endTime
+    let fixesApplied = 0;
     for (let i = 1; i < this.avatarVideos.length; i++) {
       const prevEndTime = this.avatarVideos[i - 1].endTime;
       const currStartTime = this.avatarVideos[i].startTime;
-      if (Math.abs(prevEndTime - currStartTime) > 0.001) {
-        console.log(`[FIX] Segment ${this.avatarVideos[i].segmentIndex} startTime ${currStartTime.toFixed(3)}s -> ${prevEndTime.toFixed(3)}s (was off by ${(prevEndTime - currStartTime).toFixed(3)}s)`);
+      const diff = prevEndTime - currStartTime;
+      if (Math.abs(diff) > 0.001) {
+        console.log(`[CONTIGUOUS FIX] Segment ${this.avatarVideos[i].segmentIndex}: ${currStartTime.toFixed(3)}s -> ${prevEndTime.toFixed(3)}s (gap: ${diff.toFixed(3)}s)`);
         const duration = this.avatarVideos[i].endTime - this.avatarVideos[i].startTime;
         this.avatarVideos[i].startTime = prevEndTime;
         this.avatarVideos[i].endTime = prevEndTime + duration;
+        fixesApplied++;
       }
+    }
+
+    // Log final corrected boundaries
+    if (fixesApplied > 0) {
+      console.log(`Applied ${fixesApplied} contiguous fixes. Final boundaries:`);
+      this.avatarVideos.forEach(av => {
+        console.log(`  Segment ${av.segmentIndex}: ${av.startTime.toFixed(3)}s - ${av.endTime.toFixed(3)}s`);
+      });
     }
 
     console.log(`Synced ${this.avatarVideos.length} avatar segments for preview (using actual audio durations)`);
@@ -8884,8 +8908,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
               }
 
-              // CROSS-FADE: Blend previous segment with new segment over 250ms to smooth discontinuity
-              const CROSSFADE_DURATION = 250; // ms (increased from 150ms for smoother transition)
+              // CROSS-FADE: Blend previous segment with new segment over 500ms to smooth discontinuity
+              const CROSSFADE_DURATION = 500; // ms (doubled for much smoother transition)
               // Use _crossfadeStartTime (actual switch time) not switchTime (may be set during pre-warm)
               const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
               const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
