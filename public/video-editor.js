@@ -321,27 +321,11 @@ class VideoEditor {
 
     console.log(`Loading audio for ${segments.length} avatar segments...`);
     let loaded = 0;
-    let needsRepair = [];
 
-    // First pass: load segments that have saved audio_url (user-uploaded replacements)
-    for (const seg of segments) {
-      if (seg.audio_url) {
-        try {
-          const response = await fetch(seg.audio_url);
-          if (response.ok) {
-            const audioBlob = await response.blob();
-            this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
-            loaded++;
-            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
-            continue;
-          }
-        } catch (e) {
-          console.warn(`  Failed to fetch audio for segment ${seg.segment_num}:`, e.message);
-        }
-      }
-      // Track segments that need TTS split (no saved audio)
-      needsRepair.push(seg);
-    }
+    // ALWAYS use TTS splits for consistent 90s segment durations
+    // Do NOT use saved audio_url - those contain lip-sync audio from avatar videos
+    // which may have different durations (e.g., 90.82s instead of 90s)
+    let needsRepair = [...segments];
 
     // Second pass: use TTS splits for segments without saved audio
     if (needsRepair.length > 0 && this.audioBlob) {
