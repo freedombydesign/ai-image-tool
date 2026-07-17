@@ -10670,6 +10670,74 @@ async function repairAllSegmentsAudio() {
 }
 window.repairAllSegmentsAudio = repairAllSegmentsAudio;
 
+// FULL RESET: Clear all audio caches and force complete re-sync of segments
+// Use this if audio is stuttering or looping at segment boundaries
+async function fullAudioReset() {
+  console.log('=== FULL AUDIO RESET ===');
+
+  if (typeof videoEditor === 'undefined' || !videoEditor.audioBlob) {
+    showToast('No video editor or audio loaded', 'error');
+    return;
+  }
+
+  const segments = window.loadedAvatarSegments || [];
+  const numSegments = segments.length || Math.ceil(videoEditor.audioDuration / 90) || 8;
+
+  console.log(`Resetting audio for ${numSegments} segments...`);
+
+  // Step 1: Clear ALL audio caches
+  console.log('Step 1: Clearing all audio caches...');
+  videoEditor.replacedAudioSegments = {};
+  videoEditor.stitchedAudioBlob = null;
+  videoEditor.stitchedAudioBuffer = null;
+  console.log('  ✓ Cleared replacedAudioSegments, stitchedAudioBlob, stitchedAudioBuffer');
+
+  // Step 2: Split TTS audio fresh for all segments
+  console.log('Step 2: Splitting TTS audio for all segments...');
+  const audioSegments = await videoEditor.splitAudioForAvatar(numSegments);
+  if (!audioSegments || audioSegments.length === 0) {
+    showToast('Failed to split TTS audio', 'error');
+    return;
+  }
+
+  // Step 3: Store all segments with clean TTS audio
+  console.log('Step 3: Storing clean audio for each segment...');
+  for (let i = 0; i < audioSegments.length; i++) {
+    const segmentNum = i + 1;
+    const audioSeg = audioSegments[i];
+    videoEditor.replacedAudioSegments[segmentNum] = {
+      blob: audioSeg.blob,
+      url: null,
+      duration: 90 // Fixed 90s duration
+    };
+    console.log(`  ✓ Segment ${segmentNum}: ${audioSeg.blob.size} bytes, 90.00s`);
+  }
+
+  // Step 4: Re-sync avatar video boundaries
+  console.log('Step 4: Re-syncing avatar video boundaries...');
+  videoEditor.syncUploadedAvatarSegments();
+  console.log('  ✓ Avatar video boundaries synced');
+
+  // Step 5: Pre-stitch audio to verify
+  console.log('Step 5: Pre-stitching audio to verify...');
+  const stitched = await videoEditor.stitchAudioForExport();
+  if (stitched) {
+    console.log(`  ✓ Pre-stitched audio: ${stitched.size} bytes`);
+  }
+
+  console.log('=== FULL AUDIO RESET COMPLETE ===');
+  showToast(`✅ Reset complete! ${numSegments} segments re-synced with clean audio.`, 'success');
+
+  // Log final state
+  const keys = Object.keys(videoEditor.replacedAudioSegments).sort((a,b) => a-b);
+  console.log('Final audio segment state:');
+  keys.forEach(k => {
+    const seg = videoEditor.replacedAudioSegments[k];
+    console.log(`  Segment ${k}: ${seg.blob?.size || 0} bytes, ${seg.duration?.toFixed(2) || '?'}s`);
+  });
+}
+window.fullAudioReset = fullAudioReset;
+
 // Handle individual segment video upload
 async function handleSegmentUpload(segmentNum, file) {
   if (!file) return;
