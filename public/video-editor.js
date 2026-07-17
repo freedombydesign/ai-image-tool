@@ -8731,10 +8731,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
-          // CLEAN CUT: Hide avatar briefly at segment boundaries to mask the visual jump
+          // CLEAN CUT: Hide avatar at segment boundaries to mask the visual jump
           // Like a film editor's splice - cut out the problematic transition
+          // Extended to cover buffering period (avatar videos take ~3s to buffer at boundary)
           const CUT_BEFORE = 0.1; // Hide 100ms BEFORE boundary (trim end of previous segment)
-          const CUT_AFTER = 0.15; // Hide 150ms AFTER boundary (trim start of next segment)
+          const CUT_AFTER = 3.5; // Hide 3.5s AFTER boundary (covers buffering time)
 
           // Find the nearest segment boundary
           const segmentLength = 90;
