@@ -8353,7 +8353,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           lastActiveAvatar = av;
           // Set switchTime to "already old" so we don't skip frames
           av.switchTime = recordingStartTime - 1000;
-          console.log(`Pre-initialized active avatar: segment ${av.segmentIndex} (switchTime already set)`);
+          // Start playing immediately so video can buffer
+          av.element.playbackRate = 1.0;
+          av.element.play().catch(() => {});
+          console.log(`Pre-initialized active avatar: segment ${av.segmentIndex}, starting playback`);
           break;
         }
       }
@@ -8605,12 +8608,24 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // 3. Video not ready (readyState < 2) - no decoded frame available yet
             // 4. Recently switched (< 200ms) AND drift > 0.1s - still syncing after initial buffer
             if (absDrift > 1.0 || tooSoonAfterSwitch || videoNotReady || (timeSinceSwitch < 200 && absDrift > 0.1)) {
-              if (videoNotReady && timeSinceSwitch >= 100) {
-                console.log(`Avatar skip frame: readyState=${avatarData.element.readyState} (waiting for decode)`);
+              if (videoNotReady) {
+                // DON'T seek when video not ready - seeking prevents buffering!
+                // Just let the video buffer at current position and play() to trigger download
+                if (!avatarData.element.paused) {
+                  // Already playing, just wait
+                } else {
+                  avatarData.element.play().catch(() => {});
+                }
+                if (frameCount % 30 === 0) { // Log every second
+                  console.log(`Avatar buffering: readyState=${avatarData.element.readyState}, waiting for data...`);
+                }
+              } else {
+                console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
+                // Only seek if video has enough data to seek without re-buffering
+                if (avatarData.element.readyState >= 3) {
+                  avatarData.element.currentTime = expectedLocalTime;
+                }
               }
-              console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
-              // Force seek to correct position
-              avatarData.element.currentTime = expectedLocalTime;
               // Don't draw - skip to next frame
             } else {
               // Video is close enough to expected position - sync and draw
@@ -8620,12 +8635,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               // Add 200ms cooldown after resync to prevent feedback loop
               const cooldownElapsed = now - lastAvatarResyncTime > 200;
 
+              // Don't hard resync in first 3 seconds - let video buffer and catch up naturally
+              const exportElapsed = (performance.now() - recordingStartTime) / 1000;
+              const allowHardResync = exportElapsed > 3.0 && avatarData.element.readyState >= 3;
+
               if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
-                if (absDrift > 0.3) {
-                  // Large drift - hard resync by seeking
+                if (absDrift > 0.3 && allowHardResync) {
+                  // Large drift - hard resync by seeking (only after video is stable)
                   console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
                   avatarData.element.currentTime = expectedLocalTime;
                   avatarData.element.playbackRate = 1.0;
+                } else if (absDrift > 0.3) {
+                  // Large drift but too early - just speed up instead of seeking
+                  avatarData.element.playbackRate = drift < 0 ? 1.15 : 0.85;
                 } else if (drift < 0) {
                   // Video is behind audio - speed up slightly to catch up
                   avatarData.element.playbackRate = 1.05;
