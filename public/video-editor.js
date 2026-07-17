@@ -332,7 +332,7 @@ class VideoEditor {
             const audioBlob = await response.blob();
             this.replacedAudioSegments[seg.segment_num] = { blob: audioBlob, url: seg.audio_url };
             loaded++;
-            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL`);
+            console.log(`✓ Loaded replacement audio for segment ${seg.segment_num} from saved URL (blob size: ${audioBlob.size})`);
             continue;
           }
         } catch (e) {
@@ -363,7 +363,7 @@ class VideoEditor {
             // Store in memory immediately
             this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null };
             loaded++;
-            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split`);
+            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split (blob size: ${audioSeg.blob.size})`);
 
             // Upload to Supabase if available
             if (userId && config) {
@@ -415,6 +415,14 @@ class VideoEditor {
     if (loaded > 0) {
       this.stitchedAudioBlob = null; // Clear cache so it rebuilds with new segments
       console.log(`✓ Loaded audio for ${loaded}/${segments.length} avatar segments. Clean audio ready!`);
+
+      // Show all segment blob sizes for cache key debugging
+      const segmentSizes = Object.entries(this.replacedAudioSegments || {})
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+        .map(([num, seg]) => `${num}:${seg.blob?.size || 0}`);
+      console.log('=== AUDIO SEGMENT BLOB SIZES (for cache key) ===');
+      segmentSizes.forEach(s => console.log(`  Segment ${s}`));
+      console.log(`Cache key segment portion: ${segmentSizes.join(',')}`);
     } else {
       console.log('No audio loaded - will use original TTS audio for export');
     }
@@ -5516,6 +5524,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
       let baseAudio = this.audioBlob;
 
+      console.log('=== CAPTION GENERATION DEBUG ===');
+      console.log(`Has replacements: ${hasReplacements}`);
+      console.log(`Is test mode: ${isTestMode}`);
+      console.log(`Force refresh: ${forceRefresh}`);
+
       // Generate LOGICAL cache key (same as syncToAudio uses - v2 with segment sizes)
       const segmentSizes = Object.entries(this.replacedAudioSegments || {})
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
@@ -5525,6 +5538,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const logicalCacheKey = hasReplacements && !isTestMode
         ? `stitched_transcription_v2_${baseAudioKey}_segsizes_${segmentSizes}`
         : null;
+
+      console.log(`Segment sizes string: ${segmentSizes}`);
+      console.log(`Base audio key: ${baseAudioKey}`);
+      console.log(`Logical cache key: ${logicalCacheKey ? logicalCacheKey.substring(0, 80) + '...' : 'NONE (no replacements or test mode)'}`);
 
       // Check logical cache FIRST (before any audio processing) - only for full audio with replacements
       let result = null;
@@ -5537,10 +5554,20 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             showToast('Using cached transcription - instant!', 'success');
             // Skip audio processing, go straight to caption application below
           } catch (e) {
-            console.log('Logical cache invalid');
+            console.log('Logical cache invalid, will need to process');
             result = null;
           }
+        } else {
+          console.log('⚠️ CACHE MISS: No logical cache found - will need to process audio');
+          // Show all cache keys to debug
+          const allKeys = Object.keys(localStorage).filter(k => k.startsWith('stitched_transcription'));
+          console.log(`Available transcription cache keys (${allKeys.length}):`);
+          allKeys.forEach(k => console.log(`  - ${k.substring(0, 80)}...`));
         }
+      } else if (forceRefresh) {
+        console.log('⚠️ Force refresh requested - bypassing cache');
+      } else {
+        console.log('⚠️ No logical cache key (test mode or no replacements)');
       }
 
       // Only do audio processing if no cache hit
@@ -5812,6 +5839,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   applyCaptionsFromSegments(segments, words = []) {
     const totalDuration = this.audioDuration || segments[segments.length - 1].end;
 
+    console.log('=== APPLYING CAPTIONS TO SCENES ===');
+    console.log(`Total audio duration: ${totalDuration.toFixed(2)}s`);
+    console.log(`Total transcription segments: ${segments.length}`);
+    console.log(`Total words with timestamps: ${words.length}`);
+    console.log(`Total scenes: ${this.scenes.length}`);
+
     this.scenes.forEach((scene, index) => {
       // Find segments that overlap with this scene's time range
       const sceneStart = scene.startTime;
@@ -5874,6 +5907,21 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           scene.captionWords = null; // No timestamps available
         }
       }
+    });
+
+    // Summary of caption application
+    const scenesWithCaptions = this.scenes.filter(s => s.caption && s.caption.length > 0).length;
+    const scenesWithWordTimestamps = this.scenes.filter(s => s.captionWords && s.captionWords.length > 0).length;
+    const totalWords = this.scenes.reduce((sum, s) => sum + (s.captionWords?.length || 0), 0);
+    console.log('=== CAPTION APPLICATION SUMMARY ===');
+    console.log(`Scenes with captions: ${scenesWithCaptions}/${this.scenes.length}`);
+    console.log(`Scenes with word timestamps: ${scenesWithWordTimestamps}/${this.scenes.length}`);
+    console.log(`Total word timestamps stored: ${totalWords}`);
+
+    // Show first 3 scenes as sample
+    console.log('Sample scene captions:');
+    this.scenes.slice(0, 3).forEach((scene, i) => {
+      console.log(`  Scene ${i+1} (${scene.startTime.toFixed(1)}s-${(scene.startTime + scene.duration).toFixed(1)}s): ${scene.captionWords?.length || 0} words - "${(scene.caption || '').substring(0, 50)}..."`);
     });
   }
 
