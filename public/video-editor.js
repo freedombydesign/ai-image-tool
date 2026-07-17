@@ -8458,6 +8458,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               avatarData.element.playbackRate = 1.0;
               avatarData.element.play().catch(() => {});
               lastActiveAvatar = avatarData;
+              // Track when we switched - skip frames for 150ms after switch
+              avatarData.switchTime = performance.now();
               console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s`);
             }
           } else if (!avatarData && lastActiveAvatar) {
@@ -8475,10 +8477,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
             const absDrift = Math.abs(drift);
 
-            // CRITICAL: If video is way off position (e.g., just switched segments),
+            // Check if we just switched segments (within 150ms)
+            const timeSinceSwitch = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
+            const justSwitched = timeSinceSwitch < 150;
+
+            // CRITICAL: If video is way off position OR we just switched segments,
             // DON'T draw it - skip this frame to prevent visual glitch/loop
-            if (absDrift > 1.0 || avatarData.element.seeking) {
-              console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, seeking=${avatarData.element.seeking}, expected=${expectedLocalTime.toFixed(2)}s, actual=${actualVideoTime.toFixed(2)}s`);
+            if (absDrift > 1.0 || (justSwitched && absDrift > 0.1)) {
+              console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, justSwitched=${justSwitched}, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
               // Force seek to correct position
               avatarData.element.currentTime = expectedLocalTime;
               // Don't draw - skip to next frame
