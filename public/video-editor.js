@@ -4210,26 +4210,41 @@ class VideoEditor {
     matchedScenes.sort((a, b) => a.matchedTime - b.matchedTime);
 
     const totalDuration = this.audioDuration || 656;
-    const minDuration = Math.max(3, totalDuration / this.scenes.length / 2); // At least 3 seconds or half average
+    const minDuration = 5; // Minimum 5 seconds per scene
 
-    console.log(`Redistributing ${matchedScenes.length} matched scenes, ${unmatchedScenes.length} unmatched`);
-    console.log(`Total duration: ${totalDuration}s, Min duration per scene: ${minDuration.toFixed(1)}s`);
+    console.log(`Matched ${matchedScenes.length} scenes, ${unmatchedScenes.length} unmatched`);
+    console.log(`Total duration: ${totalDuration}s`);
 
-    // Distribute ALL scenes evenly across the timeline, but in matched order
-    // This keeps the ORDER from matching but ensures even distribution
-    const allScenesInOrder = [...matchedScenes, ...unmatchedScenes];
-    const avgDuration = totalDuration / allScenesInOrder.length;
+    // Set startTime to ACTUAL matched time (when text is spoken)
+    // Duration = time until next scene, with minimum of 5 seconds
+    for (let i = 0; i < matchedScenes.length; i++) {
+      const scene = matchedScenes[i];
+      scene.startTime = scene.matchedTime;
 
-    let currentTime = 0;
-    allScenesInOrder.forEach((scene, i) => {
-      scene.startTime = currentTime;
-      scene.duration = avgDuration;
-      currentTime += avgDuration;
-      console.log(`Scene reordered: index ${i}, startTime=${scene.startTime.toFixed(1)}s, duration=${scene.duration.toFixed(1)}s`);
+      // Duration is time until next scene starts (or end of audio)
+      if (i < matchedScenes.length - 1) {
+        const nextStart = matchedScenes[i + 1].matchedTime;
+        scene.duration = Math.max(minDuration, nextStart - scene.startTime);
+      } else {
+        scene.duration = Math.max(minDuration, totalDuration - scene.startTime);
+      }
+
+      console.log(`Scene at ${scene.startTime.toFixed(1)}s, duration ${scene.duration.toFixed(1)}s: "${(scene.text || '').substring(0, 40)}..."`);
+    }
+
+    // Put unmatched scenes (stage directions) in gaps or at end
+    // For now, distribute them at the very end
+    let endTime = totalDuration;
+    const unmatchedDuration = 5;
+    unmatchedScenes.forEach(scene => {
+      scene.startTime = endTime;
+      scene.duration = unmatchedDuration;
+      endTime += unmatchedDuration;
+      console.log(`Unmatched scene at ${scene.startTime.toFixed(1)}s: "${(scene.text || '').substring(0, 40)}..."`);
     });
 
-    // Rebuild scenes array in new order
-    this.scenes = allScenesInOrder;
+    // Rebuild scenes array - matched scenes in order, unmatched at end
+    this.scenes = [...matchedScenes, ...unmatchedScenes];
 
     // Cleanup temp properties
     this.scenes.forEach(s => {
