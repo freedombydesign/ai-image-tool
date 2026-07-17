@@ -7588,8 +7588,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const rawWordIndex = Math.floor(timeInScene / wordDuration);
     const currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
 
-    // Only show a sliding window of words (2 lines worth)
-    const totalWordsToShow = wordsPerLine * 2; // Show 2 lines at a time
+    // Only show current line of words (no preview of next line)
+    const totalWordsToShow = wordsPerLine; // Show 1 line at a time
     const windowStart = Math.max(0, Math.floor(currentWordIndex / wordsPerLine) * wordsPerLine);
     const windowEnd = Math.min(allWords.length, windowStart + totalWordsToShow);
     const visibleWords = allWords.slice(windowStart, windowEnd);
@@ -8373,9 +8373,39 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
-          const avatarData = avatarVideoElements.find(av =>
+          // Find avatar for current time, but also check if video has ended
+          let avatarData = avatarVideoElements.find(av =>
             av && currentTime >= av.startTime && currentTime < av.endTime
           );
+
+          // Debug: Log every 30 seconds to track avatar state
+          if (frameCount % 900 === 0) { // Every 30 seconds at 30fps
+            if (avatarData) {
+              console.log(`[${currentTime.toFixed(1)}s] Avatar seg ${avatarData.segmentIndex}: video=${avatarData.element?.currentTime?.toFixed(1)}s/${avatarData.element?.duration?.toFixed(1)}s, ended=${avatarData.element?.ended}`);
+            } else {
+              console.log(`[${currentTime.toFixed(1)}s] No avatar found. Segments: ${avatarVideoElements.map(av => `${av.segmentIndex}:${av.startTime}-${av.endTime}`).join(', ')}`);
+            }
+          }
+
+          // CRITICAL: Check if this avatar's video has ended BEFORE trying to switch/draw
+          // This prevents the loop bug where we seek past video end
+          if (avatarData && avatarData.element) {
+            const expectedLocalTime = currentTime - avatarData.startTime;
+            const videoDuration = avatarData.element.duration || 90;
+
+            // If video has ended or we're past its duration, treat as no avatar
+            if (avatarData.element.ended || expectedLocalTime >= videoDuration - 0.1) {
+              if (!avatarData._loggedEnd) {
+                console.log(`Avatar segment ${avatarData.segmentIndex} video ended at ${currentTime.toFixed(1)}s (video: ${videoDuration.toFixed(1)}s, expected: ${expectedLocalTime.toFixed(1)}s)`);
+                avatarData._loggedEnd = true;
+              }
+              // Don't use this avatar - it's finished
+              avatarData = null;
+            }
+          } else if (!avatarData && frameCount % 30 === 0) {
+            // Log when no avatar is found (every second)
+            console.log(`[${currentTime.toFixed(1)}s] No matching avatar segment`);
+          }
 
           // Handle avatar video switching
           if (avatarData && avatarData !== lastActiveAvatar) {
@@ -8383,7 +8413,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             if (lastActiveAvatar && lastActiveAvatar.element) {
               lastActiveAvatar.element.pause();
             }
-            // Start new avatar at correct position
+            // Start new avatar at correct position - safe now because we checked video hasn't ended
             const localTime = currentTime - avatarData.startTime;
             avatarData.element.currentTime = localTime;
             // Set playback rate to catch up if we're behind (helps with sync)
@@ -8392,7 +8422,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             lastActiveAvatar = avatarData;
             console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s`);
           } else if (!avatarData && lastActiveAvatar) {
-            // No avatar for this time, pause current
+            // No avatar for this time (or video ended), pause current
             lastActiveAvatar.element.pause();
             lastActiveAvatar = null;
           }
@@ -8403,16 +8433,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
 
-            // CRITICAL: Don't resync or draw if the video has naturally ended
-            // This prevents the 2-second loop bug when video duration < segment duration
-            if (avatarData.element.ended || expectedLocalTime >= videoDuration) {
-              // Video has ended - skip drawing this avatar
-              // The next segment will be picked up when currentTime passes its startTime
-              if (!avatarData._loggedEnd) {
-                console.log(`Avatar segment ended naturally at ${currentTime.toFixed(1)}s (video duration: ${videoDuration.toFixed(1)}s)`);
-                avatarData._loggedEnd = true;
-              }
-            } else {
+            // Video is still playing - sync and draw
+            {
               const actualVideoTime = avatarData.element.currentTime;
               const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
               const absDrift = Math.abs(drift);
@@ -9059,8 +9081,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const rawWordIndex = Math.floor(timeInScene / wordDuration);
     const currentWordIndex = Math.max(0, Math.min(allWords.length - 1, rawWordIndex));
 
-    // Only show a sliding window of words (2 lines worth) - same as preview
-    const totalWordsToShow = wordsPerLine * 2;
+    // Only show current line of words (no preview of next line) - same as preview
+    const totalWordsToShow = wordsPerLine;
     const windowStart = Math.max(0, Math.floor(currentWordIndex / wordsPerLine) * wordsPerLine);
     const windowEnd = Math.min(allWords.length, windowStart + totalWordsToShow);
     const visibleWords = allWords.slice(windowStart, windowEnd);
