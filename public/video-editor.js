@@ -2009,13 +2009,29 @@ class VideoEditor {
     this.trimStartTime = 0;
     this.trimEndTime = this.audioDuration;
 
-    // Set initial values
-    this.trimStartInput.value = this.formatTime(0);
-    this.trimEndInput.value = this.formatTime(this.audioDuration);
-    this.trimDuration.textContent = this.formatTime(this.audioDuration);
+    // Load saved trim settings from localStorage
+    try {
+      const savedTrim = localStorage.getItem('video_editor_trim');
+      if (savedTrim) {
+        const { start, end } = JSON.parse(savedTrim);
+        // Only restore if values are within current audio duration
+        if (start >= 0 && end <= this.audioDuration && start < end) {
+          this.trimStartTime = start;
+          this.trimEndTime = end;
+          console.log(`Restored trim settings: ${this.formatTime(start)} - ${this.formatTime(end)}`);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load trim settings:', e);
+    }
 
-    this.trimStartSlider.value = 0;
-    this.trimEndSlider.value = 100;
+    // Set initial values
+    this.trimStartInput.value = this.formatTime(this.trimStartTime);
+    this.trimEndInput.value = this.formatTime(this.trimEndTime);
+    this.trimDuration.textContent = this.formatTime(this.trimEndTime - this.trimStartTime);
+
+    this.trimStartSlider.value = (this.trimStartTime / this.audioDuration) * 100;
+    this.trimEndSlider.value = (this.trimEndTime / this.audioDuration) * 100;
     this.updateTrimRegion();
   }
 
@@ -2072,6 +2088,20 @@ class VideoEditor {
 
     this.trimSelectedRegion.style.left = `${startPercent}%`;
     this.trimSelectedRegion.style.width = `${endPercent - startPercent}%`;
+
+    // Save trim settings to localStorage
+    this.saveTrimSettings();
+  }
+
+  saveTrimSettings() {
+    try {
+      localStorage.setItem('video_editor_trim', JSON.stringify({
+        start: this.trimStartTime,
+        end: this.trimEndTime
+      }));
+    } catch (e) {
+      console.error('Failed to save trim settings:', e);
+    }
   }
 
   previewTrim() {
