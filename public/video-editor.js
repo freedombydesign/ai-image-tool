@@ -8944,34 +8944,27 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               // Video is close enough to expected position - sync and draw
               const now = performance.now();
 
-              // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
-              // Add 200ms cooldown after resync to prevent feedback loop
-              const cooldownElapsed = now - lastAvatarResyncTime > 200;
+              // SIMPLIFIED SYNC: Constant playbackRate changes cause visual stutter!
+              // Instead: always play at 1.0 speed, only hard-seek if drift exceeds 0.5s
+              // Small drift (< 0.5s) is acceptable for lip sync and avoids stutter
 
-              // Don't hard resync in first 3 seconds - let video buffer and catch up naturally
-              const exportElapsed = (performance.now() - recordingStartTime) / 1000;
-              const allowHardResync = exportElapsed > 3.0 && avatarData.element.readyState >= 3;
+              // Add 500ms cooldown after resync to prevent feedback loop
+              const cooldownElapsed = now - lastAvatarResyncTime > 500;
 
-              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
-                if (absDrift > 0.3 && allowHardResync) {
-                  // Large drift - hard resync by seeking (only after video is stable)
-                  console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
-                  avatarData.element.currentTime = expectedLocalTime;
-                  avatarData.element.playbackRate = 1.0;
-                } else if (absDrift > 0.3) {
-                  // Large drift but too early - just speed up instead of seeking
-                  avatarData.element.playbackRate = drift < 0 ? 1.15 : 0.85;
-                } else if (drift < 0) {
-                  // Video is behind audio - speed up slightly to catch up
-                  avatarData.element.playbackRate = 1.05;
-                } else {
-                  // Video is ahead of audio - slow down slightly
-                  avatarData.element.playbackRate = 0.95;
-                }
-                lastAvatarResyncTime = now;
-              } else if (absDrift <= 0.05 && avatarData.element.playbackRate !== 1.0) {
-                // Drift is minimal - return to normal speed
+              // Don't resync for 3 seconds after segment switch - let video stabilize
+              const timeSinceSwitchMs = avatarData._crossfadeStartTime ? now - avatarData._crossfadeStartTime : Infinity;
+              const allowResync = timeSinceSwitchMs > 3000 && avatarData.element.readyState >= 3;
+
+              // Ensure playbackRate is always 1.0 to prevent stutter
+              if (avatarData.element.playbackRate !== 1.0) {
                 avatarData.element.playbackRate = 1.0;
+              }
+
+              // Only hard-seek if drift is very large (> 0.5s) and video is stable
+              if (absDrift > 0.5 && !avatarData.element.seeking && cooldownElapsed && allowResync) {
+                console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+                avatarData.element.currentTime = expectedLocalTime;
+                lastAvatarResyncTime = now;
               }
 
               const rect = this.getAvatarOverlayRect(width, height);
