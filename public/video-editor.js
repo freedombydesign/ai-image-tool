@@ -4871,6 +4871,9 @@ class VideoEditor {
     this.renderCaptions();
     this.updateSceneIndicator(this.currentTime);
 
+    // Save reordered scenes
+    this.saveScenesToSupabase();
+
     showToast(`Moved scene ${currentIndex + 1} to position ${prevIndex + 1}`, 'success');
   }
 
@@ -4898,6 +4901,9 @@ class VideoEditor {
     this.renderCaptions();
     this.updateSceneIndicator(this.currentTime);
 
+    // Save reordered scenes
+    this.saveScenesToSupabase();
+
     showToast(`Moved scene ${currentIndex + 1} to position ${nextIndex + 1}`, 'success');
   }
 
@@ -4906,6 +4912,7 @@ class VideoEditor {
     let currentStart = 0;
     for (let i = 0; i < this.scenes.length; i++) {
       const scene = this.scenes[i];
+      scene.id = i; // Keep ID in sync with position
       scene.startTime = currentStart;
       currentStart += scene.duration;
     }
