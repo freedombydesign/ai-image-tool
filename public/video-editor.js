@@ -8679,6 +8679,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
               // Track when switch happened for debug logging
               avatarData._switchedAt = currentTime;
+              avatarData._loggedGap = false; // Reset gap logging flag for this new segment
 
               lastActiveAvatar = avatarData;
               // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
@@ -8692,9 +8693,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               }
             }
           } else if (!avatarData && lastActiveAvatar) {
-            // No avatar for this time (or video ended), pause current
+            // No avatar for this time (or video ended), pause current BUT keep it for fallback drawing
+            // This prevents the gap between segment 2 ending and segment 3 starting
             lastActiveAvatar.element.pause();
-            lastActiveAvatar = null;
+            // DON'T clear lastActiveAvatar - we'll use it to draw the last frame during the gap
+            fallbackAvatar = lastActiveAvatar;
+            // Only log once when transitioning to gap
+            if (!lastActiveAvatar._loggedGap) {
+              console.log(`[${currentTime.toFixed(1)}s] Avatar segment ${lastActiveAvatar.segmentIndex} video ended - keeping last frame as fallback until next segment`);
+              lastActiveAvatar._loggedGap = true;
+            }
           }
 
           if (avatarData && avatarData.element) {
@@ -8860,6 +8868,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               if (fallbackAvatar && fallbackAvatar !== avatarData) {
                 fallbackAvatar = null;
               }
+            }
+          } else if (!avatarData && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2) {
+            // NO current avatar but we have a fallback (previous segment ended, next hasn't started)
+            // Draw the last frame from the ended segment to prevent blank gap
+            const rect = this.getAvatarOverlayRect(width, height);
+            ctx.save();
+            if (this.avatarShape === 'circle') {
+              const centerX = rect.x + rect.width / 2;
+              const centerY = rect.y + rect.height / 2;
+              const radius = Math.min(rect.width, rect.height) / 2;
+              ctx.beginPath();
+              ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+              ctx.closePath();
+              ctx.clip();
+              ctx.drawImage(
+                fallbackAvatar.element,
+                rect.x + (rect.width - radius * 2) / 2,
+                rect.y + (rect.height - radius * 2) / 2,
+                radius * 2,
+                radius * 2
+              );
+            } else {
+              ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
+            }
+            ctx.restore();
+            if (frameCount % 30 === 0) {
+              console.log(`[${currentTime.toFixed(1)}s] Drawing fallback from segment ${fallbackAvatar.segmentIndex} (gap between segments)`);
             }
           }
         }
