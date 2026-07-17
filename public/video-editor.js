@@ -2955,18 +2955,53 @@ class VideoEditor {
 
     console.log(`Combining ${segmentBuffers.length} segments: ${totalSamples} samples, ${numChannels} channels`);
 
-    // Create combined buffer
-    const combinedBuffer = audioContext.createBuffer(numChannels, totalSamples, sampleRate);
+    // Crossfade duration in samples (100ms crossfade to smooth audio transitions)
+    const crossfadeSamples = Math.floor(sampleRate * 0.1);
+    const adjustedTotalSamples = totalSamples - (crossfadeSamples * (segmentBuffers.length - 1));
+    console.log(`Using ${crossfadeSamples} sample crossfade (100ms) between segments`);
 
-    let offset = 0;
-    for (const buf of segmentBuffers) {
+    // Create combined buffer (slightly shorter due to crossfade overlaps)
+    const combinedBuffer = audioContext.createBuffer(numChannels, adjustedTotalSamples, sampleRate);
+
+    let writeOffset = 0;
+    for (let i = 0; i < segmentBuffers.length; i++) {
+      const buf = segmentBuffers[i];
+      const isFirst = i === 0;
+      const isLast = i === segmentBuffers.length - 1;
+
       for (let channel = 0; channel < numChannels; channel++) {
         const destData = combinedBuffer.getChannelData(channel);
         const srcData = buf.getChannelData(channel);
-        destData.set(srcData, offset);
+
+        for (let j = 0; j < srcData.length; j++) {
+          const destIndex = writeOffset + j;
+          if (destIndex >= adjustedTotalSamples) break;
+
+          let sample = srcData[j];
+
+          // Fade out at end of segment (except last)
+          if (!isLast && j >= srcData.length - crossfadeSamples) {
+            const fadeProgress = (srcData.length - j) / crossfadeSamples;
+            sample *= fadeProgress;
+          }
+
+          // Fade in at start of segment (except first) and blend with previous
+          if (!isFirst && j < crossfadeSamples) {
+            const fadeProgress = j / crossfadeSamples;
+            sample *= fadeProgress;
+            // Add to existing faded-out samples from previous segment
+            destData[destIndex] += sample;
+          } else {
+            destData[destIndex] = sample;
+          }
+        }
       }
-      offset += buf.length;
+
+      // Move write offset, overlapping by crossfade amount
+      writeOffset += buf.length - (isLast ? 0 : crossfadeSamples);
     }
+
+    console.log(`Crossfade stitching complete: ${combinedBuffer.duration.toFixed(2)}s`);
 
     // Convert to WAV blob
     const stitchedBlob = this.audioBufferToWav(combinedBuffer);
