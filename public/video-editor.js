@@ -8477,14 +8477,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
             const absDrift = Math.abs(drift);
 
-            // Check if we just switched segments (within 150ms)
+            // Check if we just switched segments
             const timeSinceSwitch = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
-            const justSwitched = timeSinceSwitch < 150;
 
-            // CRITICAL: If video is way off position OR we just switched segments,
-            // DON'T draw it - skip this frame to prevent visual glitch/loop
-            if (absDrift > 1.0 || (justSwitched && absDrift > 0.1)) {
-              console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, justSwitched=${justSwitched}, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
+            // CRITICAL: Always skip first 50ms after switch to let video element update its frame
+            // Then check drift for sync issues
+            const tooSoonAfterSwitch = timeSinceSwitch < 50;  // ~3 frames at 60fps
+
+            // Skip frame if:
+            // 1. Way off position (drift > 1s) - major sync issue
+            // 2. Too soon after switch (< 50ms) - video element hasn't updated yet
+            // 3. Recently switched (< 150ms) AND drift > 0.1s - still syncing
+            if (absDrift > 1.0 || tooSoonAfterSwitch || (timeSinceSwitch < 150 && absDrift > 0.1)) {
+              console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
               // Force seek to correct position
               avatarData.element.currentTime = expectedLocalTime;
               // Don't draw - skip to next frame
