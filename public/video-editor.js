@@ -8567,21 +8567,30 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               console.log(`BLOCKED: Would seek past video end. Skipping this avatar.`);
               avatarData = null;
             } else {
-              avatarData.element.currentTime = localTime;
-              // Set playback rate to catch up if we're behind (helps with sync)
-              avatarData.element.playbackRate = 1.0;
-              avatarData.element.play().catch(() => {});
+              // Check if video is already at the right position (pre-seeked)
+              const currentPos = avatarData.element.currentTime;
+              const alreadyAtPosition = Math.abs(currentPos - localTime) < 0.5;
+
+              if (alreadyAtPosition && !avatarData.element.paused) {
+                // Already playing at correct position - don't seek, just continue
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, already at ${currentPos.toFixed(2)}s (no seek needed)`);
+              } else {
+                // Need to seek and/or start playing
+                avatarData.element.currentTime = localTime;
+                avatarData.element.playbackRate = 1.0;
+                avatarData.element.play().catch(() => {});
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, seeking to ${localTime.toFixed(2)}s`);
+              }
+
               lastActiveAvatar = avatarData;
               // Only set switchTime if not already set by pre-seek (which sets it to a time in the past)
               // If switchTime is already > 1 second old, keep it (pre-seeked)
               const timeSincePreSeek = avatarData.switchTime ? performance.now() - avatarData.switchTime : Infinity;
               if (timeSincePreSeek > 1000) {
                 // Pre-seeked segment - keep the old switchTime so we don't skip frames
-                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s (pre-seeked, no skip)`);
               } else {
                 // Not pre-seeked or very recent - set new switchTime
                 avatarData.switchTime = performance.now();
-                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, localTime=${localTime.toFixed(2)}s (NEW switchTime)`);
               }
             }
           } else if (!avatarData && lastActiveAvatar) {
