@@ -8647,26 +8647,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               const exportElapsed = (performance.now() - recordingStartTime) / 1000;
               const allowHardResync = exportElapsed > 3.0 && avatarData.element.readyState >= 3;
 
-              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
-                if (absDrift > 0.3 && allowHardResync) {
-                  // Large drift - hard resync by seeking (only after video is stable)
-                  console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
-                  avatarData.element.currentTime = expectedLocalTime;
-                  avatarData.element.playbackRate = 1.0;
-                } else if (absDrift > 0.3) {
-                  // Large drift but too early - just speed up instead of seeking
-                  avatarData.element.playbackRate = drift < 0 ? 1.15 : 0.85;
-                } else if (drift < 0) {
-                  // Video is behind audio - speed up slightly to catch up
-                  avatarData.element.playbackRate = 1.05;
-                } else {
-                  // Video is ahead of audio - slow down slightly
-                  avatarData.element.playbackRate = 0.95;
-                }
-                lastAvatarResyncTime = now;
-              } else if (absDrift <= 0.05 && avatarData.element.playbackRate !== 1.0) {
-                // Drift is minimal - return to normal speed
+              // Keep playbackRate at 1.0 always - adjustments cause visual stutter
+              if (avatarData.element.playbackRate !== 1.0) {
                 avatarData.element.playbackRate = 1.0;
+              }
+
+              // Only hard-seek for large drift (>80ms) to maintain lip sync
+              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed && allowHardResync) {
+                console.log(`Avatar lip-sync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+                avatarData.element.currentTime = expectedLocalTime;
+                lastAvatarResyncTime = now;
               }
 
               const rect = this.getAvatarOverlayRect(width, height);
