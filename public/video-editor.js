@@ -8524,6 +8524,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       let frameCount = 0;
       let lastSceneIndex = -1;
       let lastAvatarResyncTime = 0; // Track when we last resynced to prevent feedback loop
+      let lastBoundaryCheck = 0; // Track segment boundary crossings
+      let lastCurrentTime = startTime; // Track for loop detection
 
       const renderFrame = () => {
         frameCount++;
@@ -8546,6 +8548,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         } else {
           // Fallback to wall clock (less accurate but better than nothing)
           currentTime = startTime + (performance.now() - recordingStartTime) / 1000;
+        }
+
+        // DIAGNOSTIC: Log segment boundary crossings (90s, 180s, 270s, etc.)
+        const currentBoundary = Math.floor(currentTime / 90);
+        if (currentBoundary !== lastBoundaryCheck && currentTime > 1) {
+          console.log(`🎯 SEGMENT BOUNDARY: crossed ${lastBoundaryCheck * 90}s -> ${currentBoundary * 90}s at currentTime=${currentTime.toFixed(3)}s, frame=${frameCount}`);
+          lastBoundaryCheck = currentBoundary;
         }
 
         if (currentTime >= exportEndTime || (audioElement && audioElement.ended)) {
