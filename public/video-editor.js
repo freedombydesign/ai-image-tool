@@ -8471,12 +8471,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // This is critical for lip sync - we force the video to match audio time
             const expectedLocalTime = currentTime - avatarData.startTime;
             const videoDuration = avatarData.element.duration || 90;
+            const actualVideoTime = avatarData.element.currentTime;
+            const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
+            const absDrift = Math.abs(drift);
 
-            // Video is still playing - sync and draw
-            {
-              const actualVideoTime = avatarData.element.currentTime;
-              const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
-              const absDrift = Math.abs(drift);
+            // CRITICAL: If video is way off position (e.g., just switched segments),
+            // DON'T draw it - skip this frame to prevent visual glitch/loop
+            if (absDrift > 1.0 || avatarData.element.seeking) {
+              console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, seeking=${avatarData.element.seeking}, expected=${expectedLocalTime.toFixed(2)}s, actual=${actualVideoTime.toFixed(2)}s`);
+              // Force seek to correct position
+              avatarData.element.currentTime = expectedLocalTime;
+              // Don't draw - skip to next frame
+            } else {
+              // Video is close enough to expected position - sync and draw
               const now = performance.now();
 
               // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
