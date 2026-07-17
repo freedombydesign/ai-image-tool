@@ -6803,6 +6803,18 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       if (targetSegment && this.previewAvatarVideo) {
         // Calculate LOCAL time within this segment
         const localTime = this.playbackTime - targetSegment.startTime;
+        // Use segment duration as fallback (90s typical)
+        const segmentDuration = targetSegment.endTime - targetSegment.startTime;
+
+        // Helper to safely seek video
+        const safeSeek = (time) => {
+          const duration = this.previewAvatarVideo.duration;
+          const maxTime = isFinite(duration) && duration > 0 ? duration - 0.1 : segmentDuration - 0.1;
+          const seekTime = Math.max(0, Math.min(time, maxTime));
+          if (isFinite(seekTime)) {
+            this.previewAvatarVideo.currentTime = seekTime;
+          }
+        };
 
         // Switch to correct segment video if needed
         if (targetSegment.videoUrl !== this.currentAvatarSegmentUrl) {
@@ -6813,12 +6825,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Wait for video to load then seek to local time
           this.previewAvatarVideo.onloadeddata = () => {
-            this.previewAvatarVideo.currentTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
+            safeSeek(localTime);
             this.previewAvatarVideo.onloadeddata = null;
           };
         } else {
           // Same segment - just seek to local time
-          this.previewAvatarVideo.currentTime = Math.max(0, Math.min(localTime, this.previewAvatarVideo.duration - 0.1));
+          safeSeek(localTime);
         }
       }
 
