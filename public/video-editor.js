@@ -4209,33 +4209,27 @@ class VideoEditor {
     // Sort matched scenes by their matched time
     matchedScenes.sort((a, b) => a.matchedTime - b.matchedTime);
 
-    // Assign actual start times based on sorted order
-    let currentTime = 0;
     const totalDuration = this.audioDuration || 656;
-    const durationPerScene = totalDuration / this.scenes.length;
+    const minDuration = Math.max(3, totalDuration / this.scenes.length / 2); // At least 3 seconds or half average
 
-    matchedScenes.forEach((scene, i) => {
-      scene.startTime = scene.matchedTime;
-    });
+    console.log(`Redistributing ${matchedScenes.length} matched scenes, ${unmatchedScenes.length} unmatched`);
+    console.log(`Total duration: ${totalDuration}s, Min duration per scene: ${minDuration.toFixed(1)}s`);
 
-    // Calculate durations (each scene runs until the next one starts)
-    for (let i = 0; i < matchedScenes.length - 1; i++) {
-      matchedScenes[i].duration = matchedScenes[i + 1].startTime - matchedScenes[i].startTime;
-    }
-    if (matchedScenes.length > 0) {
-      matchedScenes[matchedScenes.length - 1].duration = totalDuration - matchedScenes[matchedScenes.length - 1].startTime;
-    }
+    // Distribute ALL scenes evenly across the timeline, but in matched order
+    // This keeps the ORDER from matching but ensures even distribution
+    const allScenesInOrder = [...matchedScenes, ...unmatchedScenes];
+    const avgDuration = totalDuration / allScenesInOrder.length;
 
-    // Put unmatched scenes at the end
-    let endTime = matchedScenes.length > 0 ? matchedScenes[matchedScenes.length - 1].startTime + matchedScenes[matchedScenes.length - 1].duration : 0;
-    unmatchedScenes.forEach(scene => {
-      scene.startTime = endTime;
-      scene.duration = durationPerScene;
-      endTime += durationPerScene;
+    let currentTime = 0;
+    allScenesInOrder.forEach((scene, i) => {
+      scene.startTime = currentTime;
+      scene.duration = avgDuration;
+      currentTime += avgDuration;
+      console.log(`Scene reordered: index ${i}, startTime=${scene.startTime.toFixed(1)}s, duration=${scene.duration.toFixed(1)}s`);
     });
 
     // Rebuild scenes array in new order
-    this.scenes = [...matchedScenes, ...unmatchedScenes];
+    this.scenes = allScenesInOrder;
 
     // Cleanup temp properties
     this.scenes.forEach(s => {
