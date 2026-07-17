@@ -294,7 +294,7 @@ class VideoEditor {
           });
 
           // Sync to video editor
-          this.syncUploadedAvatarSegments();
+          await this.syncUploadedAvatarSegments();
           this.avatarEnabled = true;
 
           console.log(`Loaded ${data.segments.length} avatar segments from Supabase`);
@@ -2883,7 +2883,9 @@ class VideoEditor {
         const arrayBuffer = await audioBlob.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
         segmentBuffers.push(audioBuffer);
-        console.log(`Segment ${segmentNum} decoded: ${audioBuffer.duration.toFixed(1)}s`);
+        // Store duration for avatar boundary calculations
+        this.replacedAudioSegments[segmentNum].duration = audioBuffer.duration;
+        console.log(`Segment ${segmentNum} decoded: ${audioBuffer.duration.toFixed(2)}s (stored for sync)`);
       } catch (e) {
         console.error(`Failed to decode segment ${segmentNum}:`, e);
       }
@@ -3247,23 +3249,29 @@ class VideoEditor {
     // If force refresh, clear all sync-related caches
     if (forceRefresh) {
       console.log('Force refresh: Clearing ALL audio and sync caches...');
-      // Clear transcription and AI sync caches
+      // Clear transcription, stitched transcription, captions and AI sync caches
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith('transcription_') || key.startsWith('ai-sync-'))) {
+        if (key && (
+          key.startsWith('transcription_') ||
+          key.startsWith('stitched_transcription_') ||
+          key.startsWith('captions_') ||
+          key.startsWith('ai-sync-')
+        )) {
           keysToRemove.push(key);
         }
       }
       keysToRemove.forEach(key => localStorage.removeItem(key));
 
-      // Also clear saved audio URL to force re-upload
+      // Also clear saved audio URL and stitched audio to force re-upload and re-stitch
       localStorage.removeItem('saved_audio_url');
       localStorage.removeItem('saved_audio_name');
       this.savedAudioUrl = null;
+      this.stitchedAudioBlob = null; // Force re-stitching with current segment audio
 
-      console.log(`Cleared ${keysToRemove.length} cached items + saved audio URL`);
-      showToast('Cleared all caches - will use current audio file', 'info');
+      console.log(`Cleared ${keysToRemove.length} cached items + saved audio URL + stitched audio`);
+      showToast('Cleared all caches - will re-stitch and re-transcribe', 'info');
     }
 
     // Show loading state
@@ -3284,11 +3292,14 @@ class VideoEditor {
       let audioToSync = this.audioBlob;
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
 
-      // Generate LOGICAL cache key based on project state (not audio bytes which vary)
-      // This ensures caption cache and sync cache match
-      const replacementKeys = Object.keys(this.replacedAudioSegments || {}).sort().join(',');
+      // Generate LOGICAL cache key based on project state INCLUDING audio sizes
+      // This invalidates cache when any segment audio changes (e.g., re-recorded segment)
+      const segmentSizes = Object.entries(this.replacedAudioSegments || {})
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+        .map(([num, seg]) => `${num}:${seg.blob?.size || 0}`)
+        .join(',');
       const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
-      const logicalCacheKey = `stitched_transcription_${baseAudioKey}_replacements_${replacementKeys}`;
+      const logicalCacheKey = `stitched_transcription_v2_${baseAudioKey}_segsizes_${segmentSizes}`;
 
       console.log('Logical cache key:', logicalCacheKey);
 
@@ -5505,11 +5516,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       const hasReplacements = Object.keys(this.replacedAudioSegments || {}).length > 0;
       let baseAudio = this.audioBlob;
 
-      // Generate LOGICAL cache key (same as syncToAudio uses)
-      const replacementKeys = Object.keys(this.replacedAudioSegments || {}).sort().join(',');
+      // Generate LOGICAL cache key (same as syncToAudio uses - v2 with segment sizes)
+      const segmentSizes = Object.entries(this.replacedAudioSegments || {})
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+        .map(([num, seg]) => `${num}:${seg.blob?.size || 0}`)
+        .join(',');
       const baseAudioKey = `${this.audioFileName || 'audio'}_${this.audioBlob?.size || 0}`;
       const logicalCacheKey = hasReplacements && !isTestMode
-        ? `stitched_transcription_${baseAudioKey}_replacements_${replacementKeys}`
+        ? `stitched_transcription_v2_${baseAudioKey}_segsizes_${segmentSizes}`
         : null;
 
       // Check logical cache FIRST (before any audio processing) - only for full audio with replacements
@@ -6207,7 +6221,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Preview
-  openPreview() {
+  async openPreview() {
     // Avatar Only mode doesn't require scenes
     if (!this.avatarOnlyMode && this.scenes.length === 0) {
       showToast('Add scenes first to preview.');
@@ -6215,7 +6229,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Sync uploaded avatar segments to avatarVideos array for preview
-    this.syncUploadedAvatarSegments();
+    await this.syncUploadedAvatarSegments();
 
     this.previewModal.hidden = false;
     this.playbackTime = 0;
@@ -6375,39 +6389,79 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Sync uploaded avatar segments from window.uploadedAvatarSegments to this.avatarVideos
-  syncUploadedAvatarSegments() {
+  async syncUploadedAvatarSegments() {
     const uploadedSegments = window.uploadedAvatarSegments || {};
     const segmentKeys = Object.keys(uploadedSegments).map(Number).sort((a, b) => a - b);
 
     if (segmentKeys.length === 0) return;
 
-    // Each segment is 90 seconds (the length used during avatar generation)
-    const SEGMENT_LENGTH = 90;
-    // Use audio duration, or calculate from scenes, or default to segment count * 90
-    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
+    const DEFAULT_SEGMENT_LENGTH = 90;
+    const segmentDurations = {};
 
-    // Build avatarVideos array from uploaded segments
-    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
+    // Get actual segment durations from replacedAudioSegments
+    // If durations aren't cached, decode audio blobs to get them
+    if (this.replacedAudioSegments) {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+      for (const key of Object.keys(this.replacedAudioSegments)) {
+        const segNum = parseInt(key);
+        const seg = this.replacedAudioSegments[segNum];
+
+        if (seg && seg.duration) {
+          // Already have duration cached
+          segmentDurations[segNum] = seg.duration;
+        } else if (seg && seg.blob) {
+          // Decode blob to get duration
+          try {
+            const arrayBuffer = await seg.blob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            seg.duration = audioBuffer.duration; // Cache it
+            segmentDurations[segNum] = audioBuffer.duration;
+            console.log(`Decoded segment ${segNum} duration: ${audioBuffer.duration.toFixed(2)}s`);
+          } catch (e) {
+            console.warn(`Failed to decode segment ${segNum} for duration:`, e.message);
+            segmentDurations[segNum] = DEFAULT_SEGMENT_LENGTH;
+          }
+        }
+      }
+
+      audioContext.close();
+    }
+
+    // Use audio duration, or calculate from scenes, or default to segment count * 90
+    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * DEFAULT_SEGMENT_LENGTH);
+
+    // Build avatarVideos array using cumulative actual durations
     this.avatarVideos = [];
-    segmentKeys.forEach((segNum) => {
+    let cumulativeStartTime = 0;
+    const maxSegment = Math.max(...segmentKeys);
+    const hasAnyDurations = Object.keys(segmentDurations).length > 0;
+
+    for (let segNum = 1; segNum <= maxSegment; segNum++) {
       const seg = uploadedSegments[segNum];
+      // Get actual duration or fallback
+      const segmentDuration = segmentDurations[segNum] || DEFAULT_SEGMENT_LENGTH;
+
       if (seg && seg.url) {
-        const segmentIndex = segNum - 1; // Convert to 0-indexed
-        const startTime = segmentIndex * SEGMENT_LENGTH;
-        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
+        const startTime = cumulativeStartTime;
+        const endTime = Math.min(cumulativeStartTime + segmentDuration, totalDuration);
 
         this.avatarVideos.push({
           videoUrl: seg.url,
           startTime: startTime,
           endTime: endTime,
+          duration: segmentDuration,
           segmentIndex: segNum
         });
 
-        console.log(`Avatar segment ${segNum}: ${startTime}s - ${endTime}s`);
+        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (duration: ${segmentDuration.toFixed(2)}s)`);
       }
-    });
 
-    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview`);
+      // Always advance cumulative time
+      cumulativeStartTime += segmentDuration;
+    }
+
+    console.log(`Synced ${this.avatarVideos.length} avatar segments ${hasAnyDurations ? 'using actual durations' : 'using default 90s'}`);
   }
 
   closePreview() {
@@ -7554,8 +7608,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       exportCanvas.height = height;
       const ctx = exportCanvas.getContext('2d');
 
-      // Sync uploaded avatar segments
-      this.syncUploadedAvatarSegments();
+      // Sync uploaded avatar segments (await to get accurate durations)
+      await this.syncUploadedAvatarSegments();
 
       // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
@@ -7565,7 +7619,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         const videosToLoad = isTestExport
           ? this.avatarVideos.filter(av => {
               if (!av.videoUrl) return false;
-              const segmentEnd = av.startTime + 90; // Each segment is 90 seconds
+              // Use actual endTime from avatar segment (not hardcoded 90s)
+              const segmentEnd = av.endTime || (av.startTime + (av.duration || 90));
               // Check if segment overlaps with export range [startTime, exportEndTime]
               return av.startTime < exportEndTime && segmentEnd > startTime;
             })
@@ -10225,7 +10280,7 @@ async function handleSegmentUpload(segmentNum, file) {
     // Enable avatar overlay when segments are uploaded
     if (typeof videoEditor !== 'undefined') {
       videoEditor.avatarEnabled = true;
-      videoEditor.syncUploadedAvatarSegments();
+      await videoEditor.syncUploadedAvatarSegments();
     }
 
     // Update status
