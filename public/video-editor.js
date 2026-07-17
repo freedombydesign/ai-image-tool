@@ -8724,6 +8724,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               console.log(`[SWITCH+${timeSinceContentSwitch.toFixed(1)}s] video.currentTime=${actualVideoTime.toFixed(2)}s, expected=${expectedLocalTime.toFixed(2)}s, drift=${drift.toFixed(3)}s, paused=${avatarData.element.paused}, readyState=${avatarData.element.readyState}`);
             }
 
+            // DEBUG: Log every second for ALL segments to diagnose stutter
+            if (frameCount % 30 === 0) {
+              console.log(`[SEG ${avatarData.segmentIndex} @ ${currentTime.toFixed(1)}s] video=${actualVideoTime.toFixed(2)}s, expected=${expectedLocalTime.toFixed(2)}s, drift=${drift.toFixed(3)}s, paused=${avatarData.element.paused}, playing=${!avatarData.element.paused && !avatarData.element.ended}`);
+            }
+
             // CRITICAL: Always skip first 100ms after switch to let video element update its frame
             // This gives time for video decode and buffer - prevents "loop" visual artifact
             const tooSoonAfterSwitch = timeSinceSwitch < 100;  // ~6 frames at 60fps, ~3 at 30fps
