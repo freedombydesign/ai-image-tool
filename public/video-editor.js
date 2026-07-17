@@ -8974,12 +8974,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 console.log(`[DRAWING segment ${avatarData.segmentIndex}] videoTime=${avatarData.element.currentTime.toFixed(2)}s, videoWidth=${avatarData.element.videoWidth}, ended=${avatarData.element.ended}`);
               }
 
-              // CROSS-FADE: Blend previous segment with new segment over 1000ms to smooth discontinuity
-              const CROSSFADE_DURATION = 1000; // ms (1 second for very smooth transition)
-              // Use _crossfadeStartTime (actual switch time) not switchTime (may be set during pre-warm)
+              // CROSS-FADE: Disabled to debug stutter - doing hard cut instead
+              // Drawing two videos with alpha blending may cause performance issues
+              const CROSSFADE_DURATION = 0; // DISABLED: was 1000ms - testing if crossfade causes stutter
               const timeSinceCrossfadeStart = avatarData._crossfadeStartTime ? performance.now() - avatarData._crossfadeStartTime : Infinity;
               const crossfadeProgress = timeSinceCrossfadeStart / CROSSFADE_DURATION;
-              const shouldCrossfade = crossfadeProgress < 1 && fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2 && fallbackAvatar !== avatarData;
+              // DISABLED: Force hard cut by never crossfading
+              const shouldCrossfade = false; // was: crossfadeProgress < 1 && fallbackAvatar && ...
 
               if (shouldCrossfade) {
                 const newAlpha = Math.min(1, crossfadeProgress); // 0 → 1 over 1000ms
