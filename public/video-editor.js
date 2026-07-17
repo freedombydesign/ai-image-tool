@@ -8356,6 +8356,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       // Pre-initialize lastActiveAvatar to avoid triggering "switch" on first frame
       // Find the avatar segment that should be active at startTime
       let lastActiveAvatar = null;
+      let fallbackAvatar = null; // Previous avatar to use as fallback when new one isn't ready
       for (const av of avatarVideoElements) {
         if (av && startTime >= av.startTime && startTime < av.endTime) {
           lastActiveAvatar = av;
@@ -8517,6 +8518,39 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
+          // PRE-BUFFER upcoming segments 5 seconds before they're needed
+          // This prevents stutter at segment boundaries due to re-buffering
+          const PREBUFFER_AHEAD = 5; // seconds before segment switch to start buffering
+          for (const av of avatarVideoElements) {
+            if (!av || !av.element) continue;
+            const timeUntilNeeded = av.startTime - currentTime;
+
+            // If segment is 0-5 seconds away and hasn't been pre-buffered yet
+            if (timeUntilNeeded > 0 && timeUntilNeeded <= PREBUFFER_AHEAD && !av._prebufferedDuringExport) {
+              av._prebufferedDuringExport = true;
+              const vid = av.element;
+
+              // Ensure video is at start position and trigger buffering
+              console.log(`Pre-buffering upcoming segment ${av.segmentIndex} (${timeUntilNeeded.toFixed(1)}s until needed, readyState=${vid.readyState})`);
+
+              if (vid.readyState < 3) {
+                // Video needs buffering - trigger it with a brief play
+                vid.currentTime = 0;
+                vid.muted = true;
+                vid.play().then(() => {
+                  // Let it buffer for a moment, then pause
+                  setTimeout(() => {
+                    vid.pause();
+                    vid.currentTime = 0;
+                    console.log(`Segment ${av.segmentIndex} pre-buffered (readyState=${vid.readyState})`);
+                  }, 500);
+                }).catch(() => {
+                  console.log(`Segment ${av.segmentIndex} pre-buffer play failed, will try on switch`);
+                });
+              }
+            }
+          }
+
           // Find avatar for current time, but also check if video has ended
           let avatarData = avatarVideoElements.find(av =>
             av && currentTime >= av.startTime && currentTime < av.endTime
@@ -8553,7 +8587,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
           // Handle avatar video switching
           if (avatarData && avatarData !== lastActiveAvatar) {
-            // Pause previous avatar
+            // Save current as fallback before switching (for drawing if new one isn't ready)
+            if (lastActiveAvatar && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
+              fallbackAvatar = lastActiveAvatar;
+            }
+            // Pause previous avatar (but keep it paused at last frame for fallback)
             if (lastActiveAvatar && lastActiveAvatar.element) {
               lastActiveAvatar.element.pause();
             }
@@ -8571,11 +8609,13 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
               const currentPos = avatarData.element.currentTime;
               const alreadyAtPosition = Math.abs(currentPos - localTime) < 0.5;
 
-              if (alreadyAtPosition && !avatarData.element.paused) {
-                // Already playing at correct position - don't seek, just continue
-                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, already at ${currentPos.toFixed(2)}s (no seek needed)`);
+              if (alreadyAtPosition) {
+                // Already at correct position - just start playing without seeking
+                avatarData.element.playbackRate = 1.0;
+                avatarData.element.play().catch(() => {});
+                console.log(`Avatar switch: segment ${avatarData.segmentIndex}, at ${currentPos.toFixed(2)}s (no seek, just play)`);
               } else {
-                // Need to seek and/or start playing
+                // Need to seek first, then play
                 avatarData.element.currentTime = localTime;
                 avatarData.element.playbackRate = 1.0;
                 avatarData.element.play().catch(() => {});
@@ -8643,7 +8683,36 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                   avatarData.element.currentTime = expectedLocalTime;
                 }
               }
-              // Don't draw - skip to next frame
+
+              // FALLBACK: Draw previous avatar's last frame to prevent stutter
+              // This ensures we always show SOMETHING instead of a blank avatar spot
+              if (fallbackAvatar && fallbackAvatar.element && fallbackAvatar.element.readyState >= 2) {
+                const rect = this.getAvatarOverlayRect(width, height);
+                ctx.save();
+                if (this.avatarShape === 'circle') {
+                  const centerX = rect.x + rect.width / 2;
+                  const centerY = rect.y + rect.height / 2;
+                  const radius = Math.min(rect.width, rect.height) / 2;
+                  ctx.beginPath();
+                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                  ctx.drawImage(
+                    fallbackAvatar.element,
+                    rect.x + (rect.width - radius * 2) / 2,
+                    rect.y + (rect.height - radius * 2) / 2,
+                    radius * 2,
+                    radius * 2
+                  );
+                } else {
+                  ctx.drawImage(fallbackAvatar.element, rect.x, rect.y, rect.width, rect.height);
+                }
+                ctx.restore();
+                if (frameCount % 30 === 0) {
+                  console.log(`Drawing fallback avatar (segment ${fallbackAvatar.segmentIndex}) while new segment buffers`);
+                }
+              }
+              // If no fallback, skip to next frame (will show blank avatar spot)
             } else {
               // Video is close enough to expected position - sync and draw
               const now = performance.now();
@@ -8703,6 +8772,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
               }
               ctx.restore();
+
+              // Successfully drew new segment - clear fallback
+              if (fallbackAvatar && fallbackAvatar !== avatarData) {
+                fallbackAvatar = null;
+              }
             }
           }
         }
