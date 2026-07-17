@@ -244,8 +244,25 @@ tabs.forEach(tab => {
 
     tab.classList.add('active');
     document.getElementById(tabId).classList.add('active');
+
+    // Save active tab to localStorage for persistence across refreshes
+    localStorage.setItem('activeTab', tabId);
   });
 });
+
+// Restore active tab from localStorage on page load
+const savedTab = localStorage.getItem('activeTab');
+if (savedTab) {
+  const savedTabElement = document.querySelector(`.tab[data-tab="${savedTab}"]`);
+  const savedTabContent = document.getElementById(savedTab);
+  if (savedTabElement && savedTabContent) {
+    tabs.forEach(t => t.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+    savedTabElement.classList.add('active');
+    savedTabContent.classList.add('active');
+    console.log('Restored active tab:', savedTab);
+  }
+}
 
 // UI Elements
 const loading = document.getElementById('loading');
