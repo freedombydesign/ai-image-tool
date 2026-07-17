@@ -10,9 +10,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Fix WebM metadata for seekable videos -->
   <script type="module">
-    import fixWebmMetaInfo from 'https://cdn.jsdelivr.net/npm/fix-webm-metainfo@1.0.8/+esm';
-    window.fixWebmMetaInfo = fixWebmMetaInfo;
-    console.log('fix-webm-metainfo library loaded');
+    import fixWebmModule from 'https://cdn.jsdelivr.net/npm/fix-webm-metainfo@1.0.8/+esm';
+    // ESM bundle wraps the function - extract the actual function
+    const fn = fixWebmModule.default || fixWebmModule;
+    window.fixWebmMetaInfo = fn;
+    console.log('fix-webm-metainfo library loaded, type:', typeof fn);
   </script>
 </head>
 <body>
