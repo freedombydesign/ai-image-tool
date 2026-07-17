@@ -6801,6 +6801,9 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       );
 
       if (targetSegment && this.previewAvatarVideo) {
+        // Set active segment for sync tracking
+        this.activeSegment = targetSegment;
+
         // Calculate LOCAL time within this segment
         const localTime = this.playbackTime - targetSegment.startTime;
         // Use segment duration as fallback (90s typical)
@@ -6917,6 +6920,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       if (targetSegment && this.previewAvatarVideo) {
         // Calculate LOCAL time within this segment
         const localTime = Math.max(0, this.playbackTime - targetSegment.startTime);
+
+        // Set active segment for sync tracking
+        this.activeSegment = targetSegment;
+        this.videoSyncReady = true;
 
         // Switch to correct segment if needed
         if (targetSegment.videoUrl !== this.currentAvatarSegmentUrl) {
@@ -7100,9 +7107,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     // Sync playback time with avatar video (it has the audio)
     // ONLY sync when video is properly positioned (videoSyncReady) to avoid jumping to wrong scene
-    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused && currentSegment && !this.segmentSwitching && this.videoSyncReady) {
+    // CRITICAL FIX: Use activeSegment (the segment currently loaded) not currentSegment (calculated from time)
+    // Otherwise when crossing segment boundaries, we'd calculate wrong time (e.g., 180 + 89 = 269s jump!)
+    const syncSegment = this.activeSegment || currentSegment;
+    const isOnCorrectVideo = syncSegment && syncSegment.videoUrl === this.currentAvatarSegmentUrl;
+
+    if (this.previewAvatarVideo && !this.previewAvatarVideo.paused && isOnCorrectVideo && !this.segmentSwitching && this.videoSyncReady) {
       const localVideoTime = this.previewAvatarVideo.currentTime;
-      this.playbackTime = currentSegment.startTime + localVideoTime;
+      this.playbackTime = syncSegment.startTime + localVideoTime;
       this.lastFrameTime = performance.now(); // Keep lastFrameTime fresh
     } else if (this.segmentSwitching || !this.videoSyncReady) {
       // During segment switch, progress time manually so scenes still update
