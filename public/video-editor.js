@@ -2918,7 +2918,14 @@ class VideoEditor {
         segmentBuffers.push(audioBuffer);
         // Store duration for avatar boundary calculations
         this.replacedAudioSegments[segmentNum].duration = audioBuffer.duration;
-        console.log(`Segment ${segmentNum} decoded: ${audioBuffer.duration.toFixed(2)}s (stored for sync)`);
+
+        // DIAGNOSTIC: Create fingerprint from first 1000 samples to detect duplicates
+        const channel0 = audioBuffer.getChannelData(0);
+        let fingerprint = 0;
+        for (let i = 0; i < Math.min(1000, channel0.length); i++) {
+          fingerprint += Math.abs(channel0[i]) * (i + 1);
+        }
+        console.log(`Segment ${segmentNum} decoded: ${audioBuffer.duration.toFixed(2)}s, fingerprint: ${fingerprint.toFixed(4)} (stored for sync)`);
       } catch (e) {
         console.error(`Failed to decode segment ${segmentNum}:`, e);
       }
@@ -2937,12 +2944,23 @@ class VideoEditor {
       totalSamples += buf.length;
     }
 
+    // Diagnostic: Log each segment's duration
+    console.log('=== AUDIO STITCH DIAGNOSTIC ===');
+    let runningTime = 0;
+    for (let i = 0; i < segmentBuffers.length; i++) {
+      const segDuration = segmentBuffers[i].length / sampleRate;
+      console.log(`  Segment ${i + 1}: ${segDuration.toFixed(2)}s (${runningTime.toFixed(2)}s - ${(runningTime + segDuration).toFixed(2)}s)`);
+      runningTime += segDuration;
+    }
+    console.log(`  Total pre-crossfade: ${runningTime.toFixed(2)}s`);
     console.log(`Combining ${segmentBuffers.length} segments: ${totalSamples} samples, ${numChannels} channels`);
 
     // Crossfade duration in samples (100ms crossfade to smooth audio transitions)
     const crossfadeSamples = Math.floor(sampleRate * 0.1);
     const adjustedTotalSamples = totalSamples - (crossfadeSamples * (segmentBuffers.length - 1));
+    const expectedFinalDuration = adjustedTotalSamples / sampleRate;
     console.log(`Using ${crossfadeSamples} sample crossfade (100ms) between segments`);
+    console.log(`Expected final duration: ${expectedFinalDuration.toFixed(2)}s (after crossfades)`);
 
     // Create combined buffer (slightly shorter due to crossfade overlaps)
     const combinedBuffer = audioContext.createBuffer(numChannels, adjustedTotalSamples, sampleRate);
@@ -2982,10 +3000,32 @@ class VideoEditor {
       }
 
       // Move write offset, overlapping by crossfade amount
-      writeOffset += buf.length - (isLast ? 0 : crossfadeSamples);
+      const nextOffset = writeOffset + buf.length - (isLast ? 0 : crossfadeSamples);
+      const segStartTime = (writeOffset / sampleRate).toFixed(2);
+      const segEndTime = (nextOffset / sampleRate).toFixed(2);
+      console.log(`  Wrote segment ${i + 1} at samples ${writeOffset}-${nextOffset} (${segStartTime}s-${segEndTime}s)`);
+      writeOffset = nextOffset;
     }
 
     console.log(`Crossfade stitching complete: ${combinedBuffer.duration.toFixed(2)}s`);
+
+    // DIAGNOSTIC: Check for duplication at segment boundaries (90s, 180s, 270s)
+    const channel0 = combinedBuffer.getChannelData(0);
+    const boundaryTimes = [89.9, 90.1, 179.9, 180.1, 269.9, 270.1];
+    console.log('  Boundary sample check (looking for duplicates):');
+    for (const t of boundaryTimes) {
+      if (t < combinedBuffer.duration) {
+        const sampleIdx = Math.floor(t * sampleRate);
+        // Get a small fingerprint of 100 samples starting at this point
+        let fp = 0;
+        for (let i = 0; i < 100 && sampleIdx + i < channel0.length; i++) {
+          fp += Math.abs(channel0[sampleIdx + i]) * (i + 1);
+        }
+        console.log(`    ${t.toFixed(1)}s (sample ${sampleIdx}): fingerprint = ${fp.toFixed(4)}`);
+      }
+    }
+
+    console.log('=== END AUDIO STITCH DIAGNOSTIC ===');
 
     // Convert to WAV blob
     const stitchedBlob = this.audioBufferToWav(combinedBuffer);
