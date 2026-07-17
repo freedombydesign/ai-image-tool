@@ -8879,40 +8879,59 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
                 avatarData.element.playbackRate = 1.0;
               }
 
-              // NOW pause the previous avatar since current is ready
-              if (lastActiveAvatar && lastActiveAvatar !== avatarData && lastActiveAvatar.element && !lastActiveAvatar.element.paused) {
-                lastActiveAvatar.element.pause();
-              }
-
               // DISABLE ALL SEEKING during playback - seeking causes stutter
               // The video is pre-seeked to correct position, just let it play
               // Small drift (<0.5s) is acceptable - human perception is forgiving
 
               const rect = this.getAvatarOverlayRect(width, height);
 
-              // Match preview exactly - simple stretch to fit, no aspect ratio preservation
-              ctx.save();
-              if (this.avatarShape === 'circle') {
-                const centerX = rect.x + rect.width / 2;
-                const centerY = rect.y + rect.height / 2;
-                const radius = Math.min(rect.width, rect.height) / 2;
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                ctx.closePath();
-                ctx.clip();
-                // Draw same as preview: stretch to fit circle
-                ctx.drawImage(
-                  avatarData.element,
-                  rect.x + (rect.width - radius * 2) / 2,
-                  rect.y + (rect.height - radius * 2) / 2,
-                  radius * 2,
-                  radius * 2
-                );
+              // VISUAL CROSSFADE: Blend old and new avatar for 300ms after switch
+              // This masks the visual "jump" caused by video duration mismatch
+              const CROSSFADE_DURATION = 300; // ms
+              const crossfadeProgress = Math.min(1, timeSinceSwitch / CROSSFADE_DURATION);
+              const shouldCrossfade = timeSinceSwitch < CROSSFADE_DURATION &&
+                                      lastActiveAvatar &&
+                                      lastActiveAvatar !== avatarData &&
+                                      lastActiveAvatar.element &&
+                                      lastActiveAvatar.element.readyState >= 2;
+
+              // Helper to draw avatar with optional alpha
+              const drawAvatarWithAlpha = (videoEl, alpha) => {
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                if (this.avatarShape === 'circle') {
+                  const centerX = rect.x + rect.width / 2;
+                  const centerY = rect.y + rect.height / 2;
+                  const radius = Math.min(rect.width, rect.height) / 2;
+                  ctx.beginPath();
+                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                  ctx.drawImage(videoEl, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
+                } else {
+                  ctx.drawImage(videoEl, rect.x, rect.y, rect.width, rect.height);
+                }
+                ctx.restore();
+              };
+
+              if (shouldCrossfade) {
+                // Draw old avatar fading out
+                drawAvatarWithAlpha(lastActiveAvatar.element, 1 - crossfadeProgress);
+                // Draw new avatar fading in
+                drawAvatarWithAlpha(avatarData.element, crossfadeProgress);
+
+                if (frameCount % 30 === 0) {
+                  console.log(`Avatar crossfade: ${(crossfadeProgress * 100).toFixed(0)}%`);
+                }
               } else {
-                // Rectangle - stretch to fit rect (same as preview)
-                ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+                // Normal draw - no crossfade needed
+                drawAvatarWithAlpha(avatarData.element, 1);
+
+                // NOW pause the previous avatar since crossfade is complete
+                if (lastActiveAvatar && lastActiveAvatar !== avatarData && lastActiveAvatar.element && !lastActiveAvatar.element.paused) {
+                  lastActiveAvatar.element.pause();
+                }
               }
-              ctx.restore();
             }
           }
         }
