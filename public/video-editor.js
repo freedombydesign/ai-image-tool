@@ -391,10 +391,11 @@ class VideoEditor {
           if (segmentIndex >= 0 && segmentIndex < audioSegments.length) {
             const audioSeg = audioSegments[segmentIndex];
 
-            // Store in memory immediately
-            this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null };
+            // Store in memory immediately (include duration for sync calculations)
+            const segDuration = audioSeg.endTime - audioSeg.startTime;
+            this.replacedAudioSegments[seg.segment_num] = { blob: audioSeg.blob, url: null, duration: segDuration };
             loaded++;
-            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split (blob size: ${audioSeg.blob.size})`);
+            console.log(`✓ Loaded clean audio for segment ${seg.segment_num} from TTS split (${segDuration.toFixed(2)}s, blob size: ${audioSeg.blob.size})`);
 
             // Upload to Supabase if available
             if (userId && config) {
@@ -6784,6 +6785,19 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
         }
 
         cumulativeTime = endTime;
+      }
+    }
+
+    // CRITICAL: Ensure segments are perfectly contiguous (fixes floating point drift)
+    // Each segment's startTime must equal the previous segment's endTime
+    for (let i = 1; i < this.avatarVideos.length; i++) {
+      const prevEndTime = this.avatarVideos[i - 1].endTime;
+      const currStartTime = this.avatarVideos[i].startTime;
+      if (Math.abs(prevEndTime - currStartTime) > 0.001) {
+        console.log(`[FIX] Segment ${this.avatarVideos[i].segmentIndex} startTime ${currStartTime.toFixed(3)}s -> ${prevEndTime.toFixed(3)}s (was off by ${(prevEndTime - currStartTime).toFixed(3)}s)`);
+        const duration = this.avatarVideos[i].endTime - this.avatarVideos[i].startTime;
+        this.avatarVideos[i].startTime = prevEndTime;
+        this.avatarVideos[i].endTime = prevEndTime + duration;
       }
     }
 
