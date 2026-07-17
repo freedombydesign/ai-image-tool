@@ -8,20 +8,40 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Fix WebM metadata for seekable videos -->
+  <!-- Fix WebM metadata for seekable videos using ts-ebml -->
   <script type="module">
-    import fixWebmModule from 'https://cdn.jsdelivr.net/npm/fix-webm-metainfo@1.0.8/+esm';
-    // ESM bundle wraps the function - extract the actual function
-    console.log('fixWebmModule:', typeof fixWebmModule, fixWebmModule);
-    console.log('fixWebmModule.default:', typeof fixWebmModule.default);
-    const fn = typeof fixWebmModule.default === 'function' ? fixWebmModule.default :
-               typeof fixWebmModule === 'function' ? fixWebmModule : null;
-    if (fn) {
-      window.fixWebmMetaInfo = fn;
-      console.log('fix-webm-metainfo loaded as function ✓');
-    } else {
-      console.error('fix-webm-metainfo: could not extract function!', fixWebmModule);
+    import * as ebml from 'https://cdn.jsdelivr.net/npm/ts-ebml@3.0.0/+esm';
+
+    // Create a WebM duration fixer using ts-ebml
+    async function fixWebmWithTsEbml(blob) {
+      const buffer = await blob.arrayBuffer();
+      const decoder = new ebml.Decoder();
+      const reader = new ebml.Reader();
+      reader.logging = false;
+      reader.drop_default_duration = false;
+
+      // Decode the WebM
+      const elms = decoder.decode(buffer);
+      elms.forEach(elm => reader.read(elm));
+      reader.stop();
+
+      // Get refined metadata with duration info
+      const refinedMetadataBuf = ebml.tools.makeMetadataSeekable(
+        reader.metadatas,
+        reader.duration,
+        reader.cues
+      );
+
+      // Combine refined metadata with media data
+      const body = buffer.slice(reader.metadataSize);
+      const result = new Blob([refinedMetadataBuf, body], { type: blob.type });
+
+      console.log(`ts-ebml: Fixed WebM duration: ${(reader.duration / 1000).toFixed(1)}s`);
+      return result;
     }
+
+    window.fixWebmMetaInfo = fixWebmWithTsEbml;
+    console.log('ts-ebml WebM fixer loaded ✓');
   </script>
 </head>
 <body>
