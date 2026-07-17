@@ -8392,59 +8392,72 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // TIGHT sync: continuously sync avatar video to audio timeline
             // This is critical for lip sync - we force the video to match audio time
             const expectedLocalTime = currentTime - avatarData.startTime;
-            const actualVideoTime = avatarData.element.currentTime;
-            const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
-            const absDrift = Math.abs(drift);
-            const now = performance.now();
+            const videoDuration = avatarData.element.duration || 90;
 
-            // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
-            // Add 200ms cooldown after resync to prevent feedback loop
-            const cooldownElapsed = now - lastAvatarResyncTime > 200;
-
-            if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
-              if (absDrift > 0.3) {
-                // Large drift - hard resync by seeking
-                console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
-                avatarData.element.currentTime = expectedLocalTime;
-                avatarData.element.playbackRate = 1.0;
-              } else if (drift < 0) {
-                // Video is behind audio - speed up slightly to catch up
-                avatarData.element.playbackRate = 1.05;
-              } else {
-                // Video is ahead of audio - slow down slightly
-                avatarData.element.playbackRate = 0.95;
+            // CRITICAL: Don't resync or draw if the video has naturally ended
+            // This prevents the 2-second loop bug when video duration < segment duration
+            if (avatarData.element.ended || expectedLocalTime >= videoDuration) {
+              // Video has ended - skip drawing this avatar
+              // The next segment will be picked up when currentTime passes its startTime
+              if (!avatarData._loggedEnd) {
+                console.log(`Avatar segment ended naturally at ${currentTime.toFixed(1)}s (video duration: ${videoDuration.toFixed(1)}s)`);
+                avatarData._loggedEnd = true;
               }
-              lastAvatarResyncTime = now;
-            } else if (absDrift <= 0.05 && avatarData.element.playbackRate !== 1.0) {
-              // Drift is minimal - return to normal speed
-              avatarData.element.playbackRate = 1.0;
-            }
-
-            const rect = this.getAvatarOverlayRect(width, height);
-
-            // Match preview exactly - simple stretch to fit, no aspect ratio preservation
-            ctx.save();
-            if (this.avatarShape === 'circle') {
-              const centerX = rect.x + rect.width / 2;
-              const centerY = rect.y + rect.height / 2;
-              const radius = Math.min(rect.width, rect.height) / 2;
-              ctx.beginPath();
-              ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-              ctx.closePath();
-              ctx.clip();
-              // Draw same as preview: stretch to fit circle
-              ctx.drawImage(
-                avatarData.element,
-                rect.x + (rect.width - radius * 2) / 2,
-                rect.y + (rect.height - radius * 2) / 2,
-                radius * 2,
-                radius * 2
-              );
             } else {
-              // Rectangle - stretch to fit rect (same as preview)
-              ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+              const actualVideoTime = avatarData.element.currentTime;
+              const drift = actualVideoTime - expectedLocalTime; // positive = video ahead, negative = video behind
+              const absDrift = Math.abs(drift);
+              const now = performance.now();
+
+              // Tighter tolerance: 0.08s (80ms) - human perception threshold for lip sync
+              // Add 200ms cooldown after resync to prevent feedback loop
+              const cooldownElapsed = now - lastAvatarResyncTime > 200;
+
+              if (absDrift > 0.08 && !avatarData.element.seeking && cooldownElapsed) {
+                if (absDrift > 0.3) {
+                  // Large drift - hard resync by seeking
+                  console.log(`Avatar hard resync: drift=${drift.toFixed(3)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+                  avatarData.element.currentTime = expectedLocalTime;
+                  avatarData.element.playbackRate = 1.0;
+                } else if (drift < 0) {
+                  // Video is behind audio - speed up slightly to catch up
+                  avatarData.element.playbackRate = 1.05;
+                } else {
+                  // Video is ahead of audio - slow down slightly
+                  avatarData.element.playbackRate = 0.95;
+                }
+                lastAvatarResyncTime = now;
+              } else if (absDrift <= 0.05 && avatarData.element.playbackRate !== 1.0) {
+                // Drift is minimal - return to normal speed
+                avatarData.element.playbackRate = 1.0;
+              }
+
+              const rect = this.getAvatarOverlayRect(width, height);
+
+              // Match preview exactly - simple stretch to fit, no aspect ratio preservation
+              ctx.save();
+              if (this.avatarShape === 'circle') {
+                const centerX = rect.x + rect.width / 2;
+                const centerY = rect.y + rect.height / 2;
+                const radius = Math.min(rect.width, rect.height) / 2;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.closePath();
+                ctx.clip();
+                // Draw same as preview: stretch to fit circle
+                ctx.drawImage(
+                  avatarData.element,
+                  rect.x + (rect.width - radius * 2) / 2,
+                  rect.y + (rect.height - radius * 2) / 2,
+                  radius * 2,
+                  radius * 2
+                );
+              } else {
+                // Rectangle - stretch to fit rect (same as preview)
+                ctx.drawImage(avatarData.element, rect.x, rect.y, rect.width, rect.height);
+              }
+              ctx.restore();
             }
-            ctx.restore();
           }
         }
 
