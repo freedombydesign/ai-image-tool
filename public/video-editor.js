@@ -290,11 +290,12 @@ class VideoEditor {
             window.uploadedAvatarSegments[seg.segment_num] = {
               url: seg.video_url,
               fileName: seg.file_name
+              // duration will be loaded by syncUploadedAvatarSegmentsWithDurations
             };
           });
 
-          // Sync to video editor
-          this.syncUploadedAvatarSegments();
+          // Sync to video editor with actual durations (fixes stutter at segment boundaries)
+          await this.syncUploadedAvatarSegmentsWithDurations();
           this.avatarEnabled = true;
 
           console.log(`Loaded ${data.segments.length} avatar segments from Supabase`);
@@ -6554,7 +6555,7 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Preview
-  openPreview() {
+  async openPreview() {
     // Avatar Only mode doesn't require scenes
     if (!this.avatarOnlyMode && this.scenes.length === 0) {
       showToast('Add scenes first to preview.');
@@ -6562,7 +6563,14 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     }
 
     // Sync uploaded avatar segments to avatarVideos array for preview
-    this.syncUploadedAvatarSegments();
+    // Use async version to get actual video durations (fixes stutter at segment boundaries)
+    const hasSegments = Object.keys(window.uploadedAvatarSegments || {}).length > 0;
+    if (hasSegments) {
+      showToast('Loading segment durations...', 1500);
+      await this.syncUploadedAvatarSegmentsWithDurations();
+    } else {
+      this.syncUploadedAvatarSegments();
+    }
 
     this.previewModal.hidden = false;
     this.playbackTime = 0;
@@ -6722,39 +6730,110 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
   }
 
   // Sync uploaded avatar segments from window.uploadedAvatarSegments to this.avatarVideos
+  // Now uses ACTUAL video durations instead of fixed 90s to prevent stutter at boundaries
   syncUploadedAvatarSegments() {
     const uploadedSegments = window.uploadedAvatarSegments || {};
     const segmentKeys = Object.keys(uploadedSegments).map(Number).sort((a, b) => a - b);
 
     if (segmentKeys.length === 0) return;
 
-    // Each segment is 90 seconds (the length used during avatar generation)
-    // SIMPLE 90s boundaries - do NOT use dynamic audio durations (causes timing issues)
-    const SEGMENT_LENGTH = 90;
-    const totalDuration = this.audioDuration || this.getTotalDuration() || (segmentKeys.length * SEGMENT_LENGTH);
+    // Use actual video durations if available, otherwise fall back to 90s
+    // This fixes the stutter at segment boundaries (e.g., at 3 minutes)
+    const FALLBACK_SEGMENT_LENGTH = 90;
 
-    // Build avatarVideos array from uploaded segments
-    // Segments are 1-indexed, so segment 1 = 0-90s, segment 2 = 90-180s, etc.
+    // Build avatarVideos array from uploaded segments using ACTUAL durations
     this.avatarVideos = [];
+    let cumulativeTime = 0;
+
     segmentKeys.forEach((segNum) => {
       const seg = uploadedSegments[segNum];
       if (seg && seg.url) {
-        const segmentIndex = segNum - 1; // Convert to 0-indexed
-        const startTime = segmentIndex * SEGMENT_LENGTH;
-        const endTime = Math.min((segmentIndex + 1) * SEGMENT_LENGTH, totalDuration);
+        // Use actual duration if stored, otherwise use fallback
+        // Duration may be stored from previous load or video preload
+        const actualDuration = seg.duration || seg.actualDuration || FALLBACK_SEGMENT_LENGTH;
+
+        const startTime = cumulativeTime;
+        const endTime = cumulativeTime + actualDuration;
 
         this.avatarVideos.push({
           videoUrl: seg.url,
           startTime: startTime,
           endTime: endTime,
-          segmentIndex: segNum
+          segmentIndex: segNum,
+          actualDuration: actualDuration
         });
 
-        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+        console.log(`Avatar segment ${segNum}: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (duration: ${actualDuration.toFixed(2)}s)`);
+
+        cumulativeTime = endTime;
       }
     });
 
-    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview`);
+    console.log(`Synced ${this.avatarVideos.length} avatar segments for preview (total: ${cumulativeTime.toFixed(2)}s)`);
+  }
+
+  // Async version that loads actual video durations - call this for accurate sync
+  async syncUploadedAvatarSegmentsWithDurations() {
+    const uploadedSegments = window.uploadedAvatarSegments || {};
+    const segmentKeys = Object.keys(uploadedSegments).map(Number).sort((a, b) => a - b);
+
+    if (segmentKeys.length === 0) return;
+
+    console.log('Loading actual video durations for segment sync...');
+
+    // First, load actual durations for all segments
+    const durationPromises = segmentKeys.map(async (segNum) => {
+      const seg = uploadedSegments[segNum];
+      if (!seg || !seg.url) return;
+
+      // Skip if we already have actual duration
+      if (seg.actualDuration) return;
+
+      try {
+        const duration = await this.getVideoDuration(seg.url);
+        seg.actualDuration = duration;
+        seg.duration = duration; // Also set duration for compatibility
+        console.log(`Segment ${segNum} actual duration: ${duration.toFixed(2)}s`);
+      } catch (e) {
+        console.log(`Failed to get duration for segment ${segNum}, using 90s fallback`);
+        seg.actualDuration = 90;
+        seg.duration = 90;
+      }
+    });
+
+    await Promise.all(durationPromises);
+
+    // Now sync with actual durations
+    this.syncUploadedAvatarSegments();
+  }
+
+  // Helper to get video duration by loading it
+  getVideoDuration(url) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+
+      const timeout = setTimeout(() => {
+        video.src = '';
+        reject(new Error('Timeout loading video duration'));
+      }, 10000);
+
+      video.onloadedmetadata = () => {
+        clearTimeout(timeout);
+        const duration = video.duration;
+        video.src = ''; // Clean up
+        resolve(duration);
+      };
+
+      video.onerror = () => {
+        clearTimeout(timeout);
+        video.src = '';
+        reject(new Error('Failed to load video'));
+      };
+
+      video.src = url;
+    });
   }
 
   closePreview() {
@@ -10811,10 +10890,10 @@ async function fullAudioReset() {
     console.log(`  ✓ Segment ${segmentNum}: ${audioSeg.blob.size} bytes, 90.00s`);
   }
 
-  // Step 4: Re-sync avatar video boundaries
-  console.log('Step 4: Re-syncing avatar video boundaries...');
-  videoEditor.syncUploadedAvatarSegments();
-  console.log('  ✓ Avatar video boundaries synced');
+  // Step 4: Re-sync avatar video boundaries with ACTUAL durations (fixes stutter)
+  console.log('Step 4: Re-syncing avatar video boundaries with actual durations...');
+  await videoEditor.syncUploadedAvatarSegmentsWithDurations();
+  console.log('  ✓ Avatar video boundaries synced with actual durations');
 
   // Step 5: Pre-stitch audio to verify
   console.log('Step 5: Pre-stitching audio to verify...');
@@ -10835,6 +10914,42 @@ async function fullAudioReset() {
   });
 }
 window.fullAudioReset = fullAudioReset;
+
+// QUICK FIX: Re-sync segment boundaries with actual video durations
+// Use this if video stutters at 90s/180s/270s boundaries after reordering scenes
+async function fixSegmentSync() {
+  console.log('=== FIX SEGMENT SYNC ===');
+
+  if (typeof videoEditor === 'undefined') {
+    showToast('No video editor loaded', 'error');
+    return;
+  }
+
+  const uploadedSegments = window.uploadedAvatarSegments || {};
+  const segmentCount = Object.keys(uploadedSegments).length;
+
+  if (segmentCount === 0) {
+    showToast('No avatar segments found', 'error');
+    return;
+  }
+
+  showToast('Detecting actual video durations...', 1500);
+
+  // Load actual video durations and resync boundaries
+  await videoEditor.syncUploadedAvatarSegmentsWithDurations();
+
+  // Log the corrected boundaries
+  console.log('Corrected segment boundaries:');
+  if (videoEditor.avatarVideos) {
+    videoEditor.avatarVideos.forEach((av, i) => {
+      console.log(`  Segment ${av.segmentIndex}: ${av.startTime.toFixed(2)}s - ${av.endTime.toFixed(2)}s (${av.actualDuration?.toFixed(2) || '?'}s)`);
+    });
+  }
+
+  console.log('=== FIX SEGMENT SYNC COMPLETE ===');
+  showToast(`✅ Fixed ${segmentCount} segment boundaries!`, 'success');
+}
+window.fixSegmentSync = fixSegmentSync;
 
 // Handle individual segment video upload
 async function handleSegmentUpload(segmentNum, file) {
@@ -10876,10 +10991,37 @@ async function handleSegmentUpload(segmentNum, file) {
     const permanentUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${videoPath}`;
     console.log(`Segment ${segmentNum} uploaded to:`, permanentUrl);
 
-    // Store in memory for export (with permanent URL)
+    // Get actual video duration to fix segment boundary sync issues
+    let actualDuration = 90; // Fallback
+    try {
+      actualDuration = await new Promise((resolve) => {
+        const tempVideo = document.createElement('video');
+        tempVideo.preload = 'metadata';
+        tempVideo.muted = true;
+        const timeout = setTimeout(() => resolve(90), 5000);
+        tempVideo.onloadedmetadata = () => {
+          clearTimeout(timeout);
+          const dur = tempVideo.duration;
+          tempVideo.src = '';
+          resolve(dur || 90);
+        };
+        tempVideo.onerror = () => {
+          clearTimeout(timeout);
+          resolve(90);
+        };
+        tempVideo.src = URL.createObjectURL(file);
+      });
+      console.log(`Segment ${segmentNum} actual duration: ${actualDuration.toFixed(2)}s`);
+    } catch (e) {
+      console.log(`Could not detect duration for segment ${segmentNum}, using 90s fallback`);
+    }
+
+    // Store in memory for export (with permanent URL and actual duration)
     window.uploadedAvatarSegments[segmentNum] = {
       url: permanentUrl,
-      fileName: file.name
+      fileName: file.name,
+      duration: actualDuration,
+      actualDuration: actualDuration
     };
 
     // NOTE: We do NOT extract audio from uploaded avatar videos
