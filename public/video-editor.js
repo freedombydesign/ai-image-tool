@@ -8622,24 +8622,10 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
-          // SMOOTH TRANSITION: Delay segment switch by 300ms to avoid visual "jump"
-          // The avatar video is ~90.8s but audio boundary is 90s - this causes a mismatch
-          // By delaying the switch, we let the old segment play slightly past the boundary
-          const SWITCH_DELAY = 0.3; // 300ms delay before switching to new segment
-
-          // Find avatar for current time, with delayed switching
+          // Find avatar for current time, but also check if video has ended
           let avatarData = avatarVideoElements.find(av =>
-            av && currentTime >= av.startTime && currentTime < (av.endTime + SWITCH_DELAY)
+            av && currentTime >= av.startTime && currentTime < av.endTime
           );
-
-          // If we're in the delay zone, prefer the current/previous segment over the next one
-          if (avatarData && lastActiveAvatar && avatarData !== lastActiveAvatar) {
-            const lastEndTime = lastActiveAvatar.endTime;
-            // If we're within SWITCH_DELAY of the previous segment's end, keep using it
-            if (currentTime >= lastEndTime && currentTime < lastEndTime + SWITCH_DELAY) {
-              avatarData = lastActiveAvatar;
-            }
-          }
 
           // Debug: Log every 30 seconds to track avatar state
           if (frameCount % 900 === 0) { // Every 30 seconds at 30fps
