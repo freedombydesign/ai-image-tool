@@ -2880,11 +2880,26 @@ class VideoEditor {
       }
     }
 
-    // Calculate total length
-    const sampleRate = segmentBuffers[0].sampleRate;
+    // Calculate total length - NORMALIZE all segments to 48000 Hz to prevent sync drift
+    const TARGET_SAMPLE_RATE = 48000;
     const numChannels = segmentBuffers[0].numberOfChannels;
+
+    // Check for sample rate mismatches and resample if needed
+    const normalizedBuffers = [];
+    for (let i = 0; i < segmentBuffers.length; i++) {
+      const buf = segmentBuffers[i];
+      if (buf.sampleRate !== TARGET_SAMPLE_RATE) {
+        console.log(`Segment ${i + 1}: resampling from ${buf.sampleRate}Hz to ${TARGET_SAMPLE_RATE}Hz`);
+        const resampled = await this.resampleAudioBuffer(buf, TARGET_SAMPLE_RATE);
+        normalizedBuffers.push(resampled);
+      } else {
+        normalizedBuffers.push(buf);
+      }
+    }
+
+    const sampleRate = TARGET_SAMPLE_RATE;
     let totalSamples = 0;
-    for (const buf of segmentBuffers) {
+    for (const buf of normalizedBuffers) {
       totalSamples += buf.length;
     }
 
@@ -2892,7 +2907,7 @@ class VideoEditor {
     const combinedBuffer = audioContext.createBuffer(numChannels, totalSamples, sampleRate);
 
     let offset = 0;
-    for (const buf of segmentBuffers) {
+    for (const buf of normalizedBuffers) {
       for (let channel = 0; channel < numChannels; channel++) {
         const destData = combinedBuffer.getChannelData(channel);
         const srcData = buf.getChannelData(channel);
@@ -2906,6 +2921,28 @@ class VideoEditor {
     console.log('Stitched audio created:', stitchedBlob.size, 'bytes');
 
     return stitchedBlob;
+  }
+
+  // Resample audio buffer to target sample rate using OfflineAudioContext
+  async resampleAudioBuffer(audioBuffer, targetSampleRate) {
+    const numChannels = audioBuffer.numberOfChannels;
+    const duration = audioBuffer.duration;
+    const targetLength = Math.ceil(duration * targetSampleRate);
+
+    // Create offline context with target sample rate
+    const offlineCtx = new OfflineAudioContext(numChannels, targetLength, targetSampleRate);
+
+    // Create buffer source
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+
+    // Render resampled audio
+    const resampledBuffer = await offlineCtx.startRendering();
+    console.log(`Resampled: ${audioBuffer.sampleRate}Hz -> ${targetSampleRate}Hz, duration: ${resampledBuffer.duration.toFixed(2)}s`);
+
+    return resampledBuffer;
   }
 
   // Fast stitch when ALL segments are replaced (no need to split original)
@@ -2936,29 +2973,44 @@ class VideoEditor {
       return this.audioBlob;
     }
 
-    // Calculate total length
-    const sampleRate = segmentBuffers[0].sampleRate;
+    // NORMALIZE all segments to 48000 Hz to prevent sync drift
+    const TARGET_SAMPLE_RATE = 48000;
     const numChannels = segmentBuffers[0].numberOfChannels;
+
+    // Check for sample rate mismatches and resample if needed
+    const normalizedBuffers = [];
+    for (let i = 0; i < segmentBuffers.length; i++) {
+      const buf = segmentBuffers[i];
+      if (buf.sampleRate !== TARGET_SAMPLE_RATE) {
+        console.log(`Fast stitch segment ${i + 1}: resampling from ${buf.sampleRate}Hz to ${TARGET_SAMPLE_RATE}Hz`);
+        const resampled = await this.resampleAudioBuffer(buf, TARGET_SAMPLE_RATE);
+        normalizedBuffers.push(resampled);
+      } else {
+        normalizedBuffers.push(buf);
+      }
+    }
+
+    const sampleRate = TARGET_SAMPLE_RATE;
     let totalSamples = 0;
-    for (const buf of segmentBuffers) {
+    for (const buf of normalizedBuffers) {
       totalSamples += buf.length;
     }
 
-    console.log(`Combining ${segmentBuffers.length} segments: ${totalSamples} samples, ${numChannels} channels`);
+    console.log(`Combining ${normalizedBuffers.length} segments: ${totalSamples} samples, ${numChannels} channels (normalized to ${sampleRate}Hz)`);
 
     // Crossfade duration in samples (100ms crossfade to smooth audio transitions)
     const crossfadeSamples = Math.floor(sampleRate * 0.1);
-    const adjustedTotalSamples = totalSamples - (crossfadeSamples * (segmentBuffers.length - 1));
+    const adjustedTotalSamples = totalSamples - (crossfadeSamples * (normalizedBuffers.length - 1));
     console.log(`Using ${crossfadeSamples} sample crossfade (100ms) between segments`);
 
     // Create combined buffer (slightly shorter due to crossfade overlaps)
     const combinedBuffer = audioContext.createBuffer(numChannels, adjustedTotalSamples, sampleRate);
 
     let writeOffset = 0;
-    for (let i = 0; i < segmentBuffers.length; i++) {
-      const buf = segmentBuffers[i];
+    for (let i = 0; i < normalizedBuffers.length; i++) {
+      const buf = normalizedBuffers[i];
       const isFirst = i === 0;
-      const isLast = i === segmentBuffers.length - 1;
+      const isLast = i === normalizedBuffers.length - 1;
 
       for (let channel = 0; channel < numChannels; channel++) {
         const destData = combinedBuffer.getChannelData(channel);
