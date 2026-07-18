@@ -998,6 +998,12 @@ class VideoEditor {
       exportZipBtn.addEventListener('click', () => this.exportAsZip());
     }
 
+    // Background Only Export (for FFmpeg compositing)
+    const exportBgOnlyBtn = document.getElementById('export-bg-only-btn');
+    if (exportBgOnlyBtn) {
+      exportBgOnlyBtn.addEventListener('click', () => this.exportBackgroundOnly());
+    }
+
     // Talking Avatar
     if (this.enableAvatarToggle) {
       this.enableAvatarToggle.addEventListener('change', (e) => this.toggleAvatarOverlay(e.target.checked));
@@ -8015,6 +8021,184 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     a.click();
     URL.revokeObjectURL(url);
     showToast('SRT file downloaded! Import into CapCut/Premiere.', 'success');
+  }
+
+  // Export Background Only - just scene images with correct timing, no avatar
+  // This creates a clean background video that can be composited with FFmpeg
+  async exportBackgroundOnly() {
+    if (this.scenes.length === 0) {
+      showToast('Add scenes first to export.');
+      return;
+    }
+
+    this.exportProgress.hidden = false;
+    this.exportVideoBtn.disabled = true;
+    this.exportStatus.textContent = 'Exporting background scenes only...';
+
+    try {
+      const [width, height] = this.exportResolution.value.split('x').map(Number);
+      const fps = parseInt(this.exportFps.value);
+      const totalDuration = this.getTotalDuration();
+      const totalFrames = Math.ceil(totalDuration * fps);
+
+      // Create export canvas
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const ctx = exportCanvas.getContext('2d');
+
+      // Preload all scene images
+      this.exportStatus.textContent = 'Loading scene images...';
+      const sceneImages = await Promise.all(
+        this.scenes.map(scene => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
+            img.src = scene.imageUrl;
+          });
+        })
+      );
+      this.exportProgressBar.style.width = '20%';
+
+      // Set up MediaRecorder (no audio - avatar video has the audio)
+      const stream = exportCanvas.captureStream(fps);
+
+      const mimeTypes = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+        'video/mp4'
+      ];
+      let mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 8000000
+      });
+
+      const chunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      // Render frames
+      let frameCount = 0;
+      const frameInterval = 1000 / fps;
+
+      recorder.start();
+
+      await new Promise((resolve) => {
+        const renderFrame = () => {
+          if (frameCount >= totalFrames) {
+            recorder.stop();
+            resolve();
+            return;
+          }
+
+          const currentTime = frameCount / fps;
+
+          // Find current scene
+          let accumulatedTime = 0;
+          let currentScene = null;
+          let sceneIndex = 0;
+
+          for (let i = 0; i < this.scenes.length; i++) {
+            const scene = this.scenes[i];
+            if (currentTime >= accumulatedTime && currentTime < accumulatedTime + scene.duration) {
+              currentScene = scene;
+              sceneIndex = i;
+              break;
+            }
+            accumulatedTime += scene.duration;
+          }
+
+          // Draw scene image (full screen, no avatar)
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, width, height);
+
+          if (currentScene && sceneImages[sceneIndex]) {
+            const img = sceneImages[sceneIndex];
+            // Cover the canvas (like background-size: cover)
+            const imgRatio = img.width / img.height;
+            const canvasRatio = width / height;
+            let drawWidth, drawHeight, drawX, drawY;
+
+            if (imgRatio > canvasRatio) {
+              drawHeight = height;
+              drawWidth = height * imgRatio;
+              drawX = (width - drawWidth) / 2;
+              drawY = 0;
+            } else {
+              drawWidth = width;
+              drawHeight = width / imgRatio;
+              drawX = 0;
+              drawY = (height - drawHeight) / 2;
+            }
+
+            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+          }
+
+          // Update progress
+          const progress = 20 + (frameCount / totalFrames) * 70;
+          this.exportProgressBar.style.width = `${progress}%`;
+
+          if (frameCount % (fps * 10) === 0) {
+            this.exportStatus.textContent = `Rendering background: ${Math.floor(currentTime)}s / ${Math.floor(totalDuration)}s`;
+          }
+
+          frameCount++;
+          setTimeout(renderFrame, frameInterval / 2); // Faster than real-time
+        };
+
+        renderFrame();
+      });
+
+      // Wait for recorder to finish
+      await new Promise(resolve => {
+        recorder.onstop = resolve;
+      });
+
+      this.exportProgressBar.style.width = '95%';
+      this.exportStatus.textContent = 'Creating video file...';
+
+      const blob = new Blob(chunks, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'background_only.webm';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      this.exportProgressBar.style.width = '100%';
+      this.exportStatus.textContent = 'Background video exported! Now use FFmpeg to composite with your avatar.';
+      showToast('Background video exported! Combine with avatar using FFmpeg.', 'success');
+
+      // Show FFmpeg command helper
+      console.log(`
+=== FFmpeg COMPOSITE COMMAND ===
+After downloading your avatar video, run:
+
+ffmpeg -i background_only.webm -i avatar_video.mp4 \\
+  -filter_complex "[1:v]scale=300:-1[avatar];[0:v][avatar]overlay=W-w-40:H-h-120" \\
+  -map 1:a -c:a aac \\
+  final_output.mp4
+
+This will:
+- Use background_only.webm as the main video
+- Overlay avatar (scaled to 300px wide) in bottom-right
+- Use audio from the avatar video
+================================
+      `);
+
+    } catch (error) {
+      console.error('Background export failed:', error);
+      this.exportStatus.textContent = `Export failed: ${error.message}`;
+      showToast('Export failed: ' + error.message);
+    } finally {
+      this.exportVideoBtn.disabled = false;
+    }
   }
 
   // Export using MediaRecorder (works in all browsers without FFmpeg)
