@@ -8824,11 +8824,12 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // If current segment not ready, draw from previous segment instead
             const canDrawCurrent = avatarData.element.readyState >= 2 && !tooSoonAfterSwitch;
 
-            // Continuous sync: keep video time matched to audio time
-            if (absDrift > 0.1 && avatarData.element.readyState >= 3 && timeSinceSwitch > 200) {
-              // Video drifted - resync it
-              console.log(`Avatar resync: drift=${drift.toFixed(2)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
-              avatarData.element.currentTime = expectedLocalTime;
+            // Continuous sync: DISABLED - seeking during playback causes visual stutter
+            // Only log severe drift for debugging, don't correct it
+            // The pre-seek and initial segment positioning should be enough
+            if (absDrift > 0.5 && frameCount % 30 === 0) {
+              // Only log once per second if drift is severe (>0.5s)
+              console.log(`[DRIFT WARNING] drift=${drift.toFixed(2)}s at ${currentTime.toFixed(1)}s (not correcting - would cause stutter)`);
             }
 
             if (!canDrawCurrent) {
