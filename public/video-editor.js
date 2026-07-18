@@ -8047,8 +8047,8 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       exportCanvas.height = height;
       const ctx = exportCanvas.getContext('2d');
 
-      // Sync uploaded avatar segments
-      this.syncUploadedAvatarSegments();
+      // Sync uploaded avatar segments with ACTUAL durations (fixes stutter at boundaries)
+      await this.syncUploadedAvatarSegmentsWithDurations();
 
       // Load avatar video elements with progress and timeout
       const avatarVideoElements = [];
@@ -8704,23 +8704,25 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           // PRE-SEEK: Prepare next segment 1 second before boundary
           // This ensures the video is at the right frame when we need to switch
           const PRE_SEEK_TIME = 1.0; // seconds before boundary to pre-seek
-          const segmentLength = 90;
-          const nextBoundary = Math.ceil(currentTime / segmentLength) * segmentLength;
-          const timeToNextBoundary = nextBoundary - currentTime;
 
-          if (timeToNextBoundary > 0 && timeToNextBoundary <= PRE_SEEK_TIME && nextBoundary > 0) {
-            // Find the next segment that starts at this boundary
-            const nextSegment = avatarVideoElements.find(av =>
-              av && av.startTime === nextBoundary
-            );
-            if (nextSegment && nextSegment.element && !nextSegment._preSeekDone) {
-              // Pre-seek to position 0 so it's ready when we switch
-              nextSegment.element.currentTime = 0;
-              nextSegment.element.muted = true;
-              nextSegment._preSeekDone = true;
-              nextSegment.switchTime = performance.now(); // Mark as pre-seeked
-              console.log(`🎯 PRE-SEEK: segment ${nextSegment.segmentIndex} ready at t=${currentTime.toFixed(1)}s (${timeToNextBoundary.toFixed(1)}s before boundary)`);
-            }
+          // Find the NEXT segment based on actual segment boundaries (not fixed 90s)
+          // This fixes the stutter at 3-minute mark when segment 2 is slightly longer
+          const currentSegmentIdx = avatarVideoElements.findIndex(av =>
+            av && currentTime >= av.startTime && currentTime < av.endTime
+          );
+          const nextSegmentIdx = currentSegmentIdx >= 0 ? currentSegmentIdx + 1 : 0;
+          const nextSegment = avatarVideoElements[nextSegmentIdx];
+          const nextBoundary = nextSegment ? nextSegment.startTime : null;
+          const timeToNextBoundary = nextBoundary !== null ? nextBoundary - currentTime : Infinity;
+
+          if (nextSegment && nextSegment.element && !nextSegment._preSeekDone &&
+              timeToNextBoundary > 0 && timeToNextBoundary <= PRE_SEEK_TIME) {
+            // Pre-seek to position 0 so it's ready when we switch
+            nextSegment.element.currentTime = 0;
+            nextSegment.element.muted = true;
+            nextSegment._preSeekDone = true;
+            nextSegment.switchTime = performance.now(); // Mark as pre-seeked
+            console.log(`🎯 PRE-SEEK: segment ${nextSegment.segmentIndex} ready at t=${currentTime.toFixed(1)}s (${timeToNextBoundary.toFixed(1)}s before boundary at ${nextBoundary.toFixed(1)}s)`);
           }
 
           // Find avatar for current time, but also check if video has ended
@@ -9082,9 +9084,11 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       }
 
       // Step 1: Load avatar videos (from generated + uploaded segments)
+      // Use actual video durations instead of fixed 90s to prevent stutter at boundaries
       let avatarVideoElements = [];
       if (this.avatarEnabled && this.audioBlob) {
-        const numSegments = Math.ceil(this.audioDuration / 90);
+        // Sync segments with actual durations first
+        await this.syncUploadedAvatarSegmentsWithDurations();
 
         // Check if we have uploaded segments
         const uploadedSegments = window.uploadedAvatarSegments || {};
@@ -9096,38 +9100,54 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
           await this.generateAvatarVideos();
         }
 
-        // Merge uploaded segments with generated ones
+        // Merge uploaded segments with generated ones using ACTUAL durations
         this.exportStatus.textContent = 'Loading avatar videos...';
         const segmentSources = [];
+        const segmentKeys = Object.keys(uploadedSegments).map(Number).sort((a, b) => a - b);
+        let cumulativeTime = 0;
 
-        for (let i = 1; i <= numSegments; i++) {
-          if (uploadedSegments[i]) {
-            // Use uploaded segment
+        for (const segNum of segmentKeys) {
+          const seg = uploadedSegments[segNum];
+          if (seg && seg.url) {
+            const actualDuration = seg.duration || seg.actualDuration || 90;
             segmentSources.push({
-              videoUrl: uploadedSegments[i].url,
-              startTime: (i - 1) * 90,
+              videoUrl: seg.url,
+              startTime: cumulativeTime,
+              endTime: cumulativeTime + actualDuration,
+              segmentIndex: segNum,
               source: 'uploaded'
             });
-            console.log(`Using uploaded segment ${i}`);
-          } else if (this.avatarVideos && this.avatarVideos[i - 1]) {
-            // Use generated segment
-            segmentSources.push({
-              videoUrl: this.avatarVideos[i - 1].videoUrl,
-              startTime: (i - 1) * 90,
-              source: 'generated'
-            });
-            console.log(`Using generated segment ${i}`);
-          } else {
-            console.warn(`Missing segment ${i} - no uploaded or generated video`);
+            console.log(`Using uploaded segment ${segNum}: ${cumulativeTime.toFixed(2)}s - ${(cumulativeTime + actualDuration).toFixed(2)}s`);
+            cumulativeTime += actualDuration;
           }
         }
 
-        // Load all video elements
+        // Also check generated segments if no uploaded
+        if (segmentSources.length === 0 && this.avatarVideos) {
+          this.avatarVideos.forEach((av, idx) => {
+            if (av.videoUrl) {
+              segmentSources.push({
+                videoUrl: av.videoUrl,
+                startTime: av.startTime,
+                endTime: av.endTime,
+                segmentIndex: idx + 1,
+                source: 'generated'
+              });
+              console.log(`Using generated segment ${idx + 1}: ${av.startTime.toFixed(2)}s - ${av.endTime.toFixed(2)}s`);
+            }
+          });
+        }
+
+        // Load all video elements with segment metadata
         if (segmentSources.length > 0) {
-          avatarVideoElements = await Promise.all(
-            segmentSources.map(seg => this.loadVideoElement(seg.videoUrl))
+          const loadedElements = await Promise.all(
+            segmentSources.map(async (seg) => {
+              const el = await this.loadVideoElement(seg.videoUrl);
+              return { element: el, ...seg };
+            })
           );
-          console.log(`Loaded ${avatarVideoElements.length} avatar video elements (uploaded + generated)`);
+          avatarVideoElements = loadedElements.filter(v => v.element);
+          console.log(`Loaded ${avatarVideoElements.length} avatar video elements with actual durations`);
         }
       }
 
