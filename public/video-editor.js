@@ -8622,6 +8622,28 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
         // Draw avatar overlay - play videos smoothly
         if (avatarVideoElements.length > 0) {
+          // PRE-SEEK: Prepare next segment 1 second before boundary
+          // This ensures the video is at the right frame when we need to switch
+          const PRE_SEEK_TIME = 1.0; // seconds before boundary to pre-seek
+          const segmentLength = 90;
+          const nextBoundary = Math.ceil(currentTime / segmentLength) * segmentLength;
+          const timeToNextBoundary = nextBoundary - currentTime;
+
+          if (timeToNextBoundary > 0 && timeToNextBoundary <= PRE_SEEK_TIME && nextBoundary > 0) {
+            // Find the next segment that starts at this boundary
+            const nextSegment = avatarVideoElements.find(av =>
+              av && av.startTime === nextBoundary
+            );
+            if (nextSegment && nextSegment.element && !nextSegment._preSeekDone) {
+              // Pre-seek to position 0 so it's ready when we switch
+              nextSegment.element.currentTime = 0;
+              nextSegment.element.muted = true;
+              nextSegment._preSeekDone = true;
+              nextSegment.switchTime = performance.now(); // Mark as pre-seeked
+              console.log(`🎯 PRE-SEEK: segment ${nextSegment.segmentIndex} ready at t=${currentTime.toFixed(1)}s (${timeToNextBoundary.toFixed(1)}s before boundary)`);
+            }
+          }
+
           // Find avatar for current time, but also check if video has ended
           let avatarData = avatarVideoElements.find(av =>
             av && currentTime >= av.startTime && currentTime < av.endTime
@@ -8717,31 +8739,40 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             // readyState: 0=NOTHING, 1=METADATA, 2=CURRENT_DATA, 3=FUTURE_DATA, 4=ENOUGH_DATA
             const videoNotReady = avatarData.element.readyState < 2;
 
-            // Skip frame if:
-            // 1. Way off position (drift > 1s) - major sync issue
-            // 2. Too soon after switch (< 100ms) - video element hasn't fully updated yet
-            // 3. Video not ready (readyState < 2) - no decoded frame available yet
-            // 4. Recently switched (< 200ms) AND drift > 0.1s - still syncing after initial buffer
-            if (absDrift > 1.0 || tooSoonAfterSwitch || videoNotReady || (timeSinceSwitch < 200 && absDrift > 0.1)) {
-              if (videoNotReady) {
-                // DON'T seek when video not ready - seeking prevents buffering!
-                // Just let the video buffer at current position and play() to trigger download
-                if (!avatarData.element.paused) {
-                  // Already playing, just wait
+            // ALWAYS DRAW SOMETHING - never skip frames, it causes sync issues
+            // If current segment not ready, draw from previous segment instead
+            const canDrawCurrent = avatarData.element.readyState >= 2 && !tooSoonAfterSwitch;
+
+            // Continuous sync: keep video time matched to audio time
+            if (absDrift > 0.1 && avatarData.element.readyState >= 3 && timeSinceSwitch > 200) {
+              // Video drifted - resync it
+              console.log(`Avatar resync: drift=${drift.toFixed(2)}s, seeking to ${expectedLocalTime.toFixed(2)}s`);
+              avatarData.element.currentTime = expectedLocalTime;
+            }
+
+            if (!canDrawCurrent) {
+              // Can't draw current segment yet - draw previous segment to fill the gap
+              if (lastActiveAvatar && lastActiveAvatar !== avatarData && lastActiveAvatar.element && lastActiveAvatar.element.readyState >= 2) {
+                // Draw from previous segment
+                const rect = this.getAvatarOverlayRect(width, height);
+                ctx.save();
+                if (this.avatarShape === 'circle') {
+                  const centerX = rect.x + rect.width / 2;
+                  const centerY = rect.y + rect.height / 2;
+                  const radius = Math.min(rect.width, rect.height) / 2;
+                  ctx.beginPath();
+                  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                  ctx.drawImage(lastActiveAvatar.element, rect.x + (rect.width - radius * 2) / 2, rect.y + (rect.height - radius * 2) / 2, radius * 2, radius * 2);
                 } else {
-                  avatarData.element.play().catch(() => {});
+                  ctx.drawImage(lastActiveAvatar.element, rect.x, rect.y, rect.width, rect.height);
                 }
-                if (frameCount % 30 === 0) { // Log every second
-                  console.log(`Avatar buffering: readyState=${avatarData.element.readyState}, waiting for data...`);
-                }
-              } else {
-                console.log(`Avatar skip frame: drift=${drift.toFixed(2)}s, timeSinceSwitch=${timeSinceSwitch.toFixed(0)}ms`);
-                // Only seek if video has enough data to seek without re-buffering
-                if (avatarData.element.readyState >= 3) {
-                  avatarData.element.currentTime = expectedLocalTime;
+                ctx.restore();
+                if (frameCount % 30 === 0) {
+                  console.log(`Drawing previous segment while waiting for segment ${avatarData.segmentIndex}`);
                 }
               }
-              // Don't draw - skip to next frame
             } else {
               // Video is close enough to expected position - sync and draw
               // Keep playbackRate at 1.0 always - adjustments cause visual stutter
