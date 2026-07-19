@@ -3120,6 +3120,109 @@ app.delete('/api/db/batch-scenes/:userId/:batchId', async (req, res) => {
   }
 });
 
+// Regenerate expired scene images with permanent URLs
+app.post('/api/db/batch-scenes/:userId/regenerate-expired', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+    const { model = 'flux-schnell' } = req.body; // Fast model for regeneration
+
+    // Get all scenes for user
+    const { data: scenes, error: fetchError } = await supabase
+      .from('ai_tool_batch_scenes')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (fetchError) throw fetchError;
+
+    if (!scenes || scenes.length === 0) {
+      return res.json({ success: true, message: 'No scenes found', regenerated: 0 });
+    }
+
+    // Find scenes with expired URLs (replicate.delivery or stability URLs)
+    const expiredScenes = scenes.filter(s =>
+      s.image_url &&
+      (s.image_url.includes('replicate.delivery') ||
+       s.image_url.includes('stability.ai') ||
+       s.image_url.includes('pbxt.replicate.delivery'))
+    );
+
+    console.log(`Found ${expiredScenes.length} scenes with expired URLs out of ${scenes.length} total`);
+
+    if (expiredScenes.length === 0) {
+      return res.json({ success: true, message: 'No expired URLs found', regenerated: 0 });
+    }
+
+    let regenerated = 0;
+    const errors = [];
+
+    for (const scene of expiredScenes) {
+      try {
+        // Parse style data for visual description
+        let styleData = {};
+        try {
+          styleData = JSON.parse(scene.style || '{}');
+        } catch (e) {}
+
+        const prompt = scene.prompt || styleData.visualDescription || '';
+        if (!prompt) {
+          console.log(`Scene ${scene.id} has no prompt, skipping`);
+          continue;
+        }
+
+        console.log(`Regenerating scene ${scene.id}: ${prompt.substring(0, 50)}...`);
+
+        // Generate new image
+        const result = await generateWithReplicate(prompt, model, {
+          width: 1920,
+          height: 1080,
+          aspectRatio: '16:9'
+        });
+
+        if (!result.url) {
+          throw new Error('No URL returned from generation');
+        }
+
+        // Archive to Supabase
+        const permanentUrl = await archiveImageToSupabase(result.url, userId);
+
+        // Update database record
+        const { error: updateError } = await supabase
+          .from('ai_tool_batch_scenes')
+          .update({ image_url: permanentUrl })
+          .eq('id', scene.id);
+
+        if (updateError) throw updateError;
+
+        regenerated++;
+        console.log(`Regenerated scene ${scene.id}: ${permanentUrl}`);
+
+        // Small delay to avoid rate limits
+        await new Promise(r => setTimeout(r, 500));
+
+      } catch (err) {
+        console.error(`Failed to regenerate scene ${scene.id}:`, err.message);
+        errors.push({ id: scene.id, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      total: scenes.length,
+      expired: expiredScenes.length,
+      regenerated,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (error) {
+    console.error('Regenerate expired error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Cleanup duplicates - keep only the most recent batch
 app.post('/api/db/batch-scenes/:userId/cleanup', async (req, res) => {
   if (!supabase) {
