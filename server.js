@@ -51,6 +51,49 @@ if (supabase) {
   console.log('Supabase not configured - using localStorage fallback');
 }
 
+// Helper: Archive image from temporary URL to permanent Supabase storage
+async function archiveImageToSupabase(tempUrl, userId = 'default') {
+  if (!supabase || !tempUrl) return tempUrl;
+
+  // Skip if already a Supabase URL or base64
+  if (tempUrl.includes('supabase') || tempUrl.startsWith('data:')) {
+    return tempUrl;
+  }
+
+  try {
+    console.log('Archiving image to Supabase:', tempUrl.substring(0, 50) + '...');
+    const response = await fetch(tempUrl);
+    if (!response.ok) {
+      console.error('Failed to fetch temp image:', response.status);
+      return tempUrl;
+    }
+
+    const imageBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const extension = contentType.includes('webp') ? 'webp' : contentType.includes('jpeg') ? 'jpg' : 'png';
+    const imagePath = `scene-images/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('ai-tool-images')
+      .upload(imagePath, Buffer.from(imageBuffer), {
+        contentType: contentType,
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError);
+      return tempUrl;
+    }
+
+    const permanentUrl = `${supabaseUrl}/storage/v1/object/public/ai-tool-images/${imagePath}`;
+    console.log('Image archived permanently:', permanentUrl);
+    return permanentUrl;
+  } catch (e) {
+    console.error('Archive error:', e.message);
+    return tempUrl; // Fall back to temp URL
+  }
+}
+
 // Model configurations with pricing info
 const MODEL_CONFIG = {
   'dall-e-3': {
@@ -429,7 +472,7 @@ function checkModelAvailability(modelId) {
 // Generate new image from text prompt (supports multiple models)
 app.post('/api/generate', async (req, res) => {
   try {
-    const { prompt, size = '1024x1024', style = 'vivid', quality = 'standard', model = 'dall-e-3' } = req.body;
+    const { prompt, size = '1024x1024', style = 'vivid', quality = 'standard', model = 'dall-e-3', userId } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -504,6 +547,12 @@ app.post('/api/generate', async (req, res) => {
 
       default:
         throw new Error(`Provider ${modelConfig.provider} not supported`);
+    }
+
+    // Archive image to Supabase for permanent storage (fixes URL expiration issue)
+    // Only for non-base64 URLs (Replicate/Stability temp URLs expire after ~24h)
+    if (result.image && !result.image.startsWith('data:') && userId) {
+      result.image = await archiveImageToSupabase(result.image, userId);
     }
 
     res.json({

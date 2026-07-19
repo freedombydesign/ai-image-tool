@@ -2171,7 +2171,7 @@ async function generateFromVisualScenes() {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+        body: JSON.stringify({ prompt: styledPrompt, size, quality, model, userId: getUserId() })
       });
 
       const data = await response.json();
@@ -2447,7 +2447,7 @@ async function generateImage() {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+      body: JSON.stringify({ prompt: styledPrompt, size, quality, model, userId: getUserId() })
     });
 
     const data = await response.json();
@@ -2456,7 +2456,7 @@ async function generateImage() {
       throw new Error(data.error);
     }
 
-    lastGenerateParams = { prompt: styledPrompt, size, quality, model };
+    lastGenerateParams = { prompt: styledPrompt, size, quality, model, userId: getUserId() };
     showResult(data.image, data.revised_prompt);
     showToast('Image generated successfully!', false);
 
@@ -2599,7 +2599,7 @@ async function generatePreviewScenes() {
         const response = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+          body: JSON.stringify({ prompt: styledPrompt, size, quality, model, userId: getUserId() })
         });
         data = await response.json();
       }
@@ -2763,7 +2763,7 @@ async function generateBatchScenes() {
         const response = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+          body: JSON.stringify({ prompt: styledPrompt, size, quality, model, userId: getUserId() })
         });
         data = await response.json();
       }
@@ -2961,7 +2961,7 @@ async function previewSingleScene(index) {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: styledPrompt, size, quality, model })
+      body: JSON.stringify({ prompt: styledPrompt, size, quality, model, userId: getUserId() })
     });
 
     const data = await response.json();
@@ -3021,7 +3021,7 @@ async function regenerateScene(index) {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: scene.prompt, size, quality, model })
+      body: JSON.stringify({ prompt: scene.prompt, size, quality, model, userId: getUserId() })
     });
 
     const data = await response.json();
@@ -3315,7 +3315,7 @@ async function addMoreScenes() {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: fullPrompt, size, quality, model })
+        body: JSON.stringify({ prompt: fullPrompt, size, quality, model, userId: getUserId() })
       });
 
       const data = await response.json();
@@ -4907,7 +4907,8 @@ async function generateThumbnail() {
         prompt: prompt,
         size: '1792x1024', // YouTube thumbnail aspect ratio
         quality: quality,
-        model: model
+        model: model,
+        userId: getUserId()
       })
     });
 
@@ -4918,7 +4919,7 @@ async function generateThumbnail() {
     }
 
     // Store params for regeneration
-    lastThumbnailParams = { prompt, size: '1792x1024', quality, model };
+    lastThumbnailParams = { prompt, size: '1792x1024', quality, model, userId: getUserId() };
 
     // Show result
     if (thumbnailImage) {
