@@ -3576,12 +3576,16 @@ class VideoEditor {
 
         console.log('Step 4b: Upload successful:', uploadData);
 
-        // Get public URL
-        const { data: urlData } = supabaseClient.storage
+        // Get signed URL (1 year expiry) instead of public URL to reduce CDN egress
+        const { data: signedUrlData, error: signedUrlError } = await supabaseClient.storage
           .from(config.bucket)
-          .getPublicUrl(fileName);
+          .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year expiry
 
-        const audioUrl = urlData.publicUrl;
+        if (signedUrlError || !signedUrlData?.signedUrl) {
+          console.error('Failed to create signed URL:', signedUrlError);
+          throw new Error('Failed to generate audio URL');
+        }
+        const audioUrl = signedUrlData.signedUrl;
         console.log('Step 4c: Audio uploaded to:', audioUrl);
 
         // Keep replaced segments for export - they'll be stitched during export
@@ -7533,8 +7537,33 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
       drawHeight = rect.height;
     }
 
-    // Draw avatar
-    this.ctx.drawImage(videoEl, drawX, drawY, drawWidth, drawHeight);
+    // Draw avatar with shape masking (fixes square avatar showing through)
+    this.ctx.save();
+
+    if (this.avatarShape === 'circle') {
+      const centerX = drawX + drawWidth / 2;
+      const centerY = drawY + drawHeight / 2;
+      const radius = Math.min(drawWidth, drawHeight) / 2;
+
+      this.ctx.beginPath();
+      this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      this.ctx.closePath();
+      this.ctx.clip();
+
+      // Draw centered in circle
+      this.ctx.drawImage(
+        videoEl,
+        drawX + (drawWidth - radius * 2) / 2,
+        drawY + (drawHeight - radius * 2) / 2,
+        radius * 2,
+        radius * 2
+      );
+    } else {
+      // Rectangle or square
+      this.ctx.drawImage(videoEl, drawX, drawY, drawWidth, drawHeight);
+    }
+
+    this.ctx.restore();
   }
 
   // Draw avatar on preview canvas

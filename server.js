@@ -1503,12 +1503,16 @@ app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
 
     if (error) throw error;
 
-    // Get public URL
-    const { data: urlData } = supabase.storage
+    // Get signed URL (1 year expiry) instead of public URL to reduce CDN egress
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from('ai-tool-images')
-      .getPublicUrl(`audio/${fileName}`);
+      .createSignedUrl(`audio/${fileName}`, 60 * 60 * 24 * 365); // 1 year expiry
 
-    res.json({ success: true, url: urlData.publicUrl, path: data.path });
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      throw new Error('Failed to create signed URL');
+    }
+
+    res.json({ success: true, url: signedUrlData.signedUrl, path: data.path });
   } catch (error) {
     console.error('Audio upload error:', error);
     if (req.file && fs.existsSync(req.file.path)) {
@@ -3159,6 +3163,25 @@ app.post('/api/db/batch-scenes/:userId/regenerate-expired', async (req, res) => 
     let regenerated = 0;
     const errors = [];
 
+    // Style rules to avoid old tarot/crystal imagery
+    const styleRules = `
+CRITICAL STYLE RULES - SOFT PINK GLAM AESTHETIC:
+- Warm ambient lamp lighting with golden glow
+- Soft pink, lavender, and mauve wall tones
+- Cozy evening atmosphere with warm shadows
+- Elegant, glamorous but approachable feel
+- Rich warm color grading (pink, coral, warm browns)
+- Character in white blouse, cream, or soft neutral clothing
+- Soft bokeh background, cinematic depth of field
+- Luxurious but cozy interior (velvet, warm wood, soft textures)
+
+CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, harsh lighting, cool/blue tones, bright neon colors, busy cluttered backgrounds.
+
+CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays.`;
+
+    // Sort expired scenes by index for consistent regeneration order
+    expiredScenes.sort((a, b) => (a.index || 0) - (b.index || 0));
+
     for (const scene of expiredScenes) {
       try {
         // Parse style data for visual description
@@ -3167,13 +3190,16 @@ app.post('/api/db/batch-scenes/:userId/regenerate-expired', async (req, res) => 
           styleData = JSON.parse(scene.style || '{}');
         } catch (e) {}
 
-        const prompt = scene.prompt || styleData.visualDescription || '';
-        if (!prompt) {
+        let basePrompt = scene.prompt || styleData.visualDescription || '';
+        if (!basePrompt) {
           console.log(`Scene ${scene.id} has no prompt, skipping`);
           continue;
         }
 
-        console.log(`Regenerating scene ${scene.id}: ${prompt.substring(0, 50)}...`);
+        // Add style rules to avoid old imagery
+        const prompt = `${basePrompt}\n\n${styleRules}`;
+
+        console.log(`Regenerating scene ${scene.id} (index ${scene.index}): ${basePrompt.substring(0, 50)}...`);
 
         // Generate new image
         const result = await generateWithReplicate(prompt, model, {
@@ -3219,6 +3245,111 @@ app.post('/api/db/batch-scenes/:userId/regenerate-expired', async (req, res) => 
 
   } catch (error) {
     console.error('Regenerate expired error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Regenerate ALL scenes with new style rules (fixes old tarot/crystal imagery)
+app.post('/api/db/batch-scenes/:userId/regenerate-all', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { userId } = req.params;
+    const { model = 'flux-schnell', batchId = 'video-editor-main' } = req.body;
+
+    // Get all scenes for user in specific batch
+    const { data: scenes, error: fetchError } = await supabase
+      .from('ai_tool_batch_scenes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('batch_id', batchId)
+      .order('scene_index', { ascending: true });
+
+    if (fetchError) throw fetchError;
+
+    if (!scenes || scenes.length === 0) {
+      return res.json({ success: true, message: 'No scenes found', regenerated: 0 });
+    }
+
+    console.log(`Regenerating ALL ${scenes.length} scenes with new style rules...`);
+
+    // Style rules to avoid old tarot/crystal imagery
+    const styleRules = `
+CRITICAL STYLE RULES - SOFT PINK GLAM AESTHETIC:
+- Warm ambient lamp lighting with golden glow
+- Soft pink, lavender, and mauve wall tones
+- Cozy evening atmosphere with warm shadows
+- Elegant, glamorous but approachable feel
+- Rich warm color grading (pink, coral, warm browns)
+- Character in white blouse, cream, or soft neutral clothing
+- Soft bokeh background, cinematic depth of field
+- Luxurious but cozy interior (velvet, warm wood, soft textures)
+
+CONTENT TO AVOID: tarot cards, crystals, occult symbols, astrology imagery, motivational text posters, harsh lighting, cool/blue tones, bright neon colors, busy cluttered backgrounds.
+
+CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays.`;
+
+    let regenerated = 0;
+    const errors = [];
+
+    for (const scene of scenes) {
+      try {
+        let styleData = {};
+        try {
+          styleData = JSON.parse(scene.style || '{}');
+        } catch (e) {}
+
+        let basePrompt = scene.prompt || styleData.visualDescription || '';
+        if (!basePrompt) {
+          console.log(`Scene ${scene.id} has no prompt, skipping`);
+          continue;
+        }
+
+        const prompt = `${basePrompt}\n\n${styleRules}`;
+
+        console.log(`Regenerating scene ${scene.scene_index + 1}/${scenes.length}: ${basePrompt.substring(0, 50)}...`);
+
+        const result = await generateWithReplicate(prompt, model, {
+          width: 1920,
+          height: 1080,
+          aspectRatio: '16:9'
+        });
+
+        if (!result.url) {
+          throw new Error('No URL returned from generation');
+        }
+
+        const permanentUrl = await archiveImageToSupabase(result.url, userId);
+
+        const { error: updateError } = await supabase
+          .from('ai_tool_batch_scenes')
+          .update({ image_url: permanentUrl })
+          .eq('id', scene.id);
+
+        if (updateError) throw updateError;
+
+        regenerated++;
+        console.log(`✓ Scene ${scene.scene_index + 1} regenerated`);
+
+        await new Promise(r => setTimeout(r, 500));
+
+      } catch (err) {
+        console.error(`Failed to regenerate scene ${scene.id}:`, err.message);
+        errors.push({ id: scene.id, index: scene.scene_index, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      total: scenes.length,
+      regenerated,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (error) {
+    console.error('Regenerate all error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3533,17 +3664,17 @@ app.post('/api/signed-upload-url', async (req, res) => {
 
     if (error) throw error;
 
-    // Also return the public URL for after upload
-    const { data: urlData } = supabase.storage
+    // Also return a signed URL for after upload (1 year expiry)
+    const { data: signedReadUrl, error: signedReadError } = await supabase.storage
       .from('ai-tool-images')
-      .getPublicUrl(filePath);
+      .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
 
     res.json({
       success: true,
       signedUrl: data.signedUrl,
       token: data.token,
       path: filePath,
-      publicUrl: urlData.publicUrl
+      publicUrl: signedReadUrl?.signedUrl || null
     });
   } catch (error) {
     console.error('Signed URL error:', error);
