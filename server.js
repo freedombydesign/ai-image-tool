@@ -7,15 +7,36 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 const { createClient } = require('@supabase/supabase-js');
+const { Resend } = require('resend');
+
+// Initialize Resend for email alerts
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const ALERT_EMAIL = process.env.ALERT_EMAIL || 'ruth@foundercommandsystem.com';
+
+// Usage alert thresholds (for local storage)
+const STORAGE_WARNING_THRESHOLD = 0.7;  // 70%
+const STORAGE_CRITICAL_THRESHOLD = 0.9; // 90%
+const MAX_LOCAL_STORAGE_GB = 10; // 10GB max for local storage
+
+// Track if we've already sent alerts this session to avoid spam
+const alertsSent = {
+  warning: false,
+  critical: false
+};
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Local video storage configuration (to avoid Supabase egress costs)
+// Local media storage configuration (to avoid Supabase egress costs)
 const LOCAL_VIDEO_DIR = path.join(__dirname, 'public', 'videos', 'avatars');
+const LOCAL_AUDIO_DIR = path.join(__dirname, 'public', 'audio');
 if (!fs.existsSync(LOCAL_VIDEO_DIR)) {
   fs.mkdirSync(LOCAL_VIDEO_DIR, { recursive: true });
   console.log('Created local video directory:', LOCAL_VIDEO_DIR);
+}
+if (!fs.existsSync(LOCAL_AUDIO_DIR)) {
+  fs.mkdirSync(LOCAL_AUDIO_DIR, { recursive: true });
+  console.log('Created local audio directory:', LOCAL_AUDIO_DIR);
 }
 
 // Initialize OpenAI (trim to remove any accidental whitespace/newlines from env vars)
@@ -57,6 +78,168 @@ if (supabase) {
 } else {
   console.log('Supabase not configured - using localStorage fallback');
 }
+
+// ========== EMAIL ALERT UTILITIES ==========
+
+/**
+ * Calculate local storage usage
+ */
+function getLocalStorageUsage() {
+  let totalBytes = 0;
+
+  const calculateDirSize = (dirPath) => {
+    if (!fs.existsSync(dirPath)) return 0;
+    let size = 0;
+    const files = fs.readdirSync(dirPath);
+    for (const file of files) {
+      const filePath = path.join(dirPath, file);
+      const stats = fs.statSync(filePath);
+      if (stats.isDirectory()) {
+        size += calculateDirSize(filePath);
+      } else {
+        size += stats.size;
+      }
+    }
+    return size;
+  };
+
+  totalBytes += calculateDirSize(LOCAL_VIDEO_DIR);
+  totalBytes += calculateDirSize(LOCAL_AUDIO_DIR);
+
+  const totalGB = totalBytes / (1024 * 1024 * 1024);
+  const percentUsed = totalGB / MAX_LOCAL_STORAGE_GB;
+
+  return {
+    bytes: totalBytes,
+    gb: totalGB.toFixed(2),
+    maxGb: MAX_LOCAL_STORAGE_GB,
+    percentUsed: (percentUsed * 100).toFixed(1),
+    isWarning: percentUsed >= STORAGE_WARNING_THRESHOLD && percentUsed < STORAGE_CRITICAL_THRESHOLD,
+    isCritical: percentUsed >= STORAGE_CRITICAL_THRESHOLD
+  };
+}
+
+/**
+ * Send usage warning email (70% threshold)
+ */
+async function sendUsageWarningEmail(usage) {
+  if (!resend || alertsSent.warning) return;
+
+  try {
+    await resend.emails.send({
+      from: 'AI Image Tool Alerts <alerts@foundercommandsystem.com>',
+      to: ALERT_EMAIL,
+      subject: `⚠️ Storage Warning: ${usage.percentUsed}% used`,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">⚠️ Storage Warning</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0;">AI Image Tool - Approaching Storage Limit</p>
+          </div>
+
+          <div style="background: white; padding: 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="background: #fef3c7; padding: 16px; border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 20px;">
+              <p style="margin: 0; color: #92400e; font-weight: bold;">You've used ${usage.percentUsed}% of your ${usage.maxGb}GB storage limit</p>
+            </div>
+
+            <h3 style="color: #1f2937; margin-top: 0;">Current Usage:</h3>
+            <ul style="color: #4b5563;">
+              <li><strong>Used:</strong> ${usage.gb} GB</li>
+              <li><strong>Limit:</strong> ${usage.maxGb} GB</li>
+              <li><strong>Remaining:</strong> ${(usage.maxGb - usage.gb).toFixed(2)} GB</li>
+            </ul>
+
+            <h3 style="color: #1f2937;">Recommended Actions:</h3>
+            <ol style="color: #4b5563;">
+              <li>Review and delete old video files in <code>public/videos/avatars/</code></li>
+              <li>Archive unused audio files from <code>public/audio/</code></li>
+              <li>Consider increasing storage limit or moving to external storage</li>
+            </ol>
+
+            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+              This alert is sent once per server session when usage exceeds 70%.
+            </p>
+          </div>
+        </div>
+      `
+    });
+
+    alertsSent.warning = true;
+    console.log('[ALERT] Usage warning email sent');
+  } catch (error) {
+    console.error('[ALERT] Failed to send warning email:', error);
+  }
+}
+
+/**
+ * Send critical usage email (90% threshold)
+ */
+async function sendUsageCriticalEmail(usage) {
+  if (!resend || alertsSent.critical) return;
+
+  try {
+    await resend.emails.send({
+      from: 'AI Image Tool Alerts <alerts@foundercommandsystem.com>',
+      to: ALERT_EMAIL,
+      subject: `🚨 CRITICAL: Storage at ${usage.percentUsed}%`,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: #dc2626; padding: 30px; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">🚨 CRITICAL ALERT</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0;">AI Image Tool - Storage Almost Full</p>
+          </div>
+
+          <div style="background: white; padding: 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="background: #fef2f2; padding: 16px; border-radius: 8px; border-left: 4px solid #dc2626; margin-bottom: 20px;">
+              <p style="margin: 0; color: #991b1b; font-weight: bold;">URGENT: ${usage.percentUsed}% of storage used!</p>
+              <p style="margin: 8px 0 0 0; color: #b91c1c;">New uploads may fail if storage fills up.</p>
+            </div>
+
+            <h3 style="color: #1f2937; margin-top: 0;">Current Usage:</h3>
+            <ul style="color: #4b5563;">
+              <li><strong>Used:</strong> ${usage.gb} GB</li>
+              <li><strong>Limit:</strong> ${usage.maxGb} GB</li>
+              <li><strong>Remaining:</strong> ${(usage.maxGb - usage.gb).toFixed(2)} GB</li>
+            </ul>
+
+            <h3 style="color: #dc2626;">Immediate Actions Required:</h3>
+            <ol style="color: #4b5563;">
+              <li><strong>Delete old files NOW</strong> from <code>public/videos/avatars/</code></li>
+              <li>Remove unused audio from <code>public/audio/</code></li>
+              <li>Consider archiving to external storage</li>
+            </ol>
+
+            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+              This critical alert is sent once per server session when usage exceeds 90%.
+            </p>
+          </div>
+        </div>
+      `
+    });
+
+    alertsSent.critical = true;
+    console.log('[ALERT] Critical usage email sent');
+  } catch (error) {
+    console.error('[ALERT] Failed to send critical email:', error);
+  }
+}
+
+/**
+ * Check storage and send alerts if needed
+ */
+async function checkStorageAndAlert() {
+  const usage = getLocalStorageUsage();
+
+  if (usage.isCritical) {
+    await sendUsageCriticalEmail(usage);
+  } else if (usage.isWarning) {
+    await sendUsageWarningEmail(usage);
+  }
+
+  return usage;
+}
+
+// ========== END EMAIL ALERT UTILITIES ==========
 
 // Helper: Archive image from temporary URL to permanent Supabase storage
 async function archiveImageToSupabase(tempUrl, userId = 'default') {
@@ -1493,12 +1676,8 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
   }
 });
 
-// Upload audio to Supabase Storage
+// Upload audio to local storage (to avoid Supabase egress costs)
 app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
-  if (!supabase) {
-    return res.status(503).json({ error: 'Supabase not configured' });
-  }
-
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Audio file is required' });
@@ -1507,29 +1686,18 @@ app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
     const fileBuffer = fs.readFileSync(req.file.path);
     const fileName = `audio_${Date.now()}_${req.file.originalname || 'audio.mp3'}`;
 
-    // Upload to Supabase Storage
-    const { data, error } = await supabase.storage
-      .from('ai-tool-images')
-      .upload(`audio/${fileName}`, fileBuffer, {
-        contentType: req.file.mimetype || 'audio/mpeg',
-        upsert: true
-      });
+    // Save to local storage instead of Supabase
+    const localAudioPath = path.join(LOCAL_AUDIO_DIR, fileName);
+    fs.writeFileSync(localAudioPath, fileBuffer);
 
-    // Cleanup local file
+    // Cleanup temp file
     fs.unlinkSync(req.file.path);
 
-    if (error) throw error;
+    // Generate local URL
+    const localUrl = `/audio/${fileName}`;
+    console.log('Audio stored locally:', localUrl);
 
-    // Get signed URL (1 year expiry) instead of public URL to reduce CDN egress
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('ai-tool-images')
-      .createSignedUrl(`audio/${fileName}`, 60 * 60 * 24 * 365); // 1 year expiry
-
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      throw new Error('Failed to create signed URL');
-    }
-
-    res.json({ success: true, url: signedUrlData.signedUrl, path: data.path });
+    res.json({ success: true, url: localUrl, path: localUrl });
   } catch (error) {
     console.error('Audio upload error:', error);
     if (req.file && fs.existsSync(req.file.path)) {
@@ -3729,10 +3897,97 @@ app.post('/api/signed-upload-url', async (req, res) => {
   }
 });
 
+// ========== USAGE MONITORING ENDPOINTS ==========
+
+// Get current storage usage and trigger alerts if needed
+app.get('/api/usage', async (req, res) => {
+  try {
+    const usage = await checkStorageAndAlert();
+    res.json({
+      success: true,
+      storage: {
+        used: `${usage.gb} GB`,
+        limit: `${usage.maxGb} GB`,
+        percentUsed: `${usage.percentUsed}%`,
+        remaining: `${(usage.maxGb - parseFloat(usage.gb)).toFixed(2)} GB`,
+        status: usage.isCritical ? 'critical' : usage.isWarning ? 'warning' : 'ok'
+      },
+      alertsEnabled: !!resend,
+      alertEmail: ALERT_EMAIL
+    });
+  } catch (error) {
+    console.error('Usage check error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manually trigger a test alert email
+app.post('/api/usage/test-alert', async (req, res) => {
+  if (!resend) {
+    return res.status(503).json({ error: 'Resend not configured. Add RESEND_API_KEY to .env' });
+  }
+
+  try {
+    const usage = getLocalStorageUsage();
+
+    await resend.emails.send({
+      from: 'AI Image Tool Alerts <alerts@foundercommandsystem.com>',
+      to: ALERT_EMAIL,
+      subject: `🧪 Test Alert - Storage at ${usage.percentUsed}%`,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">🧪 Test Alert</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0;">AI Image Tool - Alert System Test</p>
+          </div>
+
+          <div style="background: white; padding: 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <p style="color: #4b5563;">This is a test alert to verify your email configuration is working.</p>
+
+            <h3 style="color: #1f2937;">Current Storage Status:</h3>
+            <ul style="color: #4b5563;">
+              <li><strong>Used:</strong> ${usage.gb} GB</li>
+              <li><strong>Limit:</strong> ${usage.maxGb} GB</li>
+              <li><strong>Percentage:</strong> ${usage.percentUsed}%</li>
+              <li><strong>Status:</strong> ${usage.isCritical ? '🚨 Critical' : usage.isWarning ? '⚠️ Warning' : '✅ OK'}</li>
+            </ul>
+
+            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+              Thresholds: Warning at 70%, Critical at 90%
+            </p>
+          </div>
+        </div>
+      `
+    });
+
+    res.json({ success: true, message: `Test alert sent to ${ALERT_EMAIL}` });
+  } catch (error) {
+    console.error('Test alert error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset alert state (allows alerts to be sent again)
+app.post('/api/usage/reset-alerts', (req, res) => {
+  alertsSent.warning = false;
+  alertsSent.critical = false;
+  res.json({ success: true, message: 'Alert state reset. Alerts will be sent again when thresholds are exceeded.' });
+});
+
+// ========== END USAGE MONITORING ENDPOINTS ==========
+
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🎨 AI Image Tool running at http://localhost:${PORT}`);
   if (!process.env.OPENAI_API_KEY) {
     console.warn('⚠️  Warning: OPENAI_API_KEY not set. Add it to .env file.');
+  }
+  if (!resend) {
+    console.warn('⚠️  Warning: RESEND_API_KEY not set. Usage alerts disabled.');
+  } else {
+    console.log('📧 Email alerts enabled. Checking initial storage usage...');
+    // Check storage on startup
+    const usage = await checkStorageAndAlert();
+    console.log(`📊 Storage: ${usage.gb} GB / ${usage.maxGb} GB (${usage.percentUsed}%)`);
   }
 });
