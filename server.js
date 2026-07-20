@@ -11,6 +11,13 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Local video storage configuration (to avoid Supabase egress costs)
+const LOCAL_VIDEO_DIR = path.join(__dirname, 'public', 'videos', 'avatars');
+if (!fs.existsSync(LOCAL_VIDEO_DIR)) {
+  fs.mkdirSync(LOCAL_VIDEO_DIR, { recursive: true });
+  console.log('Created local video directory:', LOCAL_VIDEO_DIR);
+}
+
 // Initialize OpenAI (trim to remove any accidental whitespace/newlines from env vars)
 const openai = new OpenAI({
   apiKey: (process.env.OPENAI_API_KEY || '').trim()
@@ -85,8 +92,18 @@ async function archiveImageToSupabase(tempUrl, userId = 'default') {
       return tempUrl;
     }
 
-    const permanentUrl = `${supabaseUrl}/storage/v1/object/public/ai-tool-images/${imagePath}`;
-    console.log('Image archived permanently:', permanentUrl);
+    // Use signed URL instead of public URL to reduce CDN egress
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('ai-tool-images')
+      .createSignedUrl(imagePath, 60 * 60 * 24 * 365); // 1 year expiry
+
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error('Signed URL error:', signedUrlError);
+      return tempUrl;
+    }
+
+    const permanentUrl = signedUrlData.signedUrl;
+    console.log('Image archived permanently (signed URL):', permanentUrl.substring(0, 80) + '...');
     return permanentUrl;
   } catch (e) {
     console.error('Archive error:', e.message);
@@ -2637,28 +2654,27 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
       return res.status(400).json({ error: 'userId, audioHash, and videoUrl are required' });
     }
 
-    // DOWNLOAD VIDEO AND STORE IN SUPABASE STORAGE (permanent URL)
+    // DOWNLOAD VIDEO AND STORE LOCALLY (to avoid Supabase egress costs)
     let permanentUrl = videoUrl;
     try {
       console.log('Downloading video from Replicate:', videoUrl);
       const videoResponse = await fetch(videoUrl);
       if (videoResponse.ok) {
         const videoBuffer = await videoResponse.arrayBuffer();
-        const videoPath = `avatar-videos/${userId}/${audioHash}.mp4`;
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('ai-tool-images')
-          .upload(videoPath, Buffer.from(videoBuffer), {
-            contentType: 'video/mp4',
-            upsert: true
-          });
-
-        if (!uploadError) {
-          permanentUrl = `${supabaseUrl}/storage/v1/object/public/ai-tool-images/${videoPath}`;
-          console.log('Video stored permanently:', permanentUrl);
-        } else {
-          console.error('Storage upload error:', uploadError);
+        // Create user directory if it doesn't exist
+        const userVideoDir = path.join(LOCAL_VIDEO_DIR, userId);
+        if (!fs.existsSync(userVideoDir)) {
+          fs.mkdirSync(userVideoDir, { recursive: true });
         }
+
+        // Save video locally
+        const localVideoPath = path.join(userVideoDir, `${audioHash}.mp4`);
+        fs.writeFileSync(localVideoPath, Buffer.from(videoBuffer));
+
+        // Generate local URL (served from /videos/avatars/)
+        permanentUrl = `/videos/avatars/${userId}/${audioHash}.mp4`;
+        console.log('Video stored locally:', permanentUrl);
       }
     } catch (downloadErr) {
       console.error('Video download error:', downloadErr);
@@ -3641,6 +3657,37 @@ app.get('/api/supabase-config', (req, res) => {
     anonKey: supabaseKey.trim(),    // Remove any newlines/whitespace
     bucket: 'ai-tool-images'
   });
+});
+
+// Generate signed READ URL for any storage path (reduces CDN egress vs public URLs)
+app.post('/api/signed-read-url', async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  try {
+    const { path } = req.body;
+    if (!path) {
+      return res.status(400).json({ error: 'path is required' });
+    }
+
+    // Generate signed URL with 1 year expiry
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('ai-tool-images')
+      .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year expiry
+
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      throw signedUrlError || new Error('Failed to generate signed URL');
+    }
+
+    res.json({
+      success: true,
+      signedUrl: signedUrlData.signedUrl
+    });
+  } catch (error) {
+    console.error('Signed read URL error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Generate signed upload URL for large files (bypasses Vercel 4.5MB limit AND CORS)

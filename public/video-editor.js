@@ -1,6 +1,28 @@
 // Video Editor Module
 // Handles scene import, audio recording/upload, timeline, captions, effects, and video export
 
+// Helper: Get signed URL for storage path (reduces CDN egress vs public URLs)
+async function getSignedReadUrl(path) {
+  try {
+    const response = await fetch('/api/signed-read-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+
+    if (!response.ok) {
+      console.warn('Failed to get signed URL for:', path);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.signedUrl;
+  } catch (error) {
+    console.warn('Signed URL error:', error.message);
+    return null;
+  }
+}
+
 class VideoEditor {
   constructor() {
     // State
@@ -368,23 +390,25 @@ class VideoEditor {
                 });
 
                 if (uploadResponse.ok) {
-                  const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+                  // Get signed URL instead of public URL to reduce CDN egress
+                  const audioSignedUrl = await getSignedReadUrl(audioPath);
+                  if (audioSignedUrl) {
+                    // Update database with audio_url
+                    await fetch('/api/db/avatar-segments', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        userId,
+                        segmentNum: seg.segment_num,
+                        videoUrl: seg.video_url,
+                        fileName: seg.file_name,
+                        audioUrl: audioSignedUrl
+                      })
+                    });
 
-                  // Update database with audio_url
-                  await fetch('/api/db/avatar-segments', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      userId,
-                      segmentNum: seg.segment_num,
-                      videoUrl: seg.video_url,
-                      fileName: seg.file_name,
-                      audioUrl: audioPublicUrl
-                    })
-                  });
-
-                  this.replacedAudioSegments[seg.segment_num].url = audioPublicUrl;
-                  console.log(`✓ Saved audio_url for segment ${seg.segment_num} to database`);
+                    this.replacedAudioSegments[seg.segment_num].url = audioSignedUrl;
+                    console.log(`✓ Saved audio_url for segment ${seg.segment_num} to database (signed URL)`);
+                  }
                 }
               } catch (uploadErr) {
                 console.warn(`  Failed to upload audio for segment ${seg.segment_num}:`, uploadErr.message);
@@ -3156,24 +3180,26 @@ class VideoEditor {
             });
 
             if (audioUploadResponse.ok) {
-              const audioPublicUrl = `${window.supabaseConfig.url}/storage/v1/object/public/${window.supabaseConfig.bucket}/${audioPath}`;
+              // Get signed URL instead of public URL to reduce CDN egress
+              const audioSignedUrl = await getSignedReadUrl(audioPath);
+              if (audioSignedUrl) {
+                // Save segment to database with audio URL
+                await fetch('/api/db/avatar-segments', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    userId,
+                    segmentNum,
+                    videoUrl: result.videoUrl,
+                    fileName: `avatar_segment_${segmentNum}.mp4`,
+                    audioUrl: audioSignedUrl
+                  })
+                });
 
-              // Save segment to database with audio URL
-              await fetch('/api/db/avatar-segments', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  userId,
-                  segmentNum,
-                  videoUrl: result.videoUrl,
-                  fileName: `avatar_segment_${segmentNum}.mp4`,
-                  audioUrl: audioPublicUrl
-                })
-              });
-
-              // Store in memory for immediate use
-              this.replacedAudioSegments[segmentNum] = { blob: segment.blob, url: audioPublicUrl };
-              console.log(`Segment ${segmentNum} saved to database with audio URL`);
+                // Store in memory for immediate use
+                this.replacedAudioSegments[segmentNum] = { blob: segment.blob, url: audioSignedUrl };
+                console.log(`Segment ${segmentNum} saved to database with audio URL (signed URL)`);
+              }
             }
           } catch (dbError) {
             console.warn(`Failed to save segment ${i + 1} to database:`, dbError.message);
@@ -10374,7 +10400,11 @@ async function generateAvatarOnly() {
       throw new Error('Failed to upload avatar image');
     }
 
-    const avatarPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${avatarPath}`;
+    // Get signed URL instead of public URL to reduce CDN egress
+    const avatarPublicUrl = await getSignedReadUrl(avatarPath);
+    if (!avatarPublicUrl) {
+      throw new Error('Failed to get signed URL for avatar image');
+    }
 
     // Split audio into segments if needed
     const audioSegments = await videoEditor.splitAudioForAvatar();
@@ -10446,7 +10476,11 @@ async function generateAvatarOnly() {
         throw new Error(`Failed to upload audio segment ${i + 1}`);
       }
 
-      const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+      // Get signed URL instead of public URL to reduce CDN egress
+      const audioPublicUrl = await getSignedReadUrl(audioPath);
+      if (!audioPublicUrl) {
+        throw new Error(`Failed to get signed URL for audio segment ${i + 1}`);
+      }
 
       // Generate avatar for this segment
       statusEl.textContent = `Starting avatar ${i + 1}/${audioSegments.length}...`;
@@ -10835,7 +10869,11 @@ async function generateSegmentWithNewAudio() {
       body: videoEditor.avatarPhotoBlob
     });
 
-    const avatarPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${avatarPath}`;
+    // Get signed URL for avatar (reduces CDN egress vs public URLs)
+    const avatarSignedUrl = await getSignedReadUrl(avatarPath);
+    if (!avatarSignedUrl) {
+      throw new Error('Failed to get signed URL for avatar');
+    }
 
     // Upload audio file
     const audioPath = `audio/segment-${segmentNum}-${Date.now()}.${audioFile.name.split('.').pop()}`;
@@ -10852,7 +10890,11 @@ async function generateSegmentWithNewAudio() {
       body: audioFile
     });
 
-    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+    // Get signed URL for audio (reduces CDN egress vs public URLs)
+    const audioSignedUrl = await getSignedReadUrl(audioPath);
+    if (!audioSignedUrl) {
+      throw new Error('Failed to get signed URL for audio');
+    }
 
     // Get selected model
     const selectedModel = document.getElementById('avatar-model-select')?.value || 'musetalk';
@@ -10869,8 +10911,8 @@ async function generateSegmentWithNewAudio() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        avatarUrl: avatarPublicUrl,
-        audioUrl: audioPublicUrl
+        avatarUrl: avatarSignedUrl,
+        audioUrl: audioSignedUrl
       })
     });
 
@@ -10901,7 +10943,7 @@ async function generateSegmentWithNewAudio() {
     if (typeof videoEditor !== 'undefined') {
       videoEditor.replacedAudioSegments[segmentNum] = {
         blob: audioFile,
-        url: audioPublicUrl
+        url: audioSignedUrl
       };
       // Clear cached stitched audio so it gets re-generated with new replacement
       videoEditor.stitchedAudioBlob = null;
@@ -10919,7 +10961,7 @@ async function generateSegmentWithNewAudio() {
           segmentNum,
           videoUrl: videoUrl,
           fileName: `avatar_segment_${segmentNum}.mp4`,
-          audioUrl: audioPublicUrl  // Save clean audio URL for persistence!
+          audioUrl: audioSignedUrl  // Save signed audio URL for persistence!
         })
       });
       console.log(`Saved segment ${segmentNum} to database with audio URL`);
@@ -10984,8 +11026,12 @@ async function repairSegmentAudio(segmentNum, audioFile) {
       body: audioFile
     });
 
-    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
-    console.log(`Audio uploaded for segment ${segmentNum}:`, audioPublicUrl);
+    // Get signed URL for audio (reduces CDN egress vs public URLs)
+    const audioSignedUrl = await getSignedReadUrl(audioPath);
+    if (!audioSignedUrl) {
+      throw new Error('Failed to get signed URL for audio');
+    }
+    console.log(`Audio uploaded for segment ${segmentNum}:`, audioSignedUrl);
 
     // Update database with audio URL
     const userId = localStorage.getItem('ai_tool_user_id') || videoEditor?.userId;
@@ -11005,7 +11051,7 @@ async function repairSegmentAudio(segmentNum, audioFile) {
             segmentNum,
             videoUrl: existingSegment.video_url,
             fileName: existingSegment.file_name,
-            audioUrl: audioPublicUrl
+            audioUrl: audioSignedUrl
           })
         });
         console.log(`Database updated with audio URL for segment ${segmentNum}`);
@@ -11016,7 +11062,7 @@ async function repairSegmentAudio(segmentNum, audioFile) {
     if (typeof videoEditor !== 'undefined') {
       videoEditor.replacedAudioSegments[segmentNum] = {
         blob: audioFile,
-        url: audioPublicUrl
+        url: audioSignedUrl
       };
       videoEditor.stitchedAudioBlob = null;
     }
@@ -11093,8 +11139,13 @@ async function repairAllSegmentsAudio() {
           body: audioSegment.blob
         });
 
-        const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
-        console.log(`✓ Uploaded clean audio for segment ${segmentNum}:`, audioPublicUrl);
+        // Get signed URL for audio (reduces CDN egress vs public URLs)
+        const audioSignedUrl = await getSignedReadUrl(audioPath);
+        if (!audioSignedUrl) {
+          console.warn(`Failed to get signed URL for segment ${segmentNum}`);
+          continue;
+        }
+        console.log(`✓ Uploaded clean audio for segment ${segmentNum}:`, audioSignedUrl);
 
         // Update database with audio URL
         await fetch('/api/db/avatar-segments', {
@@ -11105,14 +11156,14 @@ async function repairAllSegmentsAudio() {
             segmentNum,
             videoUrl: seg.video_url,
             fileName: seg.file_name,
-            audioUrl: audioPublicUrl
+            audioUrl: audioSignedUrl
           })
         });
 
         // Store in memory for immediate use
         videoEditor.replacedAudioSegments[segmentNum] = {
           blob: audioSegment.blob,
-          url: audioPublicUrl
+          url: audioSignedUrl
         };
 
         repaired++;
@@ -11273,9 +11324,12 @@ async function handleSegmentUpload(segmentNum, file) {
       throw new Error('Failed to upload video to cloud');
     }
 
-    // Permanent URL that persists
-    const permanentUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${videoPath}`;
-    console.log(`Segment ${segmentNum} uploaded to:`, permanentUrl);
+    // Get signed URL (reduces CDN egress vs public URLs)
+    const signedUrl = await getSignedReadUrl(videoPath);
+    if (!signedUrl) {
+      throw new Error('Failed to get signed URL for video');
+    }
+    console.log(`Segment ${segmentNum} uploaded with signed URL:`, signedUrl);
 
     // Get actual video duration to fix segment boundary sync issues
     let actualDuration = 90; // Fallback
@@ -11302,9 +11356,9 @@ async function handleSegmentUpload(segmentNum, file) {
       console.log(`Could not detect duration for segment ${segmentNum}, using 90s fallback`);
     }
 
-    // Store in memory for export (with permanent URL and actual duration)
+    // Store in memory for export (with signed URL and actual duration)
     window.uploadedAvatarSegments[segmentNum] = {
-      url: permanentUrl,
+      url: signedUrl,
       fileName: file.name,
       duration: actualDuration,
       actualDuration: actualDuration
@@ -11325,9 +11379,9 @@ async function handleSegmentUpload(segmentNum, file) {
       body: JSON.stringify({
         userId,
         segmentNum,
-        videoUrl: permanentUrl,
+        videoUrl: signedUrl,
         fileName: file.name,
-        audioUrl: audioPublicUrl  // Now persists the extracted audio URL!
+        audioUrl: audioPublicUrl  // null - using clean TTS audio
       })
     });
     const dbResult = await dbResponse.json();
@@ -11346,7 +11400,7 @@ async function handleSegmentUpload(segmentNum, file) {
       <div style="font-size: 24px; margin-bottom: 5px;">✅</div>
       <div style="font-weight: bold; color: var(--text-primary, #fff);">Segment ${segmentNum}</div>
       <div style="font-size: 12px; color: #22c55e; margin-top: 5px;">${file.name}</div>
-      <button onclick="previewSegment('${permanentUrl}')" style="
+      <button onclick="previewSegment('${signedUrl}')" style="
         margin-top: 8px;
         padding: 4px 8px;
         background: var(--bg-tertiary, #333);
@@ -11493,7 +11547,11 @@ async function regenerateSegment(segmentIndex, audioFile, avatarUrl, config) {
       throw new Error('Failed to upload replacement audio');
     }
 
-    const audioPublicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${audioPath}`;
+    // Get signed URL for audio (reduces CDN egress vs public URLs)
+    const audioSignedUrl = await getSignedReadUrl(audioPath);
+    if (!audioSignedUrl) {
+      throw new Error('Failed to get signed URL for audio');
+    }
 
     // Generate new avatar video
     statusEl.textContent = `Generating new avatar for segment ${segmentIndex + 1}...`;
@@ -11503,7 +11561,7 @@ async function regenerateSegment(segmentIndex, audioFile, avatarUrl, config) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         avatarUrl: avatarUrl,
-        audioUrl: audioPublicUrl
+        audioUrl: audioSignedUrl
       })
     });
 
