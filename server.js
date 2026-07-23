@@ -2147,12 +2147,14 @@ Your job is to read a script and create ${sceneCount} distinct visual scene desc
 
       systemPrompt += `
 
-CRITICAL: Even if the script mentions business/corporate concepts, you MUST translate them into settings that match the brand aesthetic above.
-- Instead of "office" → use "cozy home workspace with soft lighting"
-- Instead of "boardroom" → use "comfortable living room" or "peaceful outdoor setting"
-- Instead of "business meeting" → use "heartfelt conversation in a warm space"
-- Instead of "presentation" → use "intimate sharing moment"
-All scenes must feel ${brandRules.mood || 'warm and inviting'}, never cold or corporate.`;
+CRITICAL: Keep the script content (office, Zoom, sales, business) but STYLE everything with the brand aesthetic above.
+Examples of brand-styled business scenes:
+- Office with warm golden lighting, soft pink/coral/purple accents, plants, cozy textures
+- Zoom call in a beautifully styled home office with cream walls, warm glow, feminine touches
+- Business conversation in a sunlit space with soft shadows, nurturing atmosphere
+- Desk/workspace with warm wood tones, soft fabrics, gentle lighting (never harsh fluorescent)
+- Professional setting that feels inviting, heart-centered, empowering
+The CONTENT is business/professional, but the AESTHETIC must be ${brandRules.mood || 'warm and inviting'} with ${brandRules.colors || 'warm colors'}.`;
     }
 
     // Add avatar as main character if included
