@@ -1,3 +1,15 @@
+// ==== DEFAULT SETTINGS ====
+// Default avatar description (auto-loads when user's description is empty)
+const DEFAULT_AVATAR_DESCRIPTION = `The character has long, flowing hair with deep, lustrous waves that cascade over her shoulders, exhibiting a rich, dark brown hue. Her complexion is warm and radiant, a deep caramel brown that glows with a healthy sheen. Her eyes are large and expressive, a deep amber brown that sparkles with intelligence and warmth, framed by thick, curled eyelashes that accentuate their almond shape. Her face is oval-shaped with high cheekbones and a gently rounded chin, giving her a look of approachable elegance. She wears a bright, confident smile, highlighted by full lips with a glossy finish. Dressed in a striking red top with decorative ruffles, she exudes a vibrant and confident style, further accentuated by a collection of motivational decor in the background, suggesting a personality devoted to inspiration and empowerment. Her overall aesthetic blends warmth, charisma, and a modern, chic style.`;
+
+// Default brand rules (auto-loads when user's brand rules are empty)
+const DEFAULT_BRAND_RULES = {
+  mood: 'Warm, soft, nurturing, feminine, heart-centered, empowering',
+  lighting: 'Soft golden light, warm tones, cozy atmosphere',
+  colors: 'Soft pinks, warm corals, muted purples, cream, gold accents',
+  avoid: 'Corporate blue, harsh lighting, masculine boardroom vibes, cold/sterile environments, aggressive imagery'
+};
+
 // ==== CACHING UTILITIES ====
 // Generate hash for caching (works with blobs, strings, or ArrayBuffers)
 async function generateCacheHash(data) {
@@ -4384,7 +4396,8 @@ async function initSupabaseSync() {
     if (dbAvatar && dbAvatar.imageData) {
       avatarEnabled = dbAvatar.enabled;
       avatarImageData = dbAvatar.imageData;
-      avatarDescription = dbAvatar.description;
+      // Use default description if database description is empty
+      avatarDescription = dbAvatar.description || DEFAULT_AVATAR_DESCRIPTION;
 
       // Update UI with avatar from DB
       const avatarImage = document.getElementById('avatar-image');
@@ -4399,7 +4412,7 @@ async function initSupabaseSync() {
 
       // Update description display
       const descEl = document.getElementById('avatar-description');
-      if (descEl && avatarDescription) {
+      if (descEl) {
         descEl.value = avatarDescription;
       }
 
@@ -4408,6 +4421,14 @@ async function initSupabaseSync() {
       if (checkbox) checkbox.checked = avatarEnabled;
 
       console.log('Avatar loaded from Supabase');
+    } else {
+      // No saved avatar - initialize description field with default
+      const descEl = document.getElementById('avatar-description');
+      if (descEl && !descEl.value) {
+        descEl.value = DEFAULT_AVATAR_DESCRIPTION;
+        avatarDescription = DEFAULT_AVATAR_DESCRIPTION;
+        console.log('Initialized avatar description with default');
+      }
     }
 
     // Load thumbnail history from Supabase
@@ -4467,38 +4488,55 @@ async function loadBrandRulesFromDB() {
     const response = await fetch(`/api/db/brand-rules/${userId}`);
     const data = await response.json();
 
+    // Determine which values to use (database values or defaults)
+    let rules = {};
     if (data.success && data.brandRules) {
-      const rules = data.brandRules;
-
-      // Update UI with loaded values
-      const moodEl = document.getElementById('brand-mood');
-      const lightingEl = document.getElementById('brand-lighting');
-      const colorsEl = document.getElementById('brand-colors');
-      const avoidEl = document.getElementById('brand-avoid');
-      const enabledEl = document.getElementById('brand-enabled');
-
-      if (moodEl) moodEl.value = rules.mood || '';
-      if (lightingEl) lightingEl.value = rules.lighting || '';
-      if (colorsEl) colorsEl.value = rules.colors || '';
-      if (avoidEl) avoidEl.value = rules.avoid || '';
-      if (enabledEl) {
-        enabledEl.checked = rules.enabled === true;
-        // Update the global variable
-        brandBlockEnabled = rules.enabled === true;
-
-        // Update the status label in header
-        const statusEl = document.getElementById('brand-status');
-        if (statusEl) {
-          statusEl.textContent = brandBlockEnabled ? 'Active' : 'Off';
-          statusEl.classList.toggle('active', brandBlockEnabled);
-        }
-        console.log('Brand enabled set to:', rules.enabled);
-      }
-
-      console.log('Brand rules loaded from Supabase:', rules);
+      rules = data.brandRules;
     }
+
+    // Update UI with loaded values (use defaults if empty)
+    const moodEl = document.getElementById('brand-mood');
+    const lightingEl = document.getElementById('brand-lighting');
+    const colorsEl = document.getElementById('brand-colors');
+    const avoidEl = document.getElementById('brand-avoid');
+    const enabledEl = document.getElementById('brand-enabled');
+
+    if (moodEl) moodEl.value = rules.mood || DEFAULT_BRAND_RULES.mood;
+    if (lightingEl) lightingEl.value = rules.lighting || DEFAULT_BRAND_RULES.lighting;
+    if (colorsEl) colorsEl.value = rules.colors || DEFAULT_BRAND_RULES.colors;
+    if (avoidEl) avoidEl.value = rules.avoid || DEFAULT_BRAND_RULES.avoid;
+    if (enabledEl) {
+      enabledEl.checked = rules.enabled === true;
+      // Update the global variable
+      brandBlockEnabled = rules.enabled === true;
+
+      // Update the status label in header
+      const statusEl = document.getElementById('brand-status');
+      if (statusEl) {
+        statusEl.textContent = brandBlockEnabled ? 'Active' : 'Off';
+        statusEl.classList.toggle('active', brandBlockEnabled);
+      }
+      console.log('Brand enabled set to:', rules.enabled);
+    }
+
+    console.log('Brand rules loaded (with defaults if needed):', {
+      mood: moodEl?.value,
+      lighting: lightingEl?.value,
+      colors: colorsEl?.value,
+      avoid: avoidEl?.value
+    });
   } catch (error) {
     console.error('Failed to load brand rules:', error);
+    // If error occurs, still populate with defaults
+    const moodEl = document.getElementById('brand-mood');
+    const lightingEl = document.getElementById('brand-lighting');
+    const colorsEl = document.getElementById('brand-colors');
+    const avoidEl = document.getElementById('brand-avoid');
+
+    if (moodEl && !moodEl.value) moodEl.value = DEFAULT_BRAND_RULES.mood;
+    if (lightingEl && !lightingEl.value) lightingEl.value = DEFAULT_BRAND_RULES.lighting;
+    if (colorsEl && !colorsEl.value) colorsEl.value = DEFAULT_BRAND_RULES.colors;
+    if (avoidEl && !avoidEl.value) avoidEl.value = DEFAULT_BRAND_RULES.avoid;
   }
 }
 
