@@ -4162,9 +4162,31 @@ function handlePreviewAudioFile(file) {
   timeoutId = setTimeout(() => {
     if (metadataLoaded) return;
     metadataLoaded = true;
-    console.error('[AUDIO DEBUG] Timeout after 5 seconds');
-    showToast('Audio loading timed out. File may be corrupted or unsupported.', 'error');
-    URL.revokeObjectURL(blobUrl);
+    console.error('[AUDIO DEBUG] Timeout after 5 seconds - using fallback');
+
+    // FALLBACK: Skip duration detection, just use the file
+    console.log('[AUDIO DEBUG] Attempting fallback upload without duration...');
+    showToast('Loading audio without duration info - you can manually set timing', 'warning');
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      previewAudioData = e.target.result;
+      previewAudioDuration = 0; // Will need manual timing
+
+      audioNameEl.textContent = file.name;
+      audioDurationEl.textContent = 'Unknown (manual timing needed)';
+      placeholder.hidden = true;
+      loadedSection.hidden = false;
+
+      try {
+        await saveAudioToDB('previewAudio', previewAudioData, file.name, 0);
+      } catch (err) {
+        console.warn('[AUDIO DEBUG] Save failed:', err);
+      }
+
+      URL.revokeObjectURL(blobUrl);
+    };
+    reader.readAsDataURL(file);
   }, 5000);
 
   // Start loading
