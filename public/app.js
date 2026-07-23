@@ -4067,71 +4067,110 @@ function setupPreviewAudioUpload() {
 }
 
 // Handle preview audio file
-async function handlePreviewAudioFile(file) {
+function handlePreviewAudioFile(file) {
   console.log('[AUDIO DEBUG] handlePreviewAudioFile called with file:', file.name);
   const placeholder = document.getElementById('preview-audio-placeholder');
   const loadedSection = document.getElementById('preview-audio-loaded');
   const audioNameEl = document.getElementById('preview-audio-name');
   const audioDurationEl = document.getElementById('preview-audio-duration');
 
-  try {
-    // Use Web Audio API to decode the file (more reliable than Audio element)
-    console.log('[AUDIO DEBUG] Reading file as ArrayBuffer...');
-    const arrayBuffer = await file.arrayBuffer();
-    console.log('[AUDIO DEBUG] ArrayBuffer created, size:', arrayBuffer.byteLength);
+  // First, clear any old corrupted data from IndexedDB
+  console.log('[AUDIO DEBUG] Clearing old audio data...');
+  deleteAudioFromDB('previewAudio').catch(() => {});
 
-    console.log('[AUDIO DEBUG] Creating AudioContext...');
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  // Create blob URL (lightweight, no encoding)
+  console.log('[AUDIO DEBUG] Creating blob URL...');
+  const blobUrl = URL.createObjectURL(file);
 
-    console.log('[AUDIO DEBUG] Decoding audio data...');
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    console.log('[AUDIO DEBUG] Audio decoded successfully, duration:', audioBuffer.duration);
+  // Create audio element
+  const tempAudio = document.createElement('audio');
+  tempAudio.preload = 'metadata';
 
-    previewAudioDuration = audioBuffer.duration;
-    audioContext.close();
+  let metadataLoaded = false;
+  let timeoutId = null;
 
-    // Convert file to base64 for storage
-    console.log('[AUDIO DEBUG] Converting to base64 for storage...');
+  // Success handler
+  const handleSuccess = async () => {
+    if (metadataLoaded) return;
+    metadataLoaded = true;
+    clearTimeout(timeoutId);
+
+    console.log('[AUDIO DEBUG] Metadata loaded! Duration:', tempAudio.duration);
+
+    if (!tempAudio.duration || isNaN(tempAudio.duration) || tempAudio.duration === Infinity) {
+      console.error('[AUDIO DEBUG] Invalid duration:', tempAudio.duration);
+      showToast('Audio file loaded but duration is invalid. Try converting to MP3.', 'error');
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
+
+    previewAudioDuration = tempAudio.duration;
+
+    // Convert to base64 for storage
+    console.log('[AUDIO DEBUG] Converting to base64...');
     const reader = new FileReader();
 
-    reader.onerror = (e) => {
-      console.error('[AUDIO DEBUG] FileReader error:', e);
-      throw new Error('Failed to read audio file');
-    };
-
     reader.onload = async (e) => {
-      console.log('[AUDIO DEBUG] FileReader loaded, data length:', e.target.result.length);
       previewAudioData = e.target.result;
 
       // Update UI
       audioNameEl.textContent = file.name;
       audioDurationEl.textContent = formatTime(previewAudioDuration);
-
       placeholder.hidden = true;
       loadedSection.hidden = false;
 
-      // Save to IndexedDB for persistence
+      // Save to IndexedDB
       try {
-        console.log('[AUDIO DEBUG] Saving to IndexedDB...');
         await saveAudioToDB('previewAudio', previewAudioData, file.name, previewAudioDuration);
-        console.log('[AUDIO DEBUG] Audio saved to IndexedDB');
+        console.log('[AUDIO DEBUG] Saved to IndexedDB');
       } catch (err) {
-        console.error('[AUDIO DEBUG] Failed to save audio to IndexedDB:', err);
+        console.warn('[AUDIO DEBUG] IndexedDB save failed:', err);
       }
 
-      // Re-check sync with current script
       updateScriptStats();
-
-      console.log('[AUDIO DEBUG] Audio upload complete!');
       showToast(`Audio loaded: ${file.name} (${formatTime(previewAudioDuration)})`, 'success');
+      URL.revokeObjectURL(blobUrl);
+    };
+
+    reader.onerror = () => {
+      showToast('Failed to process audio file', 'error');
+      URL.revokeObjectURL(blobUrl);
     };
 
     reader.readAsDataURL(file);
+  };
 
-  } catch (error) {
-    console.error('[AUDIO DEBUG] Audio processing failed:', error);
-    showToast(`Failed to load audio: ${error.message}`, 'error');
-  }
+  // Set up event listeners
+  tempAudio.addEventListener('loadedmetadata', handleSuccess);
+  tempAudio.addEventListener('canplay', handleSuccess);
+  tempAudio.addEventListener('durationchange', () => {
+    if (tempAudio.duration && tempAudio.duration !== Infinity) {
+      handleSuccess();
+    }
+  });
+
+  tempAudio.addEventListener('error', (e) => {
+    if (metadataLoaded) return;
+    metadataLoaded = true;
+    clearTimeout(timeoutId);
+    console.error('[AUDIO DEBUG] Audio error:', tempAudio.error);
+    showToast('Failed to load audio. Try converting to MP3 format.', 'error');
+    URL.revokeObjectURL(blobUrl);
+  });
+
+  // Set timeout (5 seconds should be enough for metadata)
+  timeoutId = setTimeout(() => {
+    if (metadataLoaded) return;
+    metadataLoaded = true;
+    console.error('[AUDIO DEBUG] Timeout after 5 seconds');
+    showToast('Audio loading timed out. File may be corrupted or unsupported.', 'error');
+    URL.revokeObjectURL(blobUrl);
+  }, 5000);
+
+  // Start loading
+  console.log('[AUDIO DEBUG] Starting audio load...');
+  tempAudio.src = blobUrl;
+  tempAudio.load();
 }
 
 // Play preview audio
