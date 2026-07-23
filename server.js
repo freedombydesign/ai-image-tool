@@ -1544,7 +1544,7 @@ app.post('/api/generate-with-face', upload.single('faceImage'), async (req, res)
         input: {
           image: faceBase64,
           prompt: prompt,
-          negative_prompt: negativePrompt || 'blurry, low quality, distorted face, bad anatomy, ugly, disfigured, different person, changed face',
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted face, bad anatomy, ugly, disfigured, different person, changed face, cropped face, cut off face, tight framing, face out of frame, missing top of head',
           width: parseInt(width) || 1024,
           height: parseInt(height) || 1024,
           num_steps: 20,
@@ -1659,7 +1659,7 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
         input: {
           image: refBase64,
           prompt: prompt,
-          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, deformed',
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, deformed, cropped face, cut off face, tight framing, face out of frame, missing top of head',
           width: finalWidth,
           height: finalHeight,
           num_inference_steps: 30,
@@ -2196,11 +2196,19 @@ CHARACTER INTEGRATION RULES:
 2. Do NOT show static poses - show the character IN ACTION with dynamic body language
 3. PRESERVE: Deep caramel brown skin, gap in teeth, face features, hair style
 4. VARY: Clothing, accessories, poses, angles, expressions
-4. Translate script concepts into visual actions that match the brand aesthetic
-5. Use visual metaphors WITH the character in brand-appropriate settings
-6. Vary the character's position, pose, and action in each scene
-7. Show the character from different angles: front, side, over-shoulder, close-ups
-8. Character expressions should match emotions: confident, empathetic, excited, thoughtful`;
+
+📸 FRAMING & COMPOSITION (CRITICAL):
+- Medium shot or medium close-up composition (head, shoulders, upper body visible)
+- FULL FACE must be in frame - do NOT crop top of head, chin, or sides of face
+- Leave breathing room around the character (not tight/claustrophobic framing)
+- Well-balanced composition with character properly centered or using rule of thirds
+- Avoid extreme close-ups that cut off facial features
+
+5. Translate script concepts into visual actions that match the brand aesthetic
+6. Use visual metaphors WITH the character in brand-appropriate settings
+7. Vary the character's position, pose, and action in each scene
+8. Show the character from different angles: front, side, over-shoulder perspectives
+9. Character expressions should match emotions: confident, empathetic, excited, thoughtful`;
     }
 
     systemPrompt += `
