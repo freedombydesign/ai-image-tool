@@ -4076,14 +4076,50 @@ function handlePreviewAudioFile(file) {
 
   // Use blob URL for better performance with large files
   console.log('[AUDIO DEBUG] Creating blob URL for audio...');
+
+  // Check codec support
+  const testAudio = new Audio();
+  const m4aSupport = testAudio.canPlayType('audio/x-m4a');
+  const mp4Support = testAudio.canPlayType('audio/mp4');
+  console.log('[AUDIO DEBUG] Codec support - x-m4a:', m4aSupport, 'mp4:', mp4Support);
+
   const blobUrl = URL.createObjectURL(file);
   console.log('[AUDIO DEBUG] Blob URL created:', blobUrl);
 
-  const tempAudio = new Audio(blobUrl);
+  const tempAudio = new Audio();
+  tempAudio.preload = 'metadata';
+
+  // Add all event listeners to see what's happening
+  tempAudio.addEventListener('loadstart', () => {
+    console.log('[AUDIO DEBUG] loadstart event fired');
+  });
+
+  tempAudio.addEventListener('progress', () => {
+    console.log('[AUDIO DEBUG] progress event fired');
+  });
+
+  tempAudio.addEventListener('canplay', () => {
+    console.log('[AUDIO DEBUG] canplay event fired');
+  });
+
+  tempAudio.addEventListener('canplaythrough', () => {
+    console.log('[AUDIO DEBUG] canplaythrough event fired');
+  });
+
+  tempAudio.addEventListener('stalled', () => {
+    console.log('[AUDIO DEBUG] stalled event fired');
+  });
+
+  tempAudio.addEventListener('suspend', () => {
+    console.log('[AUDIO DEBUG] suspend event fired');
+  });
 
   tempAudio.addEventListener('error', (err) => {
     console.error('[AUDIO DEBUG] Audio element error:', err, tempAudio.error);
-    showToast('Error loading audio file. Try a different format (MP3, WAV)', 'error');
+    if (tempAudio.error) {
+      console.error('[AUDIO DEBUG] Error details - code:', tempAudio.error.code, 'message:', tempAudio.error.message);
+    }
+    showToast('Error loading audio file. Try converting to MP3 format.', 'error');
     URL.revokeObjectURL(blobUrl);
   });
 
@@ -4131,6 +4167,12 @@ function handlePreviewAudioFile(file) {
 
     reader.readAsDataURL(file);
   });
+
+  // Set source and trigger load
+  console.log('[AUDIO DEBUG] Setting audio src and triggering load...');
+  tempAudio.src = blobUrl;
+  tempAudio.load();
+  console.log('[AUDIO DEBUG] Audio load() called');
 
   // Set a timeout for metadata loading
   setTimeout(() => {
