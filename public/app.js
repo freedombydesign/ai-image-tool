@@ -1734,6 +1734,24 @@ async function convertScriptToVisualScenes() {
         body: JSON.stringify(requestPayload)
       });
 
+      // Check if response is OK before parsing JSON
+      if (!response.ok) {
+        let errorMessage = `Server error: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          // If response isn't JSON, try to get text
+          try {
+            const errorText = await response.text();
+            errorMessage = errorText || errorMessage;
+          } catch (e2) {
+            // Use default error message
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
       data = await response.json();
 
       if (data.error) {
