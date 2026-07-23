@@ -2615,9 +2615,13 @@ async function generatePreviewScenes() {
         const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
         const [width, height] = size.split('x').map(Number);
 
+        // Enhance prompt with art style instructions for InstantID
+        const artStylePrefix = 'Cinematic 2D animation style, illustrated digital art, professional character illustration. ';
+        const enhancedPrompt = artStylePrefix + styledPrompt;
+
         const formData = new FormData();
         formData.append('referenceImage', avatarBlob, 'avatar.png');
-        formData.append('prompt', styledPrompt);
+        formData.append('prompt', enhancedPrompt);
         formData.append('width', width);
         formData.append('height', height);
         formData.append('styleStrength', stylePriority ? 'low' : 'high');
@@ -2779,9 +2783,13 @@ async function generateBatchScenes() {
         const avatarBlob = await fetch(avatarImageData).then(r => r.blob());
         const [width, height] = size.split('x').map(Number);
 
+        // Enhance prompt with art style instructions for InstantID
+        const artStylePrefix = 'Cinematic 2D animation style, illustrated digital art, professional character illustration. ';
+        const enhancedPrompt = artStylePrefix + styledPrompt;
+
         const formData = new FormData();
         formData.append('referenceImage', avatarBlob, 'avatar.png');
-        formData.append('prompt', styledPrompt);
+        formData.append('prompt', enhancedPrompt);
         formData.append('width', width);
         formData.append('height', height);
         formData.append('styleStrength', stylePriority ? 'low' : 'high');

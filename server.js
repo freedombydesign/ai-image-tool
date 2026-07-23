@@ -1645,8 +1645,9 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
     const INSTANTID_VERSION = '491ddf5be6b827f8931f088ef10c6d015f6d99685e6454e6f04c8ac298979686';
 
     // Style strength: 'high' = prioritize identity, 'low' = prioritize style
-    // For illustrated/animated avatars, lower values preserve art style better
-    const identityStrength = styleStrength === 'high' ? 0.8 : 0.35;
+    // For illustrated/animated avatars, balanced values preserve BOTH identity and art style
+    // 0.55 = sweet spot for cinematic 2D animation while maintaining facial identity
+    const identityStrength = styleStrength === 'high' ? 0.8 : 0.55;
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
