@@ -2616,7 +2616,8 @@ async function generatePreviewScenes() {
         const [width, height] = size.split('x').map(Number);
 
         // Enhance prompt with art style instructions for InstantID
-        const artStylePrefix = 'Cinematic 2D animation style, illustrated digital art, professional character illustration. ';
+        // Strong art style directive to ensure consistency across all scenes
+        const artStylePrefix = 'IMPORTANT: Cinematic 2D animation style, illustrated digital art, professional character illustration, NOT photorealistic, NOT realistic photo. Scene: ';
         const enhancedPrompt = artStylePrefix + styledPrompt;
 
         const formData = new FormData();
@@ -2784,7 +2785,8 @@ async function generateBatchScenes() {
         const [width, height] = size.split('x').map(Number);
 
         // Enhance prompt with art style instructions for InstantID
-        const artStylePrefix = 'Cinematic 2D animation style, illustrated digital art, professional character illustration. ';
+        // Strong art style directive to ensure consistency across all scenes
+        const artStylePrefix = 'IMPORTANT: Cinematic 2D animation style, illustrated digital art, professional character illustration, NOT photorealistic, NOT realistic photo. Scene: ';
         const enhancedPrompt = artStylePrefix + styledPrompt;
 
         const formData = new FormData();

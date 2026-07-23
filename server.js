@@ -1660,7 +1660,7 @@ app.post('/api/generate-with-reference', upload.single('referenceImage'), async 
         input: {
           image: refBase64,
           prompt: prompt,
-          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, deformed, cropped face, cut off face, tight framing, face out of frame, missing top of head',
+          negative_prompt: negativePrompt || 'blurry, low quality, distorted, bad anatomy, ugly, deformed, cropped face, cut off face, tight framing, face out of frame, missing top of head, realistic photo, photorealistic, photograph, 3D render',
           width: finalWidth,
           height: finalHeight,
           num_inference_steps: 30,
