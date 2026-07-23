@@ -1052,10 +1052,10 @@ app.post('/api/face-swap', upload.fields([
     const sourceFile = req.files['sourceImage']?.[0];
     const faceFile = req.files['faceImage']?.[0];
 
-    // Optional weight parameter (0.0-1.0, default 0.85)
+    // Optional weight parameter (0.0-1.0, default 0.75)
     // Lower values = more blending with original, less eye stretching
     // Higher values = more replacement, stronger avatar features
-    const weight = parseFloat(req.body.weight || 0.85);
+    const weight = parseFloat(req.body.weight || 0.75);
     if (weight < 0 || weight > 1) {
       return res.status(400).json({ error: 'Weight must be between 0 and 1' });
     }
@@ -2172,19 +2172,30 @@ The CONTENT is business/professional, but the AESTHETIC must be ${brandRules.moo
       systemPrompt += `
 
 MAIN CHARACTER - FEATURE THIS PERSON IN EVERY SCENE:
-${avatarDescription}
 
-🎯 CRITICAL - SKIN TONE ACCURACY:
-The character's complexion is DEEP CARAMEL BROWN - a rich, warm brown skin tone. This is NON-NEGOTIABLE.
-Do not lighten or change the skin tone. Deep caramel brown complexion in EVERY scene.
+🎯 CRITICAL PHYSICAL FEATURES (NEVER CHANGE):
+- Complexion: DEEP CARAMEL BROWN - rich, warm brown skin tone (NON-NEGOTIABLE, do not lighten)
+- Hair: Long, flowing dark brown waves with lustrous sheen, cascading past shoulders
+- Eyes: Large, expressive deep amber brown eyes with thick curled lashes, almond-shaped
+- Face: Oval-shaped with high cheekbones, gently rounded chin
+- Smile: Bright, confident smile with DISTINCT GAP BETWEEN FRONT TEETH (essential feature)
+- Overall vibe: Warm, charismatic, approachable elegance
+
+🎨 CLOTHING VARIETY (CHANGE EVERY SCENE):
+DO NOT dress the character in the same outfit twice. Each scene must show DIFFERENT clothing:
+- Scene 1: Maybe business blazer with blouse
+- Scene 2: Cozy sweater or cardigan
+- Scene 3: Elegant dress or jumpsuit
+- Scene 4: Casual top with statement jewelry
+- Vary colors across warm palette: corals, pinks, purples, creams, golds
+- NEVER put her in the same red ruffled top in multiple scenes
+- Maintain confident, vibrant style but with visual variety
 
 CHARACTER INTEGRATION RULES:
 1. This character is the MAIN SUBJECT of every scene - show them ACTING OUT the concepts
 2. Do NOT show static poses - show the character IN ACTION with dynamic body language
-3. CLOTHING VARIETY: Keep physical features consistent (face, hair, skin tone) but VARY the outfits
-   - Different scenes = different clothing appropriate for the activity
-   - Maintain the character's confident, vibrant style but change colors/styles
-   - Can wear business casual, cozy sweaters, elegant tops - variety is key
+3. PRESERVE: Deep caramel brown skin, gap in teeth, face features, hair style
+4. VARY: Clothing, accessories, poses, angles, expressions
 4. Translate script concepts into visual actions that match the brand aesthetic
 5. Use visual metaphors WITH the character in brand-appropriate settings
 6. Vary the character's position, pose, and action in each scene
