@@ -437,7 +437,36 @@ function initHistoryUI() {
     });
   }
 
-  // Clear all button
+  // Clear cache button (clears ALL browser storage)
+  const clearCacheBtn = document.getElementById('clear-cache-btn');
+  if (clearCacheBtn) {
+    clearCacheBtn.addEventListener('click', async () => {
+      if (confirm('⚠️ Clear ALL browser storage?\n\nThis will delete:\n- Generation history\n- Saved scenes\n- User ID and settings\n- All cached data\n\nYou will need to reload the page. Continue?')) {
+        try {
+          // Clear localStorage
+          localStorage.clear();
+
+          // Clear IndexedDB
+          const databases = await indexedDB.databases();
+          for (const db of databases) {
+            indexedDB.deleteDatabase(db.name);
+          }
+
+          showToast('✅ Cache cleared! Reloading page in 2 seconds...', false);
+
+          // Reload page after 2 seconds
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } catch (error) {
+          console.error('Failed to clear cache:', error);
+          showToast('Error clearing cache. Try closing and reopening the browser.', true);
+        }
+      }
+    });
+  }
+
+  // Clear all button (only clears history)
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
       if (confirm('Clear all generation history? This cannot be undone.')) {
