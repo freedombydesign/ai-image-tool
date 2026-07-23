@@ -27,16 +27,26 @@ const alertsSent = {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Detect if running on Vercel (serverless environment with read-only filesystem)
+const IS_VERCEL = !!process.env.VERCEL || process.env.NODE_ENV === 'production';
+
 // Local media storage configuration (to avoid Supabase egress costs)
+// Only use local storage when NOT on Vercel (local development)
 const LOCAL_VIDEO_DIR = path.join(__dirname, 'public', 'videos', 'avatars');
 const LOCAL_AUDIO_DIR = path.join(__dirname, 'public', 'audio');
-if (!fs.existsSync(LOCAL_VIDEO_DIR)) {
-  fs.mkdirSync(LOCAL_VIDEO_DIR, { recursive: true });
-  console.log('Created local video directory:', LOCAL_VIDEO_DIR);
-}
-if (!fs.existsSync(LOCAL_AUDIO_DIR)) {
-  fs.mkdirSync(LOCAL_AUDIO_DIR, { recursive: true });
-  console.log('Created local audio directory:', LOCAL_AUDIO_DIR);
+
+if (!IS_VERCEL) {
+  // Only create local directories in development (not on Vercel)
+  if (!fs.existsSync(LOCAL_VIDEO_DIR)) {
+    fs.mkdirSync(LOCAL_VIDEO_DIR, { recursive: true });
+    console.log('Created local video directory:', LOCAL_VIDEO_DIR);
+  }
+  if (!fs.existsSync(LOCAL_AUDIO_DIR)) {
+    fs.mkdirSync(LOCAL_AUDIO_DIR, { recursive: true });
+    console.log('Created local audio directory:', LOCAL_AUDIO_DIR);
+  }
+} else {
+  console.log('Running on Vercel - using Supabase Storage for media files');
 }
 
 // Initialize OpenAI (trim to remove any accidental whitespace/newlines from env vars)
@@ -82,9 +92,21 @@ if (supabase) {
 // ========== EMAIL ALERT UTILITIES ==========
 
 /**
- * Calculate local storage usage
+ * Calculate local storage usage (only relevant for local development)
  */
 function getLocalStorageUsage() {
+  // On Vercel, we use Supabase Storage, so return zeros
+  if (IS_VERCEL) {
+    return {
+      bytes: 0,
+      gb: '0.00',
+      maxGb: MAX_LOCAL_STORAGE_GB,
+      percentUsed: '0.0',
+      isWarning: false,
+      isCritical: false
+    };
+  }
+
   let totalBytes = 0;
 
   const calculateDirSize = (dirPath) => {
@@ -1686,18 +1708,41 @@ app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
     const fileBuffer = fs.readFileSync(req.file.path);
     const fileName = `audio_${Date.now()}_${req.file.originalname || 'audio.mp3'}`;
 
-    // Save to local storage instead of Supabase
-    const localAudioPath = path.join(LOCAL_AUDIO_DIR, fileName);
-    fs.writeFileSync(localAudioPath, fileBuffer);
+    let audioUrl;
+
+    if (IS_VERCEL) {
+      // On Vercel: Use Supabase Storage
+      if (!supabase) {
+        throw new Error('Supabase not configured for production storage');
+      }
+
+      const { data, error } = await supabase.storage
+        .from('audio-files')
+        .upload(fileName, fileBuffer, {
+          contentType: req.file.mimetype,
+          upsert: false
+        });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('audio-files')
+        .getPublicUrl(fileName);
+
+      audioUrl = publicUrl;
+      console.log('Audio stored in Supabase:', audioUrl);
+    } else {
+      // Local development: Save to local filesystem
+      const localAudioPath = path.join(LOCAL_AUDIO_DIR, fileName);
+      fs.writeFileSync(localAudioPath, fileBuffer);
+      audioUrl = `/audio/${fileName}`;
+      console.log('Audio stored locally:', audioUrl);
+    }
 
     // Cleanup temp file
     fs.unlinkSync(req.file.path);
 
-    // Generate local URL
-    const localUrl = `/audio/${fileName}`;
-    console.log('Audio stored locally:', localUrl);
-
-    res.json({ success: true, url: localUrl, path: localUrl });
+    res.json({ success: true, url: audioUrl, path: audioUrl });
   } catch (error) {
     console.error('Audio upload error:', error);
     if (req.file && fs.existsSync(req.file.path)) {
@@ -2822,7 +2867,7 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
       return res.status(400).json({ error: 'userId, audioHash, and videoUrl are required' });
     }
 
-    // DOWNLOAD VIDEO AND STORE LOCALLY (to avoid Supabase egress costs)
+    // DOWNLOAD VIDEO AND STORE (locally in dev, Supabase in production)
     let permanentUrl = videoUrl;
     try {
       console.log('Downloading video from Replicate:', videoUrl);
@@ -2830,22 +2875,40 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
       if (videoResponse.ok) {
         const videoBuffer = await videoResponse.arrayBuffer();
 
-        // Create user directory if it doesn't exist
-        const userVideoDir = path.join(LOCAL_VIDEO_DIR, userId);
-        if (!fs.existsSync(userVideoDir)) {
-          fs.mkdirSync(userVideoDir, { recursive: true });
+        if (IS_VERCEL) {
+          // On Vercel: Use Supabase Storage
+          const videoFileName = `${userId}/${audioHash}.mp4`;
+          const { data, error } = await supabase.storage
+            .from('avatar-videos')
+            .upload(videoFileName, Buffer.from(videoBuffer), {
+              contentType: 'video/mp4',
+              upsert: true
+            });
+
+          if (error) throw error;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('avatar-videos')
+            .getPublicUrl(videoFileName);
+
+          permanentUrl = publicUrl;
+          console.log('Video stored in Supabase:', permanentUrl);
+        } else {
+          // Local development: Save to local filesystem
+          const userVideoDir = path.join(LOCAL_VIDEO_DIR, userId);
+          if (!fs.existsSync(userVideoDir)) {
+            fs.mkdirSync(userVideoDir, { recursive: true });
+          }
+
+          const localVideoPath = path.join(userVideoDir, `${audioHash}.mp4`);
+          fs.writeFileSync(localVideoPath, Buffer.from(videoBuffer));
+
+          permanentUrl = `/videos/avatars/${userId}/${audioHash}.mp4`;
+          console.log('Video stored locally:', permanentUrl);
         }
-
-        // Save video locally
-        const localVideoPath = path.join(userVideoDir, `${audioHash}.mp4`);
-        fs.writeFileSync(localVideoPath, Buffer.from(videoBuffer));
-
-        // Generate local URL (served from /videos/avatars/)
-        permanentUrl = `/videos/avatars/${userId}/${audioHash}.mp4`;
-        console.log('Video stored locally:', permanentUrl);
       }
     } catch (downloadErr) {
-      console.error('Video download error:', downloadErr);
+      console.error('Video download/storage error:', downloadErr);
       // Fall back to storing original URL
     }
 
