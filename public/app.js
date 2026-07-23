@@ -3982,6 +3982,7 @@ function formatTime(seconds) {
 
 // Setup preview audio upload
 function setupPreviewAudioUpload() {
+  console.log('[AUDIO DEBUG] Setting up preview audio upload...');
   const uploadArea = document.getElementById('preview-audio-upload-area');
   const fileInput = document.getElementById('preview-audio-file');
   const placeholder = document.getElementById('preview-audio-placeholder');
@@ -3991,13 +3992,26 @@ function setupPreviewAudioUpload() {
   const playBtn = document.getElementById('play-preview-audio-btn');
   const removeBtn = document.getElementById('remove-preview-audio-btn');
 
-  if (!uploadArea || !fileInput) return;
+  console.log('[AUDIO DEBUG] Elements found:', {
+    uploadArea: !!uploadArea,
+    fileInput: !!fileInput,
+    placeholder: !!placeholder,
+    loadedSection: !!loadedSection
+  });
+
+  if (!uploadArea || !fileInput) {
+    console.error('[AUDIO DEBUG] Missing required elements, aborting setup');
+    return;
+  }
 
   // Click to upload
   uploadArea.addEventListener('click', (e) => {
+    console.log('[AUDIO DEBUG] Upload area clicked');
     if (e.target.closest('#play-preview-audio-btn') || e.target.closest('#remove-preview-audio-btn')) {
+      console.log('[AUDIO DEBUG] Click was on button, ignoring');
       return; // Don't trigger file dialog when clicking buttons
     }
+    console.log('[AUDIO DEBUG] Triggering file input dialog');
     fileInput.click();
   });
 
@@ -4022,8 +4036,15 @@ function setupPreviewAudioUpload() {
 
   // File input change
   fileInput.addEventListener('change', (e) => {
+    console.log('[AUDIO DEBUG] File input changed');
     const file = e.target.files[0];
+    console.log('[AUDIO DEBUG] Selected file:', file ? {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    } : 'none');
     if (file) {
+      console.log('[AUDIO DEBUG] Calling handlePreviewAudioFile');
       handlePreviewAudioFile(file);
     }
   });
@@ -4047,18 +4068,33 @@ function setupPreviewAudioUpload() {
 
 // Handle preview audio file
 function handlePreviewAudioFile(file) {
+  console.log('[AUDIO DEBUG] handlePreviewAudioFile called with file:', file.name);
   const placeholder = document.getElementById('preview-audio-placeholder');
   const loadedSection = document.getElementById('preview-audio-loaded');
   const audioNameEl = document.getElementById('preview-audio-name');
   const audioDurationEl = document.getElementById('preview-audio-duration');
 
+  console.log('[AUDIO DEBUG] Creating FileReader...');
   const reader = new FileReader();
+
+  reader.onerror = (e) => {
+    console.error('[AUDIO DEBUG] FileReader error:', e);
+  };
+
   reader.onload = (e) => {
+    console.log('[AUDIO DEBUG] FileReader loaded, data length:', e.target.result.length);
     previewAudioData = e.target.result;
 
     // Create temp audio to get duration
+    console.log('[AUDIO DEBUG] Creating Audio element...');
     const tempAudio = new Audio(previewAudioData);
+
+    tempAudio.addEventListener('error', (err) => {
+      console.error('[AUDIO DEBUG] Audio element error:', err);
+    });
+
     tempAudio.addEventListener('loadedmetadata', async () => {
+      console.log('[AUDIO DEBUG] Audio metadata loaded, duration:', tempAudio.duration);
       previewAudioDuration = tempAudio.duration;
 
       // Update UI
@@ -4070,18 +4106,22 @@ function handlePreviewAudioFile(file) {
 
       // Save to IndexedDB for persistence
       try {
+        console.log('[AUDIO DEBUG] Saving to IndexedDB...');
         await saveAudioToDB('previewAudio', previewAudioData, file.name, previewAudioDuration);
-        console.log('Audio saved to IndexedDB');
+        console.log('[AUDIO DEBUG] Audio saved to IndexedDB');
       } catch (err) {
-        console.warn('Failed to save audio to IndexedDB:', err);
+        console.error('[AUDIO DEBUG] Failed to save audio to IndexedDB:', err);
       }
 
       // Re-check sync with current script
       updateScriptStats();
 
+      console.log('[AUDIO DEBUG] Audio upload complete!');
       showToast(`Audio loaded: ${file.name} (${formatTime(previewAudioDuration)})`, 'success');
     });
   };
+
+  console.log('[AUDIO DEBUG] Starting FileReader.readAsDataURL...');
   reader.readAsDataURL(file);
 }
 
