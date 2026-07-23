@@ -192,3 +192,31 @@ Allows warning/critical alerts to be sent again (normally only sent once per ser
 ### Storage limit:
 Default: 10GB max local storage
 Change `MAX_LOCAL_STORAGE_GB` in server.js if needed.
+
+---
+
+## Avatar Description & Brand Rules
+
+Use these when generating images with the avatar character or applying brand styling.
+
+### Avatar Character Description
+
+The character has long, flowing hair with deep, lustrous waves that cascade over her shoulders, exhibiting a rich, dark brown hue. Her complexion is warm and radiant, a deep caramel brown that glows with a healthy sheen. Her eyes are large and expressive, a deep amber brown that sparkles with intelligence and warmth, framed by thick, curled eyelashes that accentuate their almond shape. Her face is oval-shaped with high cheekbones and a gently rounded chin, giving her a look of approachable elegance. She wears a bright, confident smile, highlighted by full lips with a glossy finish. Dressed in a striking red top with decorative ruffles, she exudes a vibrant and confident style, further accentuated by a collection of motivational decor in the background, suggesting a personality devoted to inspiration and empowerment. Her overall aesthetic blends warmth, charisma, and a modern, chic style.
+
+### Brand Rules
+
+**Mood and Atmosphere:**
+- Warm, soft, nurturing, feminine, heart-centered, empowering
+
+**Lighting Style:**
+- Soft golden light, warm tones, cozy atmosphere
+
+**Color Palette:**
+- Soft pinks, warm corals, muted purples, cream, gold accents
+
+**NEVER Include (Avoid):**
+- Corporate blue
+- Harsh lighting
+- Masculine boardroom vibes
+- Cold/sterile environments
+- Aggressive imagery
