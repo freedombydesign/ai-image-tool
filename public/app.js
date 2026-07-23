@@ -4066,15 +4066,10 @@ function handlePreviewAudioFile(file) {
       removePreviewAudio();
     });
 
-    // Add timeout in case metadata never loads (60 seconds for large files)
-    const metadataTimeout = setTimeout(() => {
-      console.error('Audio metadata timeout - file may be too large or browser is struggling to decode');
-      showToast('Audio file took too long to load. Try a smaller file or different format.', true);
-      removePreviewAudio();
-    }, 60000); // 60 second timeout
+    // No timeout - let browser take as long as needed to decode metadata
+    console.log('Waiting for audio metadata to load...');
 
     tempAudio.addEventListener('loadedmetadata', async () => {
-      clearTimeout(metadataTimeout); // Cancel timeout
       previewAudioDuration = tempAudio.duration;
 
       console.log('Audio metadata loaded:', file.name, previewAudioDuration, 'seconds');
