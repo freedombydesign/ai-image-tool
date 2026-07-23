@@ -4505,10 +4505,14 @@ async function loadBrandRulesFromDB() {
     if (lightingEl) lightingEl.value = rules.lighting || DEFAULT_BRAND_RULES.lighting;
     if (colorsEl) colorsEl.value = rules.colors || DEFAULT_BRAND_RULES.colors;
     if (avoidEl) avoidEl.value = rules.avoid || DEFAULT_BRAND_RULES.avoid;
+
+    // Enable brand rules if defaults are being used (no saved preference)
+    const shouldEnable = rules.enabled === true || (!rules.enabled && !data.success);
+
     if (enabledEl) {
-      enabledEl.checked = rules.enabled === true;
+      enabledEl.checked = shouldEnable;
       // Update the global variable
-      brandBlockEnabled = rules.enabled === true;
+      brandBlockEnabled = shouldEnable;
 
       // Update the status label in header
       const statusEl = document.getElementById('brand-status');
@@ -4516,7 +4520,7 @@ async function loadBrandRulesFromDB() {
         statusEl.textContent = brandBlockEnabled ? 'Active' : 'Off';
         statusEl.classList.toggle('active', brandBlockEnabled);
       }
-      console.log('Brand enabled set to:', rules.enabled);
+      console.log('Brand enabled set to:', shouldEnable);
     }
 
     console.log('Brand rules loaded (with defaults if needed):', {
