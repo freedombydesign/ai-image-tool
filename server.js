@@ -697,7 +697,7 @@ function checkModelAvailability(modelId) {
 // Generate new image from text prompt (supports multiple models)
 app.post('/api/generate', async (req, res) => {
   try {
-    const { prompt, size = '1024x1024', style = 'vivid', quality = 'standard', model = 'dall-e-3', userId } = req.body;
+    let { prompt, size = '1024x1024', style = 'vivid', quality = 'standard', model = 'dall-e-3', userId } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -708,7 +708,13 @@ app.post('/api/generate', async (req, res) => {
       return res.status(400).json({ error: `Unknown model: ${model}` });
     }
 
-    console.log(`Generating image with ${model}:`, prompt);
+    // Stability AI has a 2000 character limit - truncate if needed
+    if (modelConfig.provider === 'stability' && prompt.length > 1800) {
+      console.warn(`Prompt too long (${prompt.length} chars), truncating to 1800 for Stability AI`);
+      prompt = prompt.substring(0, 1800) + '...';
+    }
+
+    console.log(`Generating image with ${model}:`, prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''));
 
     // Parse size
     const [width, height] = size.split('x').map(Number);
@@ -2131,11 +2137,13 @@ Your job is to read a script and create ${sceneCount} distinct visual scene desc
 CRITICAL RULES:
 1. Output ONLY visual descriptions - describe what we SEE, not what we hear
 2. Each scene should be a single, clear visual moment (not abstract concepts)
-3. Include: subjects, actions, setting, lighting, mood, composition
-4. Use professional video/photography terminology
-5. NO text in images - text will be added separately with overlays
-6. Make scenes visually distinct but thematically cohesive
-7. Focus on emotions, body language, and visual metaphors for abstract concepts
+3. KEEP VISUAL DESCRIPTIONS UNDER 200 CHARACTERS - concise, focused image prompts only
+4. Include: subjects, actions, setting, lighting, mood, composition
+5. Use professional video/photography terminology
+6. NO text in images - text will be added separately with overlays
+7. Make scenes visually distinct but thematically cohesive
+8. Focus on emotions, body language, and visual metaphors for abstract concepts
+9. DO NOT copy script text into visual descriptions - create NEW concise visual prompts
 
 DEFAULT CONTENT TO AVOID (unless specifically requested):
 - Tarot cards, oracle cards, divination tools
