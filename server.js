@@ -2620,20 +2620,46 @@ app.post('/api/db/avatar', async (req, res) => {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    // Upsert avatar data
-    const { data, error } = await supabase
+    // Check if avatar exists for this user
+    const { data: existing } = await supabase
       .from('ai_tool_avatars')
-      .upsert({
-        user_id: userId,
-        image_url: imageData, // Store base64 or URL
-        description: description || '',
-        enabled: enabled !== false,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id'
-      })
-      .select()
+      .select('id')
+      .eq('user_id', userId)
       .single();
+
+    let data, error;
+
+    if (existing) {
+      // Update existing avatar
+      const result = await supabase
+        .from('ai_tool_avatars')
+        .update({
+          image_url: imageData,
+          description: description || '',
+          enabled: enabled !== false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId)
+        .select()
+        .single();
+      data = result.data;
+      error = result.error;
+    } else {
+      // Insert new avatar
+      const result = await supabase
+        .from('ai_tool_avatars')
+        .insert({
+          user_id: userId,
+          image_url: imageData,
+          description: description || '',
+          enabled: enabled !== false,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) throw error;
 
