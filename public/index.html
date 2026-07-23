@@ -46,6 +46,7 @@
         <button class="tab" data-tab="edit">Edit</button>
         <button class="tab" data-tab="variations">Variations</button>
         <button class="tab" data-tab="history">History</button>
+        <button class="tab" data-tab="scene-library">Scene Library</button>
       </nav>
 
       <!-- Batch Scenes Tab -->
@@ -548,6 +549,13 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
             <div class="scene-import-options">
               <button class="btn secondary" id="import-from-batch">Import from Batch Generator</button>
               <button class="btn text" id="load-previous-batch" title="Load from previous generations">📂 Previous Batches</button>
+              <button class="btn text" id="import-from-library" title="Import scenes from your saved library">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 0.25rem;">
+                  <rect x="3" y="8" width="18" height="12" rx="2"/>
+                  <path d="M3 8l9-5 9 5"/>
+                </svg>
+                Library
+              </button>
               <span class="or-divider">or</span>
               <div class="upload-area small" id="scene-upload-area">
                 <input type="file" id="scene-files" accept="image/*" multiple hidden>
@@ -1952,6 +1960,45 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
         </div>
       </section>
 
+      <!-- Scene Library Tab -->
+      <section id="scene-library" class="tab-content">
+        <div class="card">
+          <div class="library-header">
+            <div>
+              <h2>Scene Library</h2>
+              <span id="library-stats" class="library-stats">0 saved scenes</span>
+            </div>
+            <button class="btn primary" id="add-to-library-btn">+ Add from Batch</button>
+          </div>
+
+          <div class="library-controls">
+            <div class="library-filters">
+              <button class="library-filter-btn active" data-filter="all">All</button>
+              <button class="library-filter-btn" data-filter="reaction">Reactions</button>
+              <button class="library-filter-btn" data-filter="office">Office</button>
+              <button class="library-filter-btn" data-filter="thinking">Thinking</button>
+              <button class="library-filter-btn" data-filter="celebration">Celebration</button>
+              <button class="library-filter-btn" data-filter="transition">Transitions</button>
+              <button class="library-filter-btn" data-filter="other">Other</button>
+            </div>
+            <div class="library-search-wrapper">
+              <input type="text" id="library-search" placeholder="Search library..." class="library-search">
+            </div>
+          </div>
+
+          <div id="library-empty" class="library-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="8" width="18" height="12" rx="2"/>
+              <path d="M3 8l9-5 9 5"/>
+            </svg>
+            <p>No saved scenes yet</p>
+            <span>Add scenes from your batches to reuse across videos</span>
+          </div>
+
+          <div id="library-grid" class="library-grid"></div>
+        </div>
+      </section>
+
       <!-- History Preview Modal -->
       <div id="history-modal" class="history-modal" hidden style="display: none;">
         <div class="history-modal-content">
@@ -2018,6 +2065,135 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 </svg>
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene Library Preview Modal -->
+      <div id="library-preview-modal" class="history-modal" hidden style="display: none;">
+        <div class="history-modal-content">
+          <button id="library-modal-close" class="modal-close-btn" onclick="closeLibraryPreview()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+
+          <div class="modal-body">
+            <img id="library-modal-image" src="" alt="Library Scene" class="modal-image">
+
+            <div class="modal-metadata">
+              <h3 id="library-modal-name" class="library-modal-title">Scene Name</h3>
+              <div class="meta-row">
+                <span class="meta-label">Tag:</span>
+                <span id="library-modal-tag" class="library-tag"></span>
+              </div>
+            </div>
+
+            <div class="modal-prompt-section">
+              <span class="meta-label">Prompt:</span>
+              <p id="library-modal-prompt" class="modal-prompt"></p>
+            </div>
+
+            <div class="modal-actions">
+              <button id="library-modal-use" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>
+                </svg>
+                Use in Video
+              </button>
+              <button id="library-modal-delete" class="btn btn-danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Remove from Library
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit Library Tags Modal -->
+      <div id="edit-tags-modal" class="history-modal" hidden style="display: none;">
+        <div class="history-modal-content" style="max-width: 500px;">
+          <button class="modal-close-btn" onclick="closeEditTagsModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+
+          <div class="modal-body">
+            <h3 style="margin-bottom: 1.5rem;">Edit Scene Tags</h3>
+
+            <div class="form-group" style="margin-bottom: 1rem;">
+              <label for="edit-scene-name" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Scene Name:</label>
+              <input type="text" id="edit-scene-name" class="input" placeholder="e.g., Happy smile close-up" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 1rem;">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+              <label for="edit-scene-tag" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Tag:</label>
+              <select id="edit-scene-tag" class="select" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 1rem;">
+                <option value="reaction">Reaction</option>
+                <option value="office">Office</option>
+                <option value="thinking">Thinking</option>
+                <option value="celebration">Celebration</option>
+                <option value="transition">Transition</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div class="modal-actions">
+              <button id="edit-tags-save" class="btn btn-primary" onclick="saveEditedTags()">Save Changes</button>
+              <button id="edit-tags-cancel" class="btn btn-secondary" onclick="closeEditTagsModal()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save to Library Modal -->
+      <div id="save-to-library-modal" class="history-modal" hidden style="display: none;">
+        <div class="history-modal-content" style="max-width: 500px;">
+          <button class="modal-close-btn" onclick="closeSaveToLibraryModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+
+          <div class="modal-body">
+            <h3 style="margin-bottom: 1.5rem;">Save Scene to Library</h3>
+
+            <div id="save-library-preview" style="margin-bottom: 1.5rem;">
+              <img id="save-library-image" src="" alt="Scene preview" style="width: 100%; border-radius: 0.5rem; max-height: 300px; object-fit: cover;">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1rem;">
+              <label for="library-scene-name">Scene Name:</label>
+              <input type="text" id="library-scene-name" class="input" placeholder="e.g., Happy smile close-up">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+              <label for="library-scene-tag">Tag:</label>
+              <select id="library-scene-tag" class="select">
+                <option value="reaction">Reaction</option>
+                <option value="office">Office</option>
+                <option value="thinking">Thinking</option>
+                <option value="celebration">Celebration</option>
+                <option value="transition">Transition</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div class="modal-actions">
+              <button id="save-to-library-confirm" class="btn btn-primary" onclick="confirmSaveToLibrary()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 0.5rem;">
+                  <rect x="3" y="8" width="18" height="12" rx="2"/>
+                  <path d="M3 8l9-5 9 5"/>
+                </svg>
+                Save to Library
+              </button>
+              <button class="btn btn-secondary" onclick="closeSaveToLibraryModal()">Cancel</button>
             </div>
           </div>
         </div>
@@ -2182,6 +2358,53 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
     </footer>
   </div>
 
+  <!-- Library Import Modal -->
+  <div id="library-import-modal" class="history-modal" hidden style="display: none;">
+    <div class="history-modal-content" style="max-width: 800px;">
+      <button class="modal-close-btn" onclick="videoEditor.closeLibraryImportModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+
+      <div class="modal-body">
+        <h3 style="margin-bottom: 1rem;">Import from Scene Library</h3>
+        <p style="margin-bottom: 1.5rem; color: var(--text-muted);">Select scenes to import into your video</p>
+
+        <div class="library-controls" style="margin-bottom: 1rem;">
+          <div class="library-filters">
+            <button class="library-filter-btn active" data-filter="all" onclick="videoEditor.filterLibraryImport('all')">All</button>
+            <button class="library-filter-btn" data-filter="reaction" onclick="videoEditor.filterLibraryImport('reaction')">Reactions</button>
+            <button class="library-filter-btn" data-filter="office" onclick="videoEditor.filterLibraryImport('office')">Office</button>
+            <button class="library-filter-btn" data-filter="thinking" onclick="videoEditor.filterLibraryImport('thinking')">Thinking</button>
+            <button class="library-filter-btn" data-filter="celebration" onclick="videoEditor.filterLibraryImport('celebration')">Celebration</button>
+            <button class="library-filter-btn" data-filter="transition" onclick="videoEditor.filterLibraryImport('transition')">Transitions</button>
+            <button class="library-filter-btn" data-filter="other" onclick="videoEditor.filterLibraryImport('other')">Other</button>
+          </div>
+        </div>
+
+        <div id="library-import-grid" class="library-import-grid"></div>
+
+        <div id="library-import-empty" class="library-empty" style="margin: 2rem 0;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="8" width="18" height="12" rx="2"/>
+            <path d="M3 8l9-5 9 5"/>
+          </svg>
+          <p>No scenes in library</p>
+          <span>Generate some scenes and save them to your library first</span>
+        </div>
+
+        <div class="modal-actions">
+          <button id="import-library-scenes-btn" class="btn btn-primary" onclick="videoEditor.confirmLibraryImport()" disabled>
+            Import Selected (<span id="library-selected-count">0</span>)
+          </button>
+          <button class="btn btn-secondary" onclick="videoEditor.closeLibraryImportModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Expanded Timeline Editor Modal -->
   <div id="expanded-timeline-modal" class="expanded-timeline-modal" style="display: none;">
     <div class="expanded-timeline-content">
@@ -2223,6 +2446,7 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
   </div>
 
   <script src="history.js"></script>
+  <script src="scene-library.js"></script>
   <script src="app.js"></script>
   <script src="video-editor.js"></script>
   <script src="banner-creator.js"></script>

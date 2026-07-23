@@ -2910,6 +2910,13 @@ function createSceneCard(index, text, imageUrl, isLoading = false) {
         </svg>
         ${isAnchor ? 'Style Anchor' : 'Set as Anchor'}
       </button>
+      <button class="btn secondary save-to-library-btn" onclick="openLibrarySaveDialog(${index})" title="Save to Library">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <rect x="3" y="8" width="18" height="12" rx="2"/>
+          <path d="M3 8l9-5 9 5"/>
+        </svg>
+        Save to Library
+      </button>
       <button class="btn secondary" onclick="regenerateScene(${index})">Regenerate</button>
       <button class="btn secondary undo-btn" onclick="undoSceneRegeneration(${index})" title="Revert to previous image">↩ Undo</button>
       <button class="btn secondary swap-btn" onclick="startSceneSwap(${index})" title="Swap with another scene">⇄ Swap</button>
@@ -7287,6 +7294,127 @@ function deleteGalleryVideo(id) {
   renderAvatarVideoGallery();
   showToast('Video deleted', false);
 }
+
+// =============================================
+// SCENE LIBRARY FUNCTIONS
+// =============================================
+
+let currentLibrarySceneIndex = null;
+
+// Open save to library dialog
+function openLibrarySaveDialog(sceneIndex) {
+  const scene = generatedScenes[sceneIndex];
+  if (!scene || !scene.imageUrl) {
+    showToast('No image to save. Generate the scene first.', true);
+    return;
+  }
+
+  currentLibrarySceneIndex = sceneIndex;
+
+  const modal = document.getElementById('save-to-library-modal');
+  const imagePreview = document.getElementById('save-library-image');
+  const nameInput = document.getElementById('library-scene-name');
+  const tagSelect = document.getElementById('library-scene-tag');
+
+  if (!modal) return;
+
+  // Set preview image
+  if (imagePreview) {
+    imagePreview.src = scene.imageUrl;
+  }
+
+  // Pre-fill name with scene text (truncated)
+  if (nameInput && scene.text) {
+    const shortName = scene.text.length > 50 ? scene.text.substring(0, 50) + '...' : scene.text;
+    nameInput.value = shortName;
+  }
+
+  // Reset tag to default
+  if (tagSelect) {
+    tagSelect.value = 'reaction';
+  }
+
+  // Show modal
+  modal.hidden = false;
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  // Focus name input
+  if (nameInput) nameInput.focus();
+}
+
+// Close save to library modal
+function closeSaveToLibraryModal() {
+  const modal = document.getElementById('save-to-library-modal');
+  if (modal) {
+    modal.hidden = true;
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+  currentLibrarySceneIndex = null;
+}
+
+// Confirm save to library
+async function confirmSaveToLibrary() {
+  if (currentLibrarySceneIndex === null) return;
+
+  const scene = generatedScenes[currentLibrarySceneIndex];
+  if (!scene || !scene.imageUrl) {
+    showToast('Scene not found', true);
+    closeSaveToLibraryModal();
+    return;
+  }
+
+  const nameInput = document.getElementById('library-scene-name');
+  const tagSelect = document.getElementById('library-scene-tag');
+
+  const name = nameInput?.value.trim();
+  const tag = tagSelect?.value || 'reaction';
+
+  if (!name) {
+    showToast('Please enter a scene name', true);
+    return;
+  }
+
+  // Disable save button while saving
+  const saveBtn = document.getElementById('save-to-library-confirm');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+  }
+
+  try {
+    // Use SceneLibraryManager from scene-library.js
+    if (typeof sceneLibraryManager === 'undefined') {
+      throw new Error('Scene Library not loaded. Please refresh the page.');
+    }
+
+    await sceneLibraryManager.addSceneToLibrary(scene, tag, name);
+
+    showToast(`Scene saved to library under "${tag}" tag!`, false);
+    closeSaveToLibraryModal();
+  } catch (error) {
+    console.error('Failed to save to library:', error);
+    showToast('Failed to save scene to library: ' + error.message, true);
+  } finally {
+    // Re-enable button
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 0.5rem;">
+          <rect x="3" y="8" width="18" height="12" rx="2"/>
+          <path d="M3 8l9-5 9 5"/>
+        </svg>
+        Save to Library
+      `;
+    }
+  }
+}
+
+// Make library functions globally available
+window.openLibrarySaveDialog = openLibrarySaveDialog;
+window.closeSaveToLibraryModal = closeSaveToLibraryModal;
+window.confirmSaveToLibrary = confirmSaveToLibrary;
 
 // Make functions globally available
 window.playGalleryVideo = playGalleryVideo;

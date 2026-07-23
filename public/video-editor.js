@@ -841,6 +841,10 @@ class VideoEditor {
     if (this.loadPreviousBatchBtn) {
       this.loadPreviousBatchBtn.addEventListener('click', () => this.showPreviousBatches());
     }
+    const importFromLibraryBtn = document.getElementById('import-from-library');
+    if (importFromLibraryBtn) {
+      importFromLibraryBtn.addEventListener('click', () => this.openLibraryImportModal());
+    }
     this.sceneUploadArea.addEventListener('click', () => this.sceneFilesInput.click());
     this.sceneFilesInput.addEventListener('change', (e) => this.handleSceneUpload(e));
 
@@ -1316,6 +1320,176 @@ class VideoEditor {
     this.updateTotalDuration();
     this.saveScenesToSupabase();
     showToast(`${count} scenes ${action}! Total: ${this.scenes.length}`, 'success');
+  }
+
+  // =============================================
+  // LIBRARY IMPORT METHODS
+  // =============================================
+
+  selectedLibraryScenes = [];
+  currentLibraryFilter = 'all';
+
+  // Open library import modal
+  async openLibraryImportModal() {
+    const modal = document.getElementById('library-import-modal');
+    if (!modal) return;
+
+    // Check if scene library manager is available
+    if (typeof sceneLibraryManager === 'undefined') {
+      showToast('Scene Library not loaded. Please refresh the page.', true);
+      return;
+    }
+
+    // Load library scenes
+    try {
+      await sceneLibraryManager.loadFromSupabase();
+      this.selectedLibraryScenes = [];
+      this.currentLibraryFilter = 'all';
+      this.renderLibraryImportGrid();
+
+      modal.hidden = false;
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    } catch (error) {
+      console.error('Failed to load library:', error);
+      showToast('Failed to load scene library: ' + error.message, true);
+    }
+  }
+
+  // Close library import modal
+  closeLibraryImportModal() {
+    const modal = document.getElementById('library-import-modal');
+    if (modal) {
+      modal.hidden = true;
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
+    this.selectedLibraryScenes = [];
+  }
+
+  // Filter library scenes by tag
+  filterLibraryImport(tag) {
+    this.currentLibraryFilter = tag;
+
+    // Update active filter button
+    const filterBtns = document.querySelectorAll('#library-import-modal .library-filter-btn');
+    filterBtns.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === tag);
+    });
+
+    this.renderLibraryImportGrid();
+  }
+
+  // Render library import grid
+  renderLibraryImportGrid() {
+    const grid = document.getElementById('library-import-grid');
+    const emptyState = document.getElementById('library-import-empty');
+
+    if (!grid) return;
+
+    let scenes = sceneLibraryManager.getByTag(this.currentLibraryFilter);
+
+    if (scenes.length === 0) {
+      grid.innerHTML = '';
+      if (emptyState) emptyState.hidden = false;
+      return;
+    }
+
+    if (emptyState) emptyState.hidden = true;
+
+    grid.innerHTML = scenes.map(scene => {
+      const isSelected = this.selectedLibraryScenes.includes(scene.id);
+      return `
+        <div class="library-import-item ${isSelected ? 'selected' : ''}" data-id="${scene.id}" onclick="videoEditor.toggleLibrarySceneSelection('${scene.id}')">
+          <img src="${scene.imageUrl}" alt="${scene.libraryName || 'Library scene'}">
+          <div class="library-import-selected-badge">✓</div>
+          <div class="library-import-item-info">
+            <div class="library-import-item-name">${scene.libraryName || 'Untitled'}</div>
+            <span class="library-tag ${scene.libraryTag}">${scene.libraryTag}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    this.updateLibrarySelectionCount();
+  }
+
+  // Toggle scene selection
+  toggleLibrarySceneSelection(sceneId) {
+    const index = this.selectedLibraryScenes.indexOf(sceneId);
+    if (index > -1) {
+      this.selectedLibraryScenes.splice(index, 1);
+    } else {
+      this.selectedLibraryScenes.push(sceneId);
+    }
+
+    // Update UI
+    const item = document.querySelector(`.library-import-item[data-id="${sceneId}"]`);
+    if (item) {
+      item.classList.toggle('selected');
+    }
+
+    this.updateLibrarySelectionCount();
+  }
+
+  // Update selection count
+  updateLibrarySelectionCount() {
+    const countSpan = document.getElementById('library-selected-count');
+    const importBtn = document.getElementById('import-library-scenes-btn');
+
+    if (countSpan) {
+      countSpan.textContent = this.selectedLibraryScenes.length;
+    }
+
+    if (importBtn) {
+      importBtn.disabled = this.selectedLibraryScenes.length === 0;
+    }
+  }
+
+  // Confirm library import
+  async confirmLibraryImport() {
+    if (this.selectedLibraryScenes.length === 0) {
+      showToast('Please select at least one scene', true);
+      return;
+    }
+
+    // Get selected scenes
+    const allScenes = sceneLibraryManager.scenes;
+    const scenesToImport = allScenes.filter(s => this.selectedLibraryScenes.includes(s.id));
+
+    if (scenesToImport.length === 0) {
+      showToast('Selected scenes not found', true);
+      return;
+    }
+
+    // Get scene duration from slider or default
+    const sceneDuration = typeof getSceneDuration === 'function'
+      ? getSceneDuration()
+      : (document.getElementById('scene-duration')?.value || 6);
+    const duration = parseInt(sceneDuration);
+
+    // Convert library scenes to video editor format
+    const newScenes = scenesToImport.map((scene, index) => ({
+      id: Date.now() + index,
+      imageUrl: scene.imageUrl,
+      text: scene.caption || scene.prompt || '',
+      duration: duration,
+      caption: scene.caption || scene.prompt || '',
+      startTime: 0 // Will be recalculated
+    }));
+
+    this.closeLibraryImportModal();
+
+    // If there are existing scenes, ask user what to do
+    if (this.scenes.length > 0) {
+      this.showImportChoiceDialog(newScenes);
+      return;
+    }
+
+    // No existing scenes - just import
+    this.scenes = newScenes;
+    this.recalculateTimings();
+    this.finishImport(newScenes.length, 'imported from library');
   }
 
   // Show previous batches from Supabase

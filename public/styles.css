@@ -3843,6 +3843,339 @@ footer {
 }
 
 /* ==================== */
+/* Scene Library        */
+/* ==================== */
+
+.library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.library-header h2 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  color: var(--text);
+}
+
+.library-stats {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.library-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.library-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.library-filter-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  border-radius: 2rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.library-filter-btn:hover {
+  background: var(--surface-light);
+  color: var(--text);
+}
+
+.library-filter-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.library-search-wrapper {
+  flex: 1;
+  max-width: 300px;
+}
+
+.library-search {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.library-search:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.library-empty {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-muted);
+}
+
+.library-empty svg {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 1rem;
+  opacity: 0.3;
+}
+
+.library-empty p {
+  font-size: 1.125rem;
+  font-weight: 500;
+  margin: 0 0 0.5rem;
+  color: var(--text);
+}
+
+.library-empty span {
+  font-size: 0.875rem;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.library-item {
+  background: var(--surface-light);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid var(--border);
+}
+
+.library-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.library-image-wrapper {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.library-image-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.library-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.library-item:hover .library-overlay {
+  opacity: 1;
+}
+
+.library-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.library-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.library-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.library-info {
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.library-tag {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--primary);
+  color: white;
+  text-transform: capitalize;
+}
+
+.library-tag.reaction {
+  background: #10b981;
+}
+
+.library-tag.office {
+  background: #3b82f6;
+}
+
+.library-tag.thinking {
+  background: #8b5cf6;
+}
+
+.library-tag.celebration {
+  background: #f59e0b;
+}
+
+.library-tag.transition {
+  background: #6366f1;
+}
+
+.library-tag.other {
+  background: #6b7280;
+}
+
+.library-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0;
+  padding: 0 0.75rem 0.75rem;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.library-modal-title {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+/* Responsive library */
+@media (max-width: 768px) {
+  .library-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .library-search-wrapper {
+    max-width: none;
+  }
+
+  .library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
+/* Library Import Grid (for video editor modal) */
+.library-import-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.library-import-item {
+  position: relative;
+  background: var(--surface-light);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+
+.library-import-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.library-import-item.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2);
+}
+
+.library-import-item img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+}
+
+.library-import-item-info {
+  padding: 0.5rem;
+  background: var(--surface-light);
+}
+
+.library-import-item-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-import-item .library-tag {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.library-import-selected-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 24px;
+  height: 24px;
+  background: var(--primary);
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.library-import-item.selected .library-import-selected-badge {
+  display: flex;
+}
+
+/* ==================== */
 /* Reference Thumbnail  */
 /* ==================== */
 
