@@ -2159,19 +2159,28 @@ The CONTENT is business/professional, but the AESTHETIC must be ${brandRules.moo
 
     // Add avatar as main character if included
     if (includeAvatarInScenes && avatarDescription) {
+      // Extract key physical features and emphasize skin tone
       systemPrompt += `
 
 MAIN CHARACTER - FEATURE THIS PERSON IN EVERY SCENE:
 ${avatarDescription}
 
+🎯 CRITICAL - SKIN TONE ACCURACY:
+The character's complexion is DEEP CARAMEL BROWN - a rich, warm brown skin tone. This is NON-NEGOTIABLE.
+Do not lighten or change the skin tone. Deep caramel brown complexion in EVERY scene.
+
 CHARACTER INTEGRATION RULES:
 1. This character is the MAIN SUBJECT of every scene - show them ACTING OUT the concepts
 2. Do NOT show static poses - show the character IN ACTION with dynamic body language
-3. Translate script concepts into visual actions that match the brand aesthetic
-4. Use visual metaphors WITH the character in brand-appropriate settings
-5. Vary the character's position, pose, and action in each scene
-6. Show the character from different angles: front, side, over-shoulder, close-ups
-7. Character expressions should match emotions: confident, empathetic, excited, thoughtful`;
+3. CLOTHING VARIETY: Keep physical features consistent (face, hair, skin tone) but VARY the outfits
+   - Different scenes = different clothing appropriate for the activity
+   - Maintain the character's confident, vibrant style but change colors/styles
+   - Can wear business casual, cozy sweaters, elegant tops - variety is key
+4. Translate script concepts into visual actions that match the brand aesthetic
+5. Use visual metaphors WITH the character in brand-appropriate settings
+6. Vary the character's position, pose, and action in each scene
+7. Show the character from different angles: front, side, over-shoulder, close-ups
+8. Character expressions should match emotions: confident, empathetic, excited, thoughtful`;
     }
 
     systemPrompt += `
