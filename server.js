@@ -2200,6 +2200,14 @@ CRITICAL - CHARACTER INTEGRATION RULES:
 
 Only output the JSON array, no other text.`;
 
+    // Calculate required tokens based on scene count
+    // Each scene is ~80 tokens (visualDescription + scriptExcerpt + mood)
+    // Add 1000 for system prompt overhead
+    const estimatedTokens = Math.max(4000, (sceneCount * 80) + 1000);
+    const maxTokens = Math.min(16000, estimatedTokens); // GPT-4o supports up to 16k output
+
+    console.log(`Requesting ${sceneCount} scenes, using max_tokens: ${maxTokens}`);
+
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -2207,7 +2215,7 @@ Only output the JSON array, no other text.`;
         { role: 'user', content: `Convert this script into ${sceneCount} visual scene descriptions:\n\n${script}` }
       ],
       temperature: 0.7,
-      max_tokens: 4000
+      max_tokens: maxTokens
     });
 
     let scenes;
