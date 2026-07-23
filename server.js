@@ -264,17 +264,19 @@ async function checkStorageAndAlert() {
 
 // ========== END EMAIL ALERT UTILITIES ==========
 
-// Helper: Archive image from temporary URL to permanent Supabase storage
+// Helper: Archive image from temporary URL to permanent storage
+// Uses Vercel Blob on production (no egress costs), local files in dev
 async function archiveImageToSupabase(tempUrl, userId = 'default') {
-  if (!supabase || !tempUrl) return tempUrl;
+  if (!tempUrl) return tempUrl;
 
-  // Skip if already a Supabase URL or base64
-  if (tempUrl.includes('supabase') || tempUrl.startsWith('data:')) {
+  // Skip if already archived or base64
+  if (tempUrl.includes('vercel-storage.com') || tempUrl.includes('blob.vercel-storage.com') ||
+      tempUrl.includes('supabase') || tempUrl.startsWith('data:') || tempUrl.startsWith('/')) {
     return tempUrl;
   }
 
   try {
-    console.log('Archiving image to Supabase:', tempUrl.substring(0, 50) + '...');
+    console.log('Archiving image:', tempUrl.substring(0, 50) + '...');
     const response = await fetch(tempUrl);
     if (!response.ok) {
       console.error('Failed to fetch temp image:', response.status);
@@ -284,33 +286,31 @@ async function archiveImageToSupabase(tempUrl, userId = 'default') {
     const imageBuffer = await response.arrayBuffer();
     const contentType = response.headers.get('content-type') || 'image/png';
     const extension = contentType.includes('webp') ? 'webp' : contentType.includes('jpeg') ? 'jpg' : 'png';
-    const imagePath = `scene-images/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+    const fileName = `scene-images/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('ai-tool-images')
-      .upload(imagePath, Buffer.from(imageBuffer), {
-        contentType: contentType,
-        upsert: true
+    if (IS_VERCEL) {
+      // On Vercel: Use Vercel Blob Storage (no egress costs!)
+      const blob = await put(fileName, Buffer.from(imageBuffer), {
+        access: 'public',
+        contentType: contentType
       });
 
-    if (uploadError) {
-      console.error('Supabase upload error:', uploadError);
-      return tempUrl;
+      console.log('Image archived to Vercel Blob:', blob.url.substring(0, 80) + '...');
+      return blob.url;
+    } else {
+      // Local development: Save to public/images directory
+      const localImageDir = path.join(__dirname, 'public', 'images', 'scenes', userId);
+      if (!fs.existsSync(localImageDir)) {
+        fs.mkdirSync(localImageDir, { recursive: true });
+      }
+
+      const localPath = path.join(localImageDir, path.basename(fileName));
+      fs.writeFileSync(localPath, Buffer.from(imageBuffer));
+
+      const localUrl = `/images/scenes/${userId}/${path.basename(fileName)}`;
+      console.log('Image archived locally:', localUrl);
+      return localUrl;
     }
-
-    // Use signed URL instead of public URL to reduce CDN egress
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('ai-tool-images')
-      .createSignedUrl(imagePath, 60 * 60 * 24 * 365); // 1 year expiry
-
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      console.error('Signed URL error:', signedUrlError);
-      return tempUrl;
-    }
-
-    const permanentUrl = signedUrlData.signedUrl;
-    console.log('Image archived permanently (signed URL):', permanentUrl.substring(0, 80) + '...');
-    return permanentUrl;
   } catch (e) {
     console.error('Archive error:', e.message);
     return tempUrl; // Fall back to temp URL
@@ -769,7 +769,8 @@ app.post('/api/generate', async (req, res) => {
         throw new Error(`Provider ${modelConfig.provider} not supported`);
     }
 
-    // Archive image to Supabase for permanent storage (fixes URL expiration issue)
+    // Archive image to permanent storage (fixes URL expiration issue)
+    // Uses Vercel Blob on production (no egress costs), local files in dev
     // Only for non-base64 URLs (Replicate/Stability temp URLs expire after ~24h)
     if (result.image && !result.image.startsWith('data:') && userId) {
       result.image = await archiveImageToSupabase(result.image, userId);
