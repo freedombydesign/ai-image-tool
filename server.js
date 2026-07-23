@@ -8,6 +8,7 @@ const fs = require('fs');
 const sharp = require('sharp');
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
+const { put } = require('@vercel/blob');
 
 // Initialize Resend for email alerts
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
@@ -46,7 +47,7 @@ if (!IS_VERCEL) {
     console.log('Created local audio directory:', LOCAL_AUDIO_DIR);
   }
 } else {
-  console.log('Running on Vercel - using Supabase Storage for media files');
+  console.log('Running on Vercel - using Vercel Blob Storage for media files (no egress costs)');
 }
 
 // Initialize OpenAI (trim to remove any accidental whitespace/newlines from env vars)
@@ -1711,26 +1712,14 @@ app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
     let audioUrl;
 
     if (IS_VERCEL) {
-      // On Vercel: Use Supabase Storage
-      if (!supabase) {
-        throw new Error('Supabase not configured for production storage');
-      }
+      // On Vercel: Use Vercel Blob Storage (no egress costs!)
+      const blob = await put(fileName, fileBuffer, {
+        access: 'public',
+        contentType: req.file.mimetype
+      });
 
-      const { data, error } = await supabase.storage
-        .from('audio-files')
-        .upload(fileName, fileBuffer, {
-          contentType: req.file.mimetype,
-          upsert: false
-        });
-
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('audio-files')
-        .getPublicUrl(fileName);
-
-      audioUrl = publicUrl;
-      console.log('Audio stored in Supabase:', audioUrl);
+      audioUrl = blob.url;
+      console.log('Audio stored in Vercel Blob:', audioUrl);
     } else {
       // Local development: Save to local filesystem
       const localAudioPath = path.join(LOCAL_AUDIO_DIR, fileName);
@@ -2876,23 +2865,15 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
         const videoBuffer = await videoResponse.arrayBuffer();
 
         if (IS_VERCEL) {
-          // On Vercel: Use Supabase Storage
-          const videoFileName = `${userId}/${audioHash}.mp4`;
-          const { data, error } = await supabase.storage
-            .from('avatar-videos')
-            .upload(videoFileName, Buffer.from(videoBuffer), {
-              contentType: 'video/mp4',
-              upsert: true
-            });
+          // On Vercel: Use Vercel Blob Storage (no egress costs!)
+          const videoFileName = `avatars/${userId}/${audioHash}.mp4`;
+          const blob = await put(videoFileName, Buffer.from(videoBuffer), {
+            access: 'public',
+            contentType: 'video/mp4'
+          });
 
-          if (error) throw error;
-
-          const { data: { publicUrl } } = supabase.storage
-            .from('avatar-videos')
-            .getPublicUrl(videoFileName);
-
-          permanentUrl = publicUrl;
-          console.log('Video stored in Supabase:', permanentUrl);
+          permanentUrl = blob.url;
+          console.log('Video stored in Vercel Blob:', permanentUrl);
         } else {
           // Local development: Save to local filesystem
           const userVideoDir = path.join(LOCAL_VIDEO_DIR, userId);
