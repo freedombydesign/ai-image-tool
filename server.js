@@ -290,27 +290,32 @@ async function archiveImageToSupabase(tempUrl, userId = 'default') {
 
     if (IS_VERCEL) {
       // On Vercel: Use Vercel Blob Storage (no egress costs!)
-      const blob = await put(fileName, Buffer.from(imageBuffer), {
-        access: 'public',
-        contentType: contentType
-      });
+      try {
+        const blob = await put(fileName, Buffer.from(imageBuffer), {
+          access: 'public',
+          contentType: contentType
+        });
 
-      console.log('Image archived to Vercel Blob:', blob.url.substring(0, 80) + '...');
-      return blob.url;
-    } else {
-      // Local development: Save to public/images directory
-      const localImageDir = path.join(__dirname, 'public', 'images', 'scenes', userId);
-      if (!fs.existsSync(localImageDir)) {
-        fs.mkdirSync(localImageDir, { recursive: true });
+        console.log('Image archived to Vercel Blob:', blob.url.substring(0, 80) + '...');
+        return blob.url;
+      } catch (blobError) {
+        console.error('Vercel Blob failed, falling back to local storage:', blobError.message);
+        // Fall through to local storage
       }
-
-      const localPath = path.join(localImageDir, path.basename(fileName));
-      fs.writeFileSync(localPath, Buffer.from(imageBuffer));
-
-      const localUrl = `/images/scenes/${userId}/${path.basename(fileName)}`;
-      console.log('Image archived locally:', localUrl);
-      return localUrl;
     }
+
+    // Local development or Vercel Blob fallback: Save to public/images directory
+    const localImageDir = path.join(__dirname, 'public', 'images', 'scenes', userId);
+    if (!fs.existsSync(localImageDir)) {
+      fs.mkdirSync(localImageDir, { recursive: true });
+    }
+
+    const localPath = path.join(localImageDir, path.basename(fileName));
+    fs.writeFileSync(localPath, Buffer.from(imageBuffer));
+
+    const localUrl = `/images/scenes/${userId}/${path.basename(fileName)}`;
+    console.log('Image archived locally:', localUrl);
+    return localUrl;
   } catch (e) {
     console.error('Archive error:', e.message);
     return tempUrl; // Fall back to temp URL
