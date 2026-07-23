@@ -4048,8 +4048,34 @@ function handlePreviewAudioFile(file) {
 
     // Create temp audio to get duration
     const tempAudio = new Audio(previewAudioData);
+
+    tempAudio.addEventListener('error', (err) => {
+      console.error('Audio loading error:', err);
+      console.error('Audio error details:', tempAudio.error);
+      showToast('Could not load audio file. Try converting to MP3 format.', true);
+      removePreviewAudio();
+    });
+
+    // Add timeout in case metadata never loads
+    const metadataTimeout = setTimeout(() => {
+      console.error('Audio metadata timeout - file may be corrupted or unsupported format');
+      showToast('Audio file took too long to load. Try a different file or format.', true);
+      removePreviewAudio();
+    }, 10000); // 10 second timeout
+
     tempAudio.addEventListener('loadedmetadata', async () => {
+      clearTimeout(metadataTimeout); // Cancel timeout
       previewAudioDuration = tempAudio.duration;
+
+      console.log('Audio metadata loaded:', file.name, previewAudioDuration, 'seconds');
+
+      // Validate duration
+      if (!previewAudioDuration || previewAudioDuration === 0 || isNaN(previewAudioDuration)) {
+        console.error('Invalid audio duration:', previewAudioDuration);
+        showToast('Could not detect audio duration. File may be corrupted.', true);
+        removePreviewAudio();
+        return;
+      }
 
       // Update UI
       audioNameEl.textContent = file.name;
