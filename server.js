@@ -2214,12 +2214,29 @@ Only output the JSON array, no other text.`;
     try {
       // Parse the JSON response
       const responseText = completion.choices[0].message.content.trim();
+      console.log('GPT-4 raw response (first 500 chars):', responseText.substring(0, 500));
+
       // Handle potential markdown code blocks
-      const jsonText = responseText.replace(/^```json\n?|\n?```$/g, '').trim();
+      let jsonText = responseText.replace(/^```json\n?|\n?```$/g, '').trim();
+
+      // Try to extract JSON array if there's extra text
+      const arrayMatch = jsonText.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        jsonText = arrayMatch[0];
+      }
+
       scenes = JSON.parse(jsonText);
+
+      // Validate it's an array
+      if (!Array.isArray(scenes)) {
+        throw new Error('Response is not an array');
+      }
+
+      console.log(`Successfully parsed ${scenes.length} scenes`);
     } catch (parseError) {
       console.error('Failed to parse GPT response:', completion.choices[0].message.content);
-      throw new Error('Failed to parse scene descriptions from AI response');
+      console.error('Parse error details:', parseError.message);
+      throw new Error(`Failed to parse scene descriptions: ${parseError.message}. Check server logs for GPT-4's response.`);
     }
 
     res.json({
