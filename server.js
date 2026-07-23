@@ -1052,6 +1052,14 @@ app.post('/api/face-swap', upload.fields([
     const sourceFile = req.files['sourceImage']?.[0];
     const faceFile = req.files['faceImage']?.[0];
 
+    // Optional weight parameter (0.0-1.0, default 0.85)
+    // Lower values = more blending with original, less eye stretching
+    // Higher values = more replacement, stronger avatar features
+    const weight = parseFloat(req.body.weight || 0.85);
+    if (weight < 0 || weight > 1) {
+      return res.status(400).json({ error: 'Weight must be between 0 and 1' });
+    }
+
     if (!sourceFile || !faceFile) {
       return res.status(400).json({ error: 'Both source image and face image are required' });
     }
@@ -1064,6 +1072,7 @@ app.post('/api/face-swap', upload.fields([
     console.log('Starting face swap...');
     console.log('Source file:', sourceFile.originalname, 'size:', sourceFile.size);
     console.log('Face file:', faceFile.originalname, 'size:', faceFile.size);
+    console.log('Face swap weight:', weight, '(lower = less stretching, higher = stronger features)');
 
     // Convert images to base64 data URIs (works with both memory and disk storage)
     const sourceBase64 = fileToBase64DataUri(sourceFile);
@@ -1086,7 +1095,7 @@ app.post('/api/face-swap', upload.fields([
         input: {
           local_target: sourceBase64,  // The image to modify (scene)
           local_source: faceBase64,    // The face to swap IN (user's avatar)
-          weight: 1.0,                 // Full face replacement to preserve unique features
+          weight: weight,              // Blend weight (default 0.85, adjustable to reduce eye stretching)
           det_thresh: 0.1              // Face detection threshold
         }
       })
