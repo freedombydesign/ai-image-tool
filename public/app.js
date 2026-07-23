@@ -334,15 +334,8 @@ let sceneInspirationUrl = null;
 // Scene Persistence Functions
 let currentBatchId = null;
 
-// Get or create user ID for Supabase
-function getUserId() {
-  let userId = localStorage.getItem('ai_tool_user_id');
-  if (!userId) {
-    userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('ai_tool_user_id', userId);
-  }
-  return userId;
-}
+// NOTE: getUserId() is defined later in the file (line ~743)
+// This comment prevents duplicate function definitions
 
 // Save scenes to Supabase
 async function saveScenesToSupabase() {
@@ -357,12 +350,19 @@ async function saveScenesToSupabase() {
     currentBatchId = 'batch_' + Date.now();
   }
 
+  const userId = getUserId();
+  console.log('💾 Saving batch to Supabase:', {
+    userId,
+    batchId: currentBatchId,
+    sceneCount: validScenes.length
+  });
+
   try {
     const response = await fetch('/api/db/batch-scenes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userId: getUserId(),
+        userId: userId,
         batchId: currentBatchId,
         scenes: validScenes.map(s => ({
           imageUrl: s.imageUrl,
@@ -374,18 +374,19 @@ async function saveScenesToSupabase() {
     });
 
     if (!response.ok) {
-      console.error('Supabase save HTTP error:', response.status);
+      const errorText = await response.text();
+      console.error('❌ Supabase save HTTP error:', response.status, errorText.substring(0, 200));
       return;
     }
 
     const data = await response.json();
     if (data.success) {
-      console.log('Scenes saved to Supabase:', validScenes.length);
+      console.log('✅ Scenes saved to Supabase successfully:', validScenes.length);
     } else {
-      console.error('Supabase save error:', data.error);
+      console.error('❌ Supabase save error:', data.error);
     }
   } catch (e) {
-    console.error('Failed to save to Supabase:', e);
+    console.error('❌ Failed to save to Supabase:', e);
   }
 }
 
@@ -745,6 +746,9 @@ function getUserId() {
   if (!userId) {
     userId = 'user_' + crypto.randomUUID();
     localStorage.setItem('ai_tool_user_id', userId);
+    console.log('🆔 Created new user ID:', userId);
+  } else {
+    console.log('🆔 Using existing user ID:', userId);
   }
   return userId;
 }
@@ -2712,21 +2716,60 @@ async function generateBatchScenes() {
 
   // Keep already generated scenes from preview, only clear the grid
   const existingScenes = [...generatedScenes];
+
+  // Prepend uploaded images to the scenes array
+  if (uploadedBatchImages && uploadedBatchImages.length > 0) {
+    console.log(`📤 Including ${uploadedBatchImages.length} uploaded images at beginning of batch`);
+
+    // Add uploaded images to the beginning of generatedScenes
+    uploadedBatchImages.forEach((uploadedImg, idx) => {
+      if (!existingScenes[idx]) {
+        existingScenes[idx] = {
+          index: idx,
+          text: uploadedImg.text || `Uploaded: ${uploadedImg.fileName}`,
+          imageUrl: uploadedImg.imageUrl,
+          prompt: 'Uploaded image',
+          isUploaded: true
+        };
+      }
+    });
+  }
+
   scenesGrid.innerHTML = '';
   scenesContainer.hidden = false;
 
-  // Count how many scenes we need to generate (skip already generated ones)
-  const scenesToGenerate = scenes.filter((_, i) => !existingScenes[i]?.imageUrl).length;
+  // Determine uploaded image count
+  const uploadedCount = uploadedBatchImages?.length || 0;
 
-  // Create cards for all scenes - show existing images or placeholders
-  scenes.forEach((scene, index) => {
-    const existingImage = existingScenes[index]?.imageUrl || null;
-    const card = createSceneCard(index, scene, existingImage, !existingImage);
+  // Create cards for uploaded images first
+  if (uploadedCount > 0) {
+    uploadedBatchImages.forEach((uploadedImg, idx) => {
+      const card = createSceneCard(idx, uploadedImg.text, uploadedImg.imageUrl, false);
+      scenesGrid.appendChild(card);
+    });
+  }
+
+  // Create cards for script scenes (starting after uploaded images)
+  scenes.forEach((scene, scriptIndex) => {
+    const sceneIndex = uploadedCount + scriptIndex;
+    const existingImage = existingScenes[sceneIndex]?.imageUrl || null;
+    const card = createSceneCard(sceneIndex, scene, existingImage, !existingImage);
     scenesGrid.appendChild(card);
+
+    // If no existing scene at this index, prepare placeholder
+    if (!existingScenes[sceneIndex]) {
+      existingScenes[sceneIndex] = null;
+    }
   });
 
   // Restore existing scenes to the array
   generatedScenes = existingScenes;
+
+  // Count how many scenes we need to generate (skip uploaded and already generated ones)
+  const scenesToGenerate = scenes.filter((_, i) => {
+    const actualIndex = uploadedCount + i;
+    return !existingScenes[actualIndex]?.imageUrl;
+  }).length;
 
   if (scenesToGenerate === 0) {
     showToast('All scenes already generated!');
@@ -2758,20 +2801,23 @@ async function generateBatchScenes() {
   // Generate scenes sequentially to avoid rate limits
   let generatedCount = 0;
   for (let i = 0; i < scenes.length; i++) {
+    // Calculate actual index (accounting for uploaded images at the beginning)
+    const actualIndex = uploadedCount + i;
+
     // Check if cancelled
     if (generationCancelled) {
       console.log('Generation cancelled by user');
       break;
     }
 
-    // Skip already generated scenes (from preview)
-    if (generatedScenes[i]?.imageUrl) {
-      console.log(`Skipping scene ${i + 1} - already generated`);
+    // Skip already generated scenes (from preview or uploads)
+    if (generatedScenes[actualIndex]?.imageUrl) {
+      console.log(`Skipping scene ${actualIndex + 1} - already generated`);
       continue;
     }
 
     const sceneText = scenes[i];
-    const styledPrompt = buildStyledPrompt(sceneText, selectedStyle, true, i);
+    const styledPrompt = buildStyledPrompt(sceneText, selectedStyle, true, actualIndex);
 
     generatedCount++;
     updateLoadingProgress(generatedCount, scenesToGenerate);
@@ -2815,8 +2861,8 @@ async function generateBatchScenes() {
         throw new Error(data.error);
       }
 
-      generatedScenes[i] = {
-        index: i,
+      generatedScenes[actualIndex] = {
+        index: actualIndex,
         text: sceneText,
         imageUrl: data.image,
         prompt: styledPrompt,
@@ -2824,12 +2870,12 @@ async function generateBatchScenes() {
       };
 
       // Update the card with the generated image
-      updateSceneCard(i, data.image);
+      updateSceneCard(actualIndex, data.image);
       successCount++;
 
     } catch (error) {
-      console.error(`Failed to generate scene ${i + 1}:`, error);
-      markSceneError(i);
+      console.error(`Failed to generate scene ${actualIndex + 1}:`, error);
+      markSceneError(actualIndex);
       failCount++;
     }
 
@@ -7354,6 +7400,86 @@ function closeSaveToLibraryModal() {
   currentLibrarySceneIndex = null;
 }
 
+// Save all generated scenes to library at once
+async function saveAllScenesToLibrary() {
+  if (!generatedScenes || generatedScenes.length === 0) {
+    showToast('No scenes to save. Generate scenes first.', true);
+    return;
+  }
+
+  // Count valid scenes (skip empty slots)
+  const validScenes = generatedScenes.filter(s => s && s.imageUrl);
+  if (validScenes.length === 0) {
+    showToast('No valid scenes to save', true);
+    return;
+  }
+
+  // Check if library is loaded
+  if (typeof sceneLibraryManager === 'undefined') {
+    showToast('Scene Library not loaded. Please refresh the page.', true);
+    return;
+  }
+
+  // Ask user for tag to apply to all scenes
+  const tag = prompt(
+    `Save ${validScenes.length} scenes to library?\n\nChoose a tag for all scenes:\n- reaction\n- office\n- thinking\n- celebration\n- transition\n- other`,
+    'reaction'
+  );
+
+  if (!tag) {
+    return; // User cancelled
+  }
+
+  const validTags = ['reaction', 'office', 'thinking', 'celebration', 'transition', 'other'];
+  const selectedTag = validTags.includes(tag.toLowerCase()) ? tag.toLowerCase() : 'other';
+
+  // Show progress
+  const btn = document.getElementById('save-all-to-library-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Saving...';
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+
+  // Save each scene
+  for (let i = 0; i < generatedScenes.length; i++) {
+    const scene = generatedScenes[i];
+    if (!scene || !scene.imageUrl) continue;
+
+    try {
+      // Generate name from scene text or index
+      const name = scene.text
+        ? (scene.text.length > 50 ? scene.text.substring(0, 50) + '...' : scene.text)
+        : `Scene ${i + 1}`;
+
+      await sceneLibraryManager.addSceneToLibrary(scene, selectedTag, name);
+      successCount++;
+    } catch (error) {
+      console.error(`Failed to save scene ${i + 1}:`, error);
+      failCount++;
+    }
+  }
+
+  // Reset button
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">📚</span> Save All to Library';
+  }
+
+  // Show results
+  if (successCount > 0) {
+    showToast(`✅ Saved ${successCount} scene${successCount !== 1 ? 's' : ''} to library under "${selectedTag}" tag!`, false);
+  }
+  if (failCount > 0) {
+    showToast(`⚠️ ${failCount} scene${failCount !== 1 ? 's' : ''} failed to save`, true);
+  }
+}
+
+// Make function globally available
+window.saveAllScenesToLibrary = saveAllScenesToLibrary;
+
 // Confirm save to library
 async function confirmSaveToLibrary() {
   if (currentLibrarySceneIndex === null) return;
@@ -7415,6 +7541,121 @@ async function confirmSaveToLibrary() {
 window.openLibrarySaveDialog = openLibrarySaveDialog;
 window.closeSaveToLibraryModal = closeSaveToLibraryModal;
 window.confirmSaveToLibrary = confirmSaveToLibrary;
+
+// =============================================
+// BATCH IMAGE UPLOAD FUNCTIONS
+// =============================================
+
+let uploadedBatchImages = [];
+
+// Handle batch image upload
+async function handleBatchImageUpload(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+
+  const grid = document.getElementById('uploaded-batch-images');
+  const clearBtn = document.getElementById('clear-uploaded-images-btn');
+
+  // Convert files to base64
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) {
+      showToast(`Skipped non-image file: ${file.name}`, true);
+      continue;
+    }
+
+    try {
+      const base64 = await fileToBase64(file);
+      uploadedBatchImages.push({
+        imageUrl: base64,
+        text: `Uploaded: ${file.name}`,
+        fileName: file.name,
+        isUploaded: true
+      });
+    } catch (error) {
+      console.error('Failed to load image:', file.name, error);
+      showToast(`Failed to load: ${file.name}`, true);
+    }
+  }
+
+  // Render uploaded images
+  renderUploadedBatchImages();
+
+  // Show grid and clear button
+  if (grid) grid.hidden = false;
+  if (clearBtn) clearBtn.hidden = false;
+
+  showToast(`✅ Uploaded ${files.length} image${files.length > 1 ? 's' : ''}`, false);
+
+  // Reset file input
+  event.target.value = '';
+}
+
+// Render uploaded batch images
+function renderUploadedBatchImages() {
+  const grid = document.getElementById('uploaded-batch-images');
+  if (!grid) return;
+
+  if (uploadedBatchImages.length === 0) {
+    grid.hidden = true;
+    return;
+  }
+
+  grid.innerHTML = uploadedBatchImages.map((img, index) => `
+    <div class="uploaded-image-item">
+      <img src="${img.imageUrl}" alt="${img.fileName || 'Uploaded'}">
+      <button class="uploaded-image-remove" onclick="removeUploadedBatchImage(${index})" title="Remove">×</button>
+    </div>
+  `).join('');
+}
+
+// Remove single uploaded image
+function removeUploadedBatchImage(index) {
+  uploadedBatchImages.splice(index, 1);
+  renderUploadedBatchImages();
+
+  const grid = document.getElementById('uploaded-batch-images');
+  const clearBtn = document.getElementById('clear-uploaded-images-btn');
+
+  if (uploadedBatchImages.length === 0) {
+    if (grid) grid.hidden = true;
+    if (clearBtn) clearBtn.hidden = true;
+  }
+
+  showToast('Image removed', false);
+}
+
+// Clear all uploaded images
+function clearUploadedBatchImages() {
+  if (!confirm(`Remove all ${uploadedBatchImages.length} uploaded images?`)) {
+    return;
+  }
+
+  uploadedBatchImages = [];
+  renderUploadedBatchImages();
+
+  const grid = document.getElementById('uploaded-batch-images');
+  const clearBtn = document.getElementById('clear-uploaded-images-btn');
+
+  if (grid) grid.hidden = true;
+  if (clearBtn) clearBtn.hidden = true;
+
+  showToast('All uploaded images cleared', false);
+}
+
+// Helper: Convert file to base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Make batch upload functions globally available
+window.handleBatchImageUpload = handleBatchImageUpload;
+window.removeUploadedBatchImage = removeUploadedBatchImage;
+window.clearUploadedBatchImages = clearUploadedBatchImages;
 
 // Make functions globally available
 window.playGalleryVideo = playGalleryVideo;

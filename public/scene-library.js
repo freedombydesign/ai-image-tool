@@ -251,7 +251,7 @@ class SceneLibraryManager {
 }
 
 // Global instance
-const sceneLibrary = new SceneLibraryManager();
+const sceneLibraryManager = new SceneLibraryManager();
 
 // Render library grid
 function renderLibraryGrid(filter = 'all', searchQuery = '') {
@@ -261,7 +261,7 @@ function renderLibraryGrid(filter = 'all', searchQuery = '') {
 
   if (!grid) return;
 
-  let items = sceneLibrary.scenes;
+  let items = sceneLibraryManager.scenes;
 
   // Apply tag filter
   if (filter !== 'all') {
@@ -270,12 +270,12 @@ function renderLibraryGrid(filter = 'all', searchQuery = '') {
 
   // Apply search filter
   if (searchQuery) {
-    items = sceneLibrary.search(searchQuery);
+    items = sceneLibraryManager.search(searchQuery);
   }
 
   // Update stats
   if (statsEl) {
-    const stats = sceneLibrary.getStats();
+    const stats = sceneLibraryManager.getStats();
     statsEl.textContent = `${stats.total} saved scene${stats.total === 1 ? '' : 's'}`;
   }
 
@@ -348,7 +348,7 @@ function renderLibraryGrid(filter = 'all', searchQuery = '') {
     item.querySelector('.delete-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (confirm('Remove this scene from library?')) {
-        sceneLibrary.removeFromLibrary(id);
+        sceneLibraryManager.removeFromLibrary(id);
         showToast('Scene removed from library', false);
       }
     });
@@ -360,7 +360,7 @@ function renderLibraryGrid(filter = 'all', searchQuery = '') {
 
 // Show preview modal
 function showLibraryPreview(sceneId) {
-  const scene = sceneLibrary.getById(sceneId);
+  const scene = sceneLibraryManager.getById(sceneId);
   if (!scene) return;
 
   const modal = document.getElementById('library-preview-modal');
@@ -397,7 +397,7 @@ function closeLibraryPreview() {
 
 // Use scene in video
 function useSceneInVideo(sceneId) {
-  const scene = sceneLibrary.getById(sceneId);
+  const scene = sceneLibraryManager.getById(sceneId);
   if (!scene) return;
 
   // Check if video editor is available
@@ -427,7 +427,7 @@ function useSceneInVideo(sceneId) {
 
 // Show edit tags dialog
 function showEditTagsDialog(sceneId) {
-  const scene = sceneLibrary.getById(sceneId);
+  const scene = sceneLibraryManager.getById(sceneId);
   if (!scene) return;
 
   const modal = document.getElementById('edit-tags-modal');
@@ -468,7 +468,7 @@ async function saveEditedTags() {
   const newTag = tagSelect?.value || 'other';
 
   showToast('Updating scene...', false);
-  const success = await sceneLibrary.updateSceneTags(sceneId, newTag, newName);
+  const success = await sceneLibraryManager.updateSceneTags(sceneId, newTag, newName);
 
   if (success) {
     showToast('Scene updated', false);
@@ -531,7 +531,7 @@ function initLibraryUI() {
     document.getElementById('library-modal-delete')?.addEventListener('click', async () => {
       const sceneId = previewModal.dataset.currentId;
       if (sceneId && confirm('Remove this scene from library?')) {
-        await sceneLibrary.removeFromLibrary(sceneId);
+        await sceneLibraryManager.removeFromLibrary(sceneId);
         closeLibraryPreview();
         showToast('Scene removed from library', false);
       }
@@ -550,7 +550,7 @@ function initLibraryUI() {
   }
 
   // Load library scenes on init
-  sceneLibrary.loadFromSupabase().then(() => {
+  sceneLibraryManager.loadFromSupabase().then(() => {
     renderLibraryGrid();
   });
 }

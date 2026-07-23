@@ -293,6 +293,22 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
             <span class="preview-cost" id="preview-cost">(Preview: ~$0.12)</span>
           </div>
 
+          <!-- Upload Previous Images Section -->
+          <div class="settings-card" id="batch-upload-section">
+            <h4>📤 Add Previous Images (Optional)</h4>
+            <p class="card-description">Upload previously generated images to include in this batch</p>
+
+            <div class="batch-upload-controls">
+              <input type="file" id="batch-image-upload" accept="image/*" multiple hidden onchange="handleBatchImageUpload(event)">
+              <button class="btn secondary" onclick="document.getElementById('batch-image-upload').click()">
+                <span class="btn-icon">📁</span> Upload Images
+              </button>
+              <button class="btn text small" id="clear-uploaded-images-btn" onclick="clearUploadedBatchImages()" hidden>Clear All</button>
+            </div>
+
+            <div id="uploaded-batch-images" class="uploaded-images-grid" hidden></div>
+          </div>
+
           <div class="generate-buttons">
             <button class="btn accent" id="convert-script-btn" title="Convert script to visual scene descriptions using AI">
               <span class="btn-icon">🎬</span> Convert Script to Visuals
@@ -531,6 +547,9 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
                 <span class="btn-icon">➕</span> Add More Scenes
               </button>
               <button class="btn secondary" id="download-all-btn">Download All (ZIP)</button>
+              <button class="btn secondary" id="save-all-to-library-btn" onclick="saveAllScenesToLibrary()" title="Save all scenes to library at once">
+                <span class="btn-icon">📚</span> Save All to Library
+              </button>
             </div>
           </div>
           <div id="scenes-grid" class="scenes-grid"></div>
