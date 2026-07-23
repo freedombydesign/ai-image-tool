@@ -2130,29 +2130,30 @@ app.post('/api/script-to-scenes', async (req, res) => {
     console.log(`Converting script to ${sceneCount} visual scenes... (Avatar in scenes: ${includeAvatarInScenes})`);
 
     // Build the system prompt for scene conversion
+    // IMPORTANT: Brand rules go FIRST to set the visual aesthetic before content
     let systemPrompt = `You are a visual director converting video scripts into image generation prompts.
 
-Your job is to read a script and create ${sceneCount} distinct visual scene descriptions that would work as AI-generated images for a video.
+Your job is to read a script and create ${sceneCount} distinct visual scene descriptions that would work as AI-generated images for a video.`;
 
-CRITICAL RULES:
-1. Output ONLY visual descriptions - describe what we SEE, not what we hear
-2. Each scene should be a single, clear visual moment (not abstract concepts)
-3. KEEP VISUAL DESCRIPTIONS UNDER 200 CHARACTERS - concise, focused image prompts only
-4. Include: subjects, actions, setting, lighting, mood, composition
-5. Use professional video/photography terminology
-6. NO text in images - text will be added separately with overlays
-7. Make scenes visually distinct but thematically cohesive
-8. Focus on emotions, body language, and visual metaphors for abstract concepts
-9. DO NOT copy script text into visual descriptions - create NEW concise visual prompts
+    // Add brand rules FIRST if provided - this sets the visual aesthetic
+    if (brandRules) {
+      systemPrompt += `
 
-DEFAULT CONTENT TO AVOID (unless specifically requested):
-- Tarot cards, oracle cards, divination tools
-- Crystals, gemstones, healing stones
-- Occult symbols, pentagrams, mystical sigils
-- Astrology symbols, zodiac imagery
-- Magic, witchcraft, spellcasting imagery
-- New age spirituality aesthetics
-Instead use: professional business settings, modern technology, nature metaphors, human connection moments`;
+🎨 BRAND VISUAL AESTHETIC - APPLY TO EVERY SINGLE SCENE (NON-NEGOTIABLE):`;
+      if (brandRules.mood) systemPrompt += `\n- Mood/Atmosphere: ${brandRules.mood}`;
+      if (brandRules.lighting) systemPrompt += `\n- Lighting Style: ${brandRules.lighting}`;
+      if (brandRules.colors) systemPrompt += `\n- Color Palette: ${brandRules.colors}`;
+      if (brandRules.avoid) systemPrompt += `\n- NEVER INCLUDE: ${brandRules.avoid}`;
+
+      systemPrompt += `
+
+CRITICAL: Even if the script mentions business/corporate concepts, you MUST translate them into settings that match the brand aesthetic above.
+- Instead of "office" → use "cozy home workspace with soft lighting"
+- Instead of "boardroom" → use "comfortable living room" or "peaceful outdoor setting"
+- Instead of "business meeting" → use "heartfelt conversation in a warm space"
+- Instead of "presentation" → use "intimate sharing moment"
+All scenes must feel ${brandRules.mood || 'warm and inviting'}, never cold or corporate.`;
+    }
 
     // Add avatar as main character if included
     if (includeAvatarInScenes && avatarDescription) {
@@ -2161,32 +2162,35 @@ Instead use: professional business settings, modern technology, nature metaphors
 MAIN CHARACTER - FEATURE THIS PERSON IN EVERY SCENE:
 ${avatarDescription}
 
-CRITICAL - CHARACTER INTEGRATION RULES:
-1. This character is the MAIN SUBJECT of every scene - they should be ACTING OUT the concepts
-2. Do NOT show static poses or portrait shots - show the character IN ACTION
-3. Match scenes to script content:
-   - If script mentions "sales conversation" → show character talking to a client, gesturing, presenting
-   - If script mentions "closing a deal" → show character shaking hands, celebrating, signing papers
-   - If script mentions "overcoming objections" → show character listening intently, nodding, responding
-   - If script mentions "building rapport" → show character laughing with someone, mirroring body language
-   - If script mentions "following up" → show character on phone, at computer, writing notes
-4. Use visual metaphors WITH the character:
-   - "Breaking through barriers" → character pushing through a door/wall
-   - "Building trust" → character building something, constructing
-   - "Climbing the ladder" → character actually climbing, ascending stairs
-5. Vary the character's position, pose, and action in each scene - no repetition
-6. Show the character from different angles: front, side, over-shoulder, medium shots, close-ups of hands/expressions
-7. The character should express emotions matching the script: confident, empathetic, excited, thoughtful`;
+CHARACTER INTEGRATION RULES:
+1. This character is the MAIN SUBJECT of every scene - show them ACTING OUT the concepts
+2. Do NOT show static poses - show the character IN ACTION with dynamic body language
+3. Translate script concepts into visual actions that match the brand aesthetic
+4. Use visual metaphors WITH the character in brand-appropriate settings
+5. Vary the character's position, pose, and action in each scene
+6. Show the character from different angles: front, side, over-shoulder, close-ups
+7. Character expressions should match emotions: confident, empathetic, excited, thoughtful`;
     }
 
-    // Add brand rules if provided
-    if (brandRules) {
-      systemPrompt += `\n\nBRAND STYLING TO APPLY TO ALL SCENES:`;
-      if (brandRules.mood) systemPrompt += `\n- Mood: ${brandRules.mood}`;
-      if (brandRules.lighting) systemPrompt += `\n- Lighting: ${brandRules.lighting}`;
-      if (brandRules.colors) systemPrompt += `\n- Colors: ${brandRules.colors}`;
-      if (brandRules.avoid) systemPrompt += `\n- AVOID: ${brandRules.avoid}`;
-    }
+    systemPrompt += `
+
+SCENE CREATION RULES:
+1. Output ONLY visual descriptions - describe what we SEE, not what we hear
+2. Each scene should be a single, clear visual moment (not abstract concepts)
+3. KEEP VISUAL DESCRIPTIONS UNDER 200 CHARACTERS - concise, focused image prompts only
+4. Include: subjects, actions, setting, lighting, mood, composition
+5. Use professional video/photography terminology
+6. NO text in images - text will be added separately with overlays
+7. Make scenes visually distinct but thematically cohesive
+8. Focus on emotions, body language, and visual metaphors
+9. DO NOT copy script text into visual descriptions - create NEW concise visual prompts
+
+DEFAULT CONTENT TO AVOID (unless specifically requested):
+- Tarot cards, oracle cards, divination tools
+- Crystals, gemstones, healing stones
+- Occult symbols, pentagrams, mystical sigils
+- Astrology symbols, zodiac imagery
+- Magic, witchcraft, spellcasting imagery`;
 
     systemPrompt += `\n\nOutput format - return a JSON array with exactly ${sceneCount} objects:
 [
