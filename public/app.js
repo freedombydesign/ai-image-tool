@@ -4074,28 +4074,34 @@ function handlePreviewAudioFile(file) {
   const audioNameEl = document.getElementById('preview-audio-name');
   const audioDurationEl = document.getElementById('preview-audio-duration');
 
-  console.log('[AUDIO DEBUG] Creating FileReader...');
-  const reader = new FileReader();
+  // Use blob URL for better performance with large files
+  console.log('[AUDIO DEBUG] Creating blob URL for audio...');
+  const blobUrl = URL.createObjectURL(file);
+  console.log('[AUDIO DEBUG] Blob URL created:', blobUrl);
 
-  reader.onerror = (e) => {
-    console.error('[AUDIO DEBUG] FileReader error:', e);
-  };
+  const tempAudio = new Audio(blobUrl);
 
-  reader.onload = (e) => {
-    console.log('[AUDIO DEBUG] FileReader loaded, data length:', e.target.result.length);
-    previewAudioData = e.target.result;
+  tempAudio.addEventListener('error', (err) => {
+    console.error('[AUDIO DEBUG] Audio element error:', err, tempAudio.error);
+    showToast('Error loading audio file. Try a different format (MP3, WAV)', 'error');
+    URL.revokeObjectURL(blobUrl);
+  });
 
-    // Create temp audio to get duration
-    console.log('[AUDIO DEBUG] Creating Audio element...');
-    const tempAudio = new Audio(previewAudioData);
+  tempAudio.addEventListener('loadedmetadata', async () => {
+    console.log('[AUDIO DEBUG] Audio metadata loaded, duration:', tempAudio.duration);
+    previewAudioDuration = tempAudio.duration;
 
-    tempAudio.addEventListener('error', (err) => {
-      console.error('[AUDIO DEBUG] Audio element error:', err);
-    });
+    // Now convert to base64 for storage
+    console.log('[AUDIO DEBUG] Converting to base64 for storage...');
+    const reader = new FileReader();
 
-    tempAudio.addEventListener('loadedmetadata', async () => {
-      console.log('[AUDIO DEBUG] Audio metadata loaded, duration:', tempAudio.duration);
-      previewAudioDuration = tempAudio.duration;
+    reader.onerror = (e) => {
+      console.error('[AUDIO DEBUG] FileReader error:', e);
+    };
+
+    reader.onload = async (e) => {
+      console.log('[AUDIO DEBUG] FileReader loaded, data length:', e.target.result.length);
+      previewAudioData = e.target.result;
 
       // Update UI
       audioNameEl.textContent = file.name;
@@ -4118,11 +4124,22 @@ function handlePreviewAudioFile(file) {
 
       console.log('[AUDIO DEBUG] Audio upload complete!');
       showToast(`Audio loaded: ${file.name} (${formatTime(previewAudioDuration)})`, 'success');
-    });
-  };
 
-  console.log('[AUDIO DEBUG] Starting FileReader.readAsDataURL...');
-  reader.readAsDataURL(file);
+      // Clean up blob URL
+      URL.revokeObjectURL(blobUrl);
+    };
+
+    reader.readAsDataURL(file);
+  });
+
+  // Set a timeout for metadata loading
+  setTimeout(() => {
+    if (previewAudioDuration === 0) {
+      console.error('[AUDIO DEBUG] Metadata loading timed out after 30 seconds');
+      showToast('Audio file is taking too long to load. Try a different format.', 'error');
+      URL.revokeObjectURL(blobUrl);
+    }
+  }, 30000);
 }
 
 // Play preview audio
