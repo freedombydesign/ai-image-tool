@@ -4067,72 +4067,36 @@ function setupPreviewAudioUpload() {
 }
 
 // Handle preview audio file
-function handlePreviewAudioFile(file) {
+async function handlePreviewAudioFile(file) {
   console.log('[AUDIO DEBUG] handlePreviewAudioFile called with file:', file.name);
   const placeholder = document.getElementById('preview-audio-placeholder');
   const loadedSection = document.getElementById('preview-audio-loaded');
   const audioNameEl = document.getElementById('preview-audio-name');
   const audioDurationEl = document.getElementById('preview-audio-duration');
 
-  // Use blob URL for better performance with large files
-  console.log('[AUDIO DEBUG] Creating blob URL for audio...');
+  try {
+    // Use Web Audio API to decode the file (more reliable than Audio element)
+    console.log('[AUDIO DEBUG] Reading file as ArrayBuffer...');
+    const arrayBuffer = await file.arrayBuffer();
+    console.log('[AUDIO DEBUG] ArrayBuffer created, size:', arrayBuffer.byteLength);
 
-  // Check codec support
-  const testAudio = new Audio();
-  const m4aSupport = testAudio.canPlayType('audio/x-m4a');
-  const mp4Support = testAudio.canPlayType('audio/mp4');
-  console.log('[AUDIO DEBUG] Codec support - x-m4a:', m4aSupport, 'mp4:', mp4Support);
+    console.log('[AUDIO DEBUG] Creating AudioContext...');
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-  const blobUrl = URL.createObjectURL(file);
-  console.log('[AUDIO DEBUG] Blob URL created:', blobUrl);
+    console.log('[AUDIO DEBUG] Decoding audio data...');
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    console.log('[AUDIO DEBUG] Audio decoded successfully, duration:', audioBuffer.duration);
 
-  const tempAudio = new Audio();
-  tempAudio.preload = 'metadata';
+    previewAudioDuration = audioBuffer.duration;
+    audioContext.close();
 
-  // Add all event listeners to see what's happening
-  tempAudio.addEventListener('loadstart', () => {
-    console.log('[AUDIO DEBUG] loadstart event fired');
-  });
-
-  tempAudio.addEventListener('progress', () => {
-    console.log('[AUDIO DEBUG] progress event fired');
-  });
-
-  tempAudio.addEventListener('canplay', () => {
-    console.log('[AUDIO DEBUG] canplay event fired');
-  });
-
-  tempAudio.addEventListener('canplaythrough', () => {
-    console.log('[AUDIO DEBUG] canplaythrough event fired');
-  });
-
-  tempAudio.addEventListener('stalled', () => {
-    console.log('[AUDIO DEBUG] stalled event fired');
-  });
-
-  tempAudio.addEventListener('suspend', () => {
-    console.log('[AUDIO DEBUG] suspend event fired');
-  });
-
-  tempAudio.addEventListener('error', (err) => {
-    console.error('[AUDIO DEBUG] Audio element error:', err, tempAudio.error);
-    if (tempAudio.error) {
-      console.error('[AUDIO DEBUG] Error details - code:', tempAudio.error.code, 'message:', tempAudio.error.message);
-    }
-    showToast('Error loading audio file. Try converting to MP3 format.', 'error');
-    URL.revokeObjectURL(blobUrl);
-  });
-
-  tempAudio.addEventListener('loadedmetadata', async () => {
-    console.log('[AUDIO DEBUG] Audio metadata loaded, duration:', tempAudio.duration);
-    previewAudioDuration = tempAudio.duration;
-
-    // Now convert to base64 for storage
+    // Convert file to base64 for storage
     console.log('[AUDIO DEBUG] Converting to base64 for storage...');
     const reader = new FileReader();
 
     reader.onerror = (e) => {
       console.error('[AUDIO DEBUG] FileReader error:', e);
+      throw new Error('Failed to read audio file');
     };
 
     reader.onload = async (e) => {
@@ -4160,28 +4124,14 @@ function handlePreviewAudioFile(file) {
 
       console.log('[AUDIO DEBUG] Audio upload complete!');
       showToast(`Audio loaded: ${file.name} (${formatTime(previewAudioDuration)})`, 'success');
-
-      // Clean up blob URL
-      URL.revokeObjectURL(blobUrl);
     };
 
     reader.readAsDataURL(file);
-  });
 
-  // Set source and trigger load
-  console.log('[AUDIO DEBUG] Setting audio src and triggering load...');
-  tempAudio.src = blobUrl;
-  tempAudio.load();
-  console.log('[AUDIO DEBUG] Audio load() called');
-
-  // Set a timeout for metadata loading
-  setTimeout(() => {
-    if (previewAudioDuration === 0) {
-      console.error('[AUDIO DEBUG] Metadata loading timed out after 30 seconds');
-      showToast('Audio file is taking too long to load. Try a different format.', 'error');
-      URL.revokeObjectURL(blobUrl);
-    }
-  }, 30000);
+  } catch (error) {
+    console.error('[AUDIO DEBUG] Audio processing failed:', error);
+    showToast(`Failed to load audio: ${error.message}`, 'error');
+  }
 }
 
 // Play preview audio
