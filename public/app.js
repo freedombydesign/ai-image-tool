@@ -1739,14 +1739,17 @@ async function convertScriptToVisualScenes() {
         let errorMessage = `Server error: ${response.status}`;
         try {
           const errorData = await response.json();
+          console.error('Server returned error:', errorData);
           errorMessage = errorData.error || errorMessage;
         } catch (e) {
+          console.error('Failed to parse error response as JSON:', e);
           // If response isn't JSON, try to get text
           try {
             const errorText = await response.text();
+            console.error('Error response text:', errorText);
             errorMessage = errorText || errorMessage;
           } catch (e2) {
-            // Use default error message
+            console.error('Failed to read error response text:', e2);
           }
         }
         throw new Error(errorMessage);
