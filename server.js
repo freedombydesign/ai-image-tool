@@ -508,9 +508,6 @@ app.use((req, res, next) => {
 
 app.use(express.static('public'));
 
-// Check if running on Vercel (serverless with read-only filesystem)
-const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL === 'true' || !!process.env.VERCEL_ENV;
-
 // Use /tmp for Vercel (only writable directory) or local uploads folder
 const UPLOAD_DIR = IS_VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
 
