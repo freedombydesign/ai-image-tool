@@ -35,6 +35,7 @@ const IS_VERCEL = !!process.env.VERCEL || process.env.NODE_ENV === 'production';
 // Only use local storage when NOT on Vercel (local development)
 const LOCAL_VIDEO_DIR = path.join(__dirname, 'public', 'videos', 'avatars');
 const LOCAL_AUDIO_DIR = path.join(__dirname, 'public', 'audio');
+const LOCAL_IMAGES_DIR = path.join(__dirname, 'public', 'images', 'scenes');
 
 if (!IS_VERCEL) {
   // Only create local directories in development (not on Vercel)
@@ -45,6 +46,10 @@ if (!IS_VERCEL) {
   if (!fs.existsSync(LOCAL_AUDIO_DIR)) {
     fs.mkdirSync(LOCAL_AUDIO_DIR, { recursive: true });
     console.log('Created local audio directory:', LOCAL_AUDIO_DIR);
+  }
+  if (!fs.existsSync(LOCAL_IMAGES_DIR)) {
+    fs.mkdirSync(LOCAL_IMAGES_DIR, { recursive: true });
+    console.log('Created local images directory:', LOCAL_IMAGES_DIR);
   }
 } else {
   console.log('Running on Vercel - using Vercel Blob Storage for media files (no egress costs)');
@@ -1756,6 +1761,68 @@ app.post('/api/upload-audio', audioUpload.single('audio'), async (req, res) => {
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save base64 scene image to local storage (to avoid 413 Payload Too Large errors)
+app.post('/api/save-scene-image', async (req, res) => {
+  try {
+    const { userId, imageData, sceneIndex } = req.body;
+
+    if (!userId || !imageData) {
+      return res.status(400).json({ error: 'userId and imageData are required' });
+    }
+
+    // Validate base64 format
+    if (!imageData.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'imageData must be a base64 data URL' });
+    }
+
+    // Extract base64 data and content type
+    const matches = imageData.match(/^data:image\/([a-z]+);base64,(.+)$/);
+    if (!matches) {
+      return res.status(400).json({ error: 'Invalid base64 image format' });
+    }
+
+    const contentType = `image/${matches[1]}`;
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Generate filename based on content hash (for deduplication)
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 16);
+    const extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const fileName = `scene_${hash}.${extension}`;
+
+    let imageUrl;
+
+    if (IS_VERCEL) {
+      // On Vercel: Use Vercel Blob Storage (no egress costs!)
+      const blobPath = `scenes/${userId}/${fileName}`;
+      const blob = await put(blobPath, buffer, {
+        access: 'public',
+        contentType: contentType
+      });
+
+      imageUrl = blob.url;
+      console.log('Scene image stored in Vercel Blob:', imageUrl);
+    } else {
+      // Local development: Save to local filesystem
+      const userImageDir = path.join(LOCAL_IMAGES_DIR, userId);
+      if (!fs.existsSync(userImageDir)) {
+        fs.mkdirSync(userImageDir, { recursive: true });
+      }
+
+      const localImagePath = path.join(userImageDir, fileName);
+      fs.writeFileSync(localImagePath, buffer);
+      imageUrl = `/images/scenes/${userId}/${fileName}`;
+      console.log('Scene image stored locally:', imageUrl);
+    }
+
+    res.json({ success: true, url: imageUrl, hash });
+  } catch (error) {
+    console.error('Scene image save error:', error);
     res.status(500).json({ error: error.message });
   }
 });

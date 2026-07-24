@@ -162,12 +162,56 @@ class VideoEditor {
     const batchId = 'video-editor-main';
 
     try {
+      // Upload base64 images to server first (to avoid 413 Payload Too Large)
+      console.log('Uploading base64 images to local storage...');
+      const scenesWithLocalUrls = [];
+
+      for (let i = 0; i < this.scenes.length; i++) {
+        const scene = this.scenes[i];
+        let imageUrl = scene.imageUrl;
+
+        // If image is base64, upload to server and get local URL
+        if (imageUrl && imageUrl.startsWith('data:image/')) {
+          try {
+            const uploadResponse = await fetch('/api/save-scene-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: userId,
+                imageData: imageUrl,
+                sceneIndex: i
+              })
+            });
+
+            if (uploadResponse.ok) {
+              const uploadData = await uploadResponse.json();
+              imageUrl = uploadData.url; // Replace base64 with local URL
+              console.log(`Scene ${i + 1}: Uploaded to ${imageUrl}`);
+            } else {
+              console.warn(`Scene ${i + 1}: Upload failed, keeping base64 (will fail later)`);
+            }
+          } catch (uploadErr) {
+            console.error(`Scene ${i + 1}: Upload error:`, uploadErr);
+          }
+        }
+
+        scenesWithLocalUrls.push({
+          imageUrl: imageUrl,
+          text: scene.text || '',
+          caption: scene.caption || '',
+          visualDescription: scene.visualDescription || '',
+          duration: scene.duration,
+          startTime: scene.startTime,
+          index: i
+        });
+      }
+
       // Delete existing batch first to prevent duplicates
       await fetch(`/api/db/batch-scenes/${userId}/${batchId}`, {
         method: 'DELETE'
       });
 
-      // Now save the current scenes (including audio URL for cross-browser persistence)
+      // Now save the scenes with local URLs (small payload)
       const response = await fetch('/api/db/batch-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,15 +220,7 @@ class VideoEditor {
           batchId: batchId,
           audioUrl: this.savedAudioUrl || localStorage.getItem('saved_audio_url') || null,
           audioFileName: this.audioFileName || localStorage.getItem('saved_audio_name') || null,
-          scenes: this.scenes.map((scene, index) => ({
-            imageUrl: scene.imageUrl,
-            text: scene.text || '',
-            caption: scene.caption || '',  // Save caption separately (transcription from Whisper)
-            visualDescription: scene.visualDescription || '',
-            duration: scene.duration,
-            startTime: scene.startTime,
-            index: index
-          }))
+          scenes: scenesWithLocalUrls
         })
       });
 
