@@ -1366,6 +1366,9 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
     }
 
     // MuseTalk model (tmappdev/lipsync) - much cheaper and real-time speed
+    // Use the same version as the default endpoint for consistency
+    const MUSETALK_VERSION = 'fad5d41f588e8d0c9ddf861cbb491c7e7d2a957d9bc65ba80bc4fcab6e6f8891';
+
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
@@ -1373,7 +1376,7 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: 'ab4afd0ce992de82b862fa4a9132fba4dbe849f4a629f0e1f3638f81fa81bfe1', // tmappdev/lipsync (MuseTalk)
+        version: MUSETALK_VERSION,
         input: {
           face: avatarUrl,
           audio: audioUrl
