@@ -5622,9 +5622,6 @@ class VideoEditor {
     }
 
     try {
-      // Create object URL for immediate preview
-      const imageUrl = URL.createObjectURL(file);
-
       // Update the scene
       if (this.scenes[index]) {
         // Revoke old object URL if it exists
@@ -5632,12 +5629,25 @@ class VideoEditor {
           URL.revokeObjectURL(this.scenes[index].imageUrl);
         }
 
-        this.scenes[index].imageUrl = imageUrl;
+        // Convert to base64 for persistence (blob URLs break on tab close)
+        const reader = new FileReader();
+        const base64Promise = new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+        const base64Url = await base64Promise;
+
+        // Update with base64 URL so it persists
+        this.scenes[index].imageUrl = base64Url;
         this.scenes[index].imageFile = file; // Store file for later upload if needed
 
-        // Re-render timeline and captions
+        // Re-render all views with the new image
+        this.renderImportedScenes();
         this.renderTimeline();
         this.renderCaptions();
+
+        // Save to Supabase so it persists on refresh
+        this.saveScenesToSupabase();
 
         showToast(`Scene ${index + 1} image replaced!`, 'success');
       }
