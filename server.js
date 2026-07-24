@@ -1192,9 +1192,9 @@ app.post('/api/animate-avatar', upload.fields([
     console.log('Avatar base64 length:', avatarBase64.length);
     console.log('Audio base64 length:', audioBase64.length);
 
-    // Use p-video-avatar - ONLY model allowed (fast & cheap)
-    // SadTalker REMOVED - cost $18+ in failed runs
-    const PVIDEO_VERSION = '8a54bb678ef43a7a40950731bad3f33f4ac904267fecebd2186c826a6da6f5a5';
+    // DEFAULT TO MUSETALK - Much cheaper ($0.05 vs $2.25 per segment)
+    // MuseTalk model (tmappdev/lipsync)
+    const MUSETALK_VERSION = 'fad5d41f588e8d0c9ddf861cbb491c7e7d2a957d9bc65ba80bc4fcab6e6f8891';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -1203,14 +1203,10 @@ app.post('/api/animate-avatar', upload.fields([
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        version: PVIDEO_VERSION,
+        version: MUSETALK_VERSION,
         input: {
-          image: avatarBase64,
-          audio: audioBase64,
-          resolution: "720p",
-          // Smooth motion prompt to reduce bouncy/jerky movements
-          video_prompt: "Smooth, natural head movements. Subtle, gentle motion. Professional presenter style. Minimal head bobbing. Calm and steady posture. No sudden movements.",
-          negative_prompt: "jerky movements, bouncing, shaking, twitching, rapid motion, jittery"
+          face: avatarBase64,
+          audio: audioBase64
         }
       })
     });
@@ -3304,8 +3300,8 @@ app.get('/api/db/brand-rules/:userId', async (req, res) => {
 // BATCH SCENES STORAGE (SUPABASE)
 // ============================================
 
-// Save batch scenes to Supabase
-app.post('/api/db/batch-scenes', async (req, res) => {
+// Save batch scenes to Supabase (increased limit for large batches with captions)
+app.post('/api/db/batch-scenes', express.json({ limit: '50mb' }), async (req, res) => {
   if (!supabase) {
     return res.status(503).json({ error: 'Supabase not configured' });
   }
