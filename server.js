@@ -3302,12 +3302,17 @@ app.get('/api/db/brand-rules/:userId', async (req, res) => {
 
 // Save batch scenes to Supabase (increased limit for large batches with captions)
 app.post('/api/db/batch-scenes', express.json({ limit: '50mb' }), async (req, res) => {
+  // DEBUG: Log payload size
+  const payloadSize = JSON.stringify(req.body).length;
+  console.log(`📊 Batch scenes request received - Payload size: ${payloadSize} bytes (${(payloadSize / 1024 / 1024).toFixed(2)} MB)`);
+
   if (!supabase) {
     return res.status(503).json({ error: 'Supabase not configured' });
   }
 
   try {
     const { userId, batchId, scenes, audioUrl, audioFileName } = req.body;
+    console.log(`📊 Processing ${scenes?.length || 0} scenes for user ${userId}`);
 
     if (!userId || !batchId || !scenes || !Array.isArray(scenes)) {
       return res.status(400).json({ error: 'userId, batchId, and scenes array required' });
