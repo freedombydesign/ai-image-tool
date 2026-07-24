@@ -191,8 +191,8 @@ class VideoEditor {
       if (response.ok) {
         console.log(`Saved ${this.scenes.length} scenes to Supabase`);
       } else {
-        const error = await response.json();
-        console.error('Failed to save scenes:', error);
+        const text = await response.text();
+        console.error('Failed to save scenes:', response.status, text);
       }
     } catch (e) {
       console.error('Failed to save scenes to Supabase:', e);
