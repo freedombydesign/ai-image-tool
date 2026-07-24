@@ -845,6 +845,12 @@ class VideoEditor {
     if (importFromLibraryBtn) {
       importFromLibraryBtn.addEventListener('click', () => this.openLibraryImportModal());
     }
+    const uploadZipBtn = document.getElementById('upload-zip-to-editor');
+    const zipInput = document.getElementById('video-editor-zip-upload');
+    if (uploadZipBtn && zipInput) {
+      uploadZipBtn.addEventListener('click', () => zipInput.click());
+      zipInput.addEventListener('change', (e) => this.handleZipUpload(e));
+    }
     this.sceneUploadArea.addEventListener('click', () => this.sceneFilesInput.click());
     this.sceneFilesInput.addEventListener('change', (e) => this.handleSceneUpload(e));
 
@@ -1636,6 +1642,80 @@ class VideoEditor {
       };
       reader.readAsDataURL(file);
     });
+  }
+
+  // Handle ZIP file upload
+  async handleZipUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+      showToast('Extracting ZIP file...', 'info');
+
+      const zip = await JSZip.loadAsync(file);
+      const imageFiles = [];
+
+      // Get all image files from zip
+      zip.forEach((relativePath, zipEntry) => {
+        if (!zipEntry.dir && /\.(png|jpg|jpeg|webp)$/i.test(relativePath)) {
+          imageFiles.push({ path: relativePath, entry: zipEntry });
+        }
+      });
+
+      // Sort by filename to maintain order
+      imageFiles.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+
+      if (imageFiles.length === 0) {
+        showToast('No images found in ZIP file', true);
+        return;
+      }
+
+      // Get scene duration from slider or default
+      const sceneDuration = typeof getSceneDuration === 'function'
+        ? getSceneDuration()
+        : (document.getElementById('scene-duration')?.value || 6);
+      const duration = parseInt(sceneDuration);
+
+      // Convert images to base64 and create scenes
+      const newScenes = [];
+      for (let i = 0; i < imageFiles.length; i++) {
+        const blob = await imageFiles[i].entry.async('blob');
+
+        // Convert to base64
+        const reader = new FileReader();
+        const base64Promise = new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+        const base64Url = await base64Promise;
+
+        newScenes.push({
+          id: Date.now() + i,
+          imageUrl: base64Url,
+          text: `Scene ${i + 1}`,
+          duration: duration,
+          caption: '',
+          startTime: 0 // Will be recalculated
+        });
+      }
+
+      // If there are existing scenes, ask user what to do
+      if (this.scenes.length > 0) {
+        this.showImportChoiceDialog(newScenes);
+      } else {
+        // No existing scenes - just import
+        this.scenes = newScenes;
+        this.recalculateTimings();
+        this.finishImport(newScenes.length, 'imported from ZIP');
+      }
+
+      // Reset file input
+      event.target.value = '';
+
+    } catch (error) {
+      console.error('ZIP upload error:', error);
+      showToast('Failed to extract ZIP file', true);
+    }
   }
 
   renderImportedScenes() {
