@@ -14,7 +14,7 @@ class SceneLibraryManager {
         return [];
       }
 
-      const response = await fetch(`/api/db/batch-scenes/${userId}`);
+      const response = await fetch(`/api/db/batch-scenes/${userId}?limit=50`);
       const data = await response.json();
 
       if (!data.success || !data.batches) {

@@ -1193,7 +1193,7 @@ class VideoEditor {
         showToast('Loading scenes from Supabase...', 'info');
         const userId = localStorage.getItem('ai_tool_user_id');
         if (userId) {
-          const response = await fetch(`/api/db/batch-scenes/${userId}`);
+          const response = await fetch(`/api/db/batch-scenes/${userId}?limit=50`);
           const data = await response.json();
           if (data.success && data.batches && data.batches.length > 0) {
             // Get most recent batch
@@ -1502,7 +1502,7 @@ class VideoEditor {
 
     try {
       showToast('Loading previous batches...', 'info');
-      const response = await fetch(`/api/db/batch-scenes/${userId}`);
+      const response = await fetch(`/api/db/batch-scenes/${userId}?limit=50`);
       const data = await response.json();
 
       if (!data.success || !data.batches || data.batches.length === 0) {

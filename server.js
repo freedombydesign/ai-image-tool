@@ -3300,12 +3300,14 @@ app.get('/api/db/batch-scenes/:userId', async (req, res) => {
 
   try {
     const { userId } = req.params;
+    const limit = req.query.limit ? parseInt(req.query.limit) : 500; // Default 500 scenes max
 
     const { data, error } = await supabase
       .from('ai_tool_batch_scenes')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
 
