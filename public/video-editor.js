@@ -728,6 +728,7 @@ class VideoEditor {
     this.recordingTime = document.getElementById('recording-time');
     this.uploadAudioBtn = document.getElementById('upload-audio-btn');
     this.audioFileInput = document.getElementById('audio-file');
+    this.audioControls = document.querySelector('.audio-controls');
     this.audioPreview = document.getElementById('audio-preview');
     this.audioPlayer = document.getElementById('audio-player');
     this.removeAudioBtn = document.getElementById('remove-audio-btn');
@@ -2146,7 +2147,12 @@ class VideoEditor {
       this.audioPlayer.src = url;
       this.audioPlayer.load(); // Force reload
 
-      // Show audio preview section - Firefox fix: use style directly
+      // Hide upload/record controls and show audio preview
+      if (this.audioControls) {
+        this.audioControls.hidden = true;
+        this.audioControls.style.display = 'none';
+      }
+
       if (this.audioPreview) {
         this.audioPreview.hidden = false;
         this.audioPreview.style.display = 'block';
@@ -2236,7 +2242,13 @@ class VideoEditor {
     this.audioPlayer.removeAttribute('src');
     this.audioPlayer.load();
 
+    // Hide preview and show upload/record controls again
     this.audioPreview.hidden = true;
+    if (this.audioControls) {
+      this.audioControls.hidden = false;
+      this.audioControls.style.display = '';
+    }
+
     this.waveformContainer.innerHTML = '';
     this.updateTotalDuration();
     showToast('Audio removed.', false);
