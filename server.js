@@ -504,9 +504,9 @@ async function generateWithStability(prompt, model, options = {}) {
 
 // Middleware
 app.use(cors());
-// Increase JSON limit to handle base64-encoded images (up to 10MB)
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// Increase JSON limit to handle base64-encoded images and large scene batches (up to 50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Cross-origin headers for allowing video/image loading
 app.use((req, res, next) => {
