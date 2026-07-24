@@ -3301,7 +3301,8 @@ app.get('/api/db/brand-rules/:userId', async (req, res) => {
 // ============================================
 
 // Save batch scenes to Supabase (increased limit for large batches with captions)
-app.post('/api/db/batch-scenes', express.json({ limit: '50mb' }), async (req, res) => {
+// Note: Global middleware handles 50mb limit, no need for route-specific parser
+app.post('/api/db/batch-scenes', async (req, res) => {
   // DEBUG: Log payload size
   const payloadSize = JSON.stringify(req.body).length;
   console.log(`📊 Batch scenes request received - Payload size: ${payloadSize} bytes (${(payloadSize / 1024 / 1024).toFixed(2)} MB)`);
