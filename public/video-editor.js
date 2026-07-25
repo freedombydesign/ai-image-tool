@@ -2943,6 +2943,119 @@ class VideoEditor {
     const segmentLength = 90; // 90 seconds max per LivePortrait call
     const segments = [];
 
+    // NEW: If scenes exist, only generate avatar for scenes marked as 'avatar' type
+    if (this.scenes && this.scenes.length > 0) {
+      console.log('Generating avatar segments based on scene types (cost optimization)');
+
+      // Filter only avatar scenes
+      const avatarScenes = this.scenes.filter(scene => (scene.sceneType || 'avatar') === 'avatar');
+
+      if (avatarScenes.length === 0) {
+        console.log('No avatar scenes - skipping avatar generation entirely');
+        return [];
+      }
+
+      // Decode audio once for all segments
+      if (!this.audioBuffer) {
+        const arrayBuffer = await this.audioBlob.arrayBuffer();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        this.audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      }
+
+      const sampleRate = this.audioBuffer.sampleRate;
+      const numChannels = this.audioBuffer.numberOfChannels;
+
+      // Group consecutive avatar scenes into segments (max 90 seconds each)
+      let currentSegmentStart = null;
+      let currentSegmentEnd = null;
+      let segmentIndex = 0;
+
+      for (let i = 0; i < avatarScenes.length; i++) {
+        const scene = avatarScenes[i];
+        const sceneStart = scene.startTime;
+        const sceneEnd = scene.startTime + scene.duration;
+
+        if (currentSegmentStart === null) {
+          // Start new segment
+          currentSegmentStart = sceneStart;
+          currentSegmentEnd = sceneEnd;
+        } else {
+          // Check if we can extend current segment
+          const potentialDuration = sceneEnd - currentSegmentStart;
+
+          if (potentialDuration <= segmentLength) {
+            // Extend segment
+            currentSegmentEnd = sceneEnd;
+          } else {
+            // Current segment is full, create it and start new one
+            const startSample = Math.floor(currentSegmentStart * sampleRate);
+            const endSample = Math.floor(currentSegmentEnd * sampleRate);
+            const segmentSamples = endSample - startSample;
+
+            const offlineCtx = new OfflineAudioContext(numChannels, segmentSamples, sampleRate);
+            const segmentBuffer = offlineCtx.createBuffer(numChannels, segmentSamples, sampleRate);
+
+            for (let channel = 0; channel < numChannels; channel++) {
+              const sourceData = this.audioBuffer.getChannelData(channel);
+              const destData = segmentBuffer.getChannelData(channel);
+              for (let j = 0; j < segmentSamples; j++) {
+                destData[j] = sourceData[startSample + j];
+              }
+            }
+
+            const wavBlob = this.audioBufferToWav(segmentBuffer);
+            segments.push({
+              blob: wavBlob,
+              startTime: currentSegmentStart,
+              endTime: currentSegmentEnd,
+              index: segmentIndex
+            });
+            segmentIndex++;
+
+            // Start new segment with current scene
+            currentSegmentStart = sceneStart;
+            currentSegmentEnd = sceneEnd;
+          }
+        }
+      }
+
+      // Add final segment if exists
+      if (currentSegmentStart !== null) {
+        const startSample = Math.floor(currentSegmentStart * sampleRate);
+        const endSample = Math.floor(currentSegmentEnd * sampleRate);
+        const segmentSamples = endSample - startSample;
+
+        const offlineCtx = new OfflineAudioContext(numChannels, segmentSamples, sampleRate);
+        const segmentBuffer = offlineCtx.createBuffer(numChannels, segmentSamples, sampleRate);
+
+        for (let channel = 0; channel < numChannels; channel++) {
+          const sourceData = this.audioBuffer.getChannelData(channel);
+          const destData = segmentBuffer.getChannelData(channel);
+          for (let j = 0; j < segmentSamples; j++) {
+            destData[j] = sourceData[startSample + j];
+          }
+        }
+
+        const wavBlob = this.audioBufferToWav(segmentBuffer);
+        segments.push({
+          blob: wavBlob,
+          startTime: currentSegmentStart,
+          endTime: currentSegmentEnd,
+          index: segmentIndex
+        });
+      }
+
+      const totalAvatarSeconds = segments.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
+      const totalStaticSeconds = totalDuration - totalAvatarSeconds;
+      console.log(`Cost optimization: ${segments.length} avatar segments (${totalAvatarSeconds.toFixed(1)}s), skipping ${totalStaticSeconds.toFixed(1)}s of static scenes`);
+      console.log(`Estimated cost: $${(totalAvatarSeconds * 0.025).toFixed(2)} (saved $${(totalStaticSeconds * 0.025).toFixed(2)})`);
+
+      return segments;
+    }
+
+    // FALLBACK: Original logic for when no scenes are available (backward compatibility)
+    console.log('Generating avatar segments using original 90-second chunking');
+
     // If audio is short enough, use it as-is
     if (totalDuration <= segmentLength) {
       segments.push({
@@ -5471,11 +5584,24 @@ class VideoEditor {
       // Show first 60 chars of script text in tooltip
       const scriptPreview = (scene.text || '').substring(0, 60).replace(/"/g, '&quot;');
       const fullTooltip = scriptPreview ? `Script: "${scriptPreview}..."` : 'No script text';
+
+      // Scene type: avatar (animated) or static (no avatar, just image)
+      const sceneType = scene.sceneType || 'avatar';
+      const isAvatar = sceneType === 'avatar';
+      const typeIcon = isAvatar ? '🎬' : '🖼️';
+      const typeColor = isAvatar ? 'rgba(236, 72, 153, 0.3)' : 'rgba(148, 163, 184, 0.3)';
+
       return `
         <div class="timeline-scene" data-index="${index}"
-             style="left: ${leftPercent}%; width: ${widthPercent}%"
+             style="left: ${leftPercent}%; width: ${widthPercent}%; background: ${typeColor};"
              title="${fullTooltip}">
           <div class="drag-handle" title="Drag to reposition">⋮⋮</div>
+          <button class="scene-type-toggle"
+                  onclick="window.videoEditor.toggleSceneType(${index}); event.stopPropagation();"
+                  title="Toggle: Avatar (animated) / Static (image only)"
+                  style="position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; color: white; font-size: 16px; width: 24px; height: 24px; cursor: pointer; padding: 0; z-index: 10;">
+            ${typeIcon}
+          </button>
           <img src="${scene.imageUrl}" alt="Scene ${index + 1}"
                style="cursor: grab;">
           <span class="scene-number">${index + 1}</span>
@@ -5486,6 +5612,7 @@ class VideoEditor {
     }).join('');
 
     this.initTimelineInteractions();
+    this.updateCostEstimate();
   }
 
   initTimelineInteractions() {
@@ -6969,6 +7096,147 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Toggle scene type between avatar and static
+  toggleSceneType(index) {
+    if (!this.scenes[index]) return;
+
+    const currentType = this.scenes[index].sceneType || 'avatar';
+    const newType = currentType === 'avatar' ? 'static' : 'avatar';
+    this.scenes[index].sceneType = newType;
+
+    console.log(`Scene ${index + 1} changed from ${currentType} to ${newType}`);
+
+    this.renderTimeline();
+    this.saveScenesToSupabase();
+
+    const icon = newType === 'avatar' ? '🎬' : '🖼️';
+    const typeName = newType === 'avatar' ? 'Avatar (animated)' : 'Static (image only)';
+    showToast(`Scene ${index + 1}: ${icon} ${typeName}`, 'success');
+  }
+
+  // Bulk optimization tools
+  toggleEvenScenes() {
+    this.scenes.forEach((scene, index) => {
+      if ((index + 1) % 2 === 0) {
+        scene.sceneType = 'static';
+      }
+    });
+    this.renderTimeline();
+    this.saveScenesToSupabase();
+    showToast('Even-numbered scenes set to Static 🖼️', 'success');
+  }
+
+  toggleOddScenes() {
+    this.scenes.forEach((scene, index) => {
+      if ((index + 1) % 2 === 1) {
+        scene.sceneType = 'static';
+      }
+    });
+    this.renderTimeline();
+    this.saveScenesToSupabase();
+    showToast('Odd-numbered scenes set to Static 🖼️', 'success');
+  }
+
+  setAllAvatar() {
+    this.scenes.forEach(scene => {
+      scene.sceneType = 'avatar';
+    });
+    this.renderTimeline();
+    this.saveScenesToSupabase();
+    showToast('All scenes set to Avatar 🎬', 'success');
+  }
+
+  optimizeForCost() {
+    // Smart optimization: Keep first (intro), last (outro), and every 3rd scene as avatar
+    // Set the rest to static
+    this.scenes.forEach((scene, index) => {
+      const isFirst = index === 0;
+      const isLast = index === this.scenes.length - 1;
+      const isEveryThird = (index + 1) % 3 === 0;
+
+      if (isFirst || isLast || isEveryThird) {
+        scene.sceneType = 'avatar';
+      } else {
+        scene.sceneType = 'static';
+      }
+    });
+
+    this.renderTimeline();
+    this.saveScenesToSupabase();
+
+    // Calculate savings
+    const avatarCount = this.scenes.filter(s => s.sceneType === 'avatar').length;
+    const staticCount = this.scenes.length - avatarCount;
+    const savingsPercent = Math.round((staticCount / this.scenes.length) * 100);
+
+    showToast(`Auto-optimized! ${avatarCount} avatar, ${staticCount} static (~${savingsPercent}% cost reduction)`, 'success');
+  }
+
+  // Calculate and update cost estimate based on avatar scenes
+  updateCostEstimate() {
+    // Cost per second for p-video-avatar at 720p
+    const COST_PER_SECOND = 0.025;
+
+    // Calculate total avatar duration
+    const avatarScenes = this.scenes.filter(s => (s.sceneType || 'avatar') === 'avatar');
+    const totalAvatarSeconds = avatarScenes.reduce((sum, scene) => sum + scene.duration, 0);
+    const totalCost = totalAvatarSeconds * COST_PER_SECOND;
+
+    // Calculate savings vs all scenes being avatar
+    const totalSeconds = this.scenes.reduce((sum, scene) => sum + scene.duration, 0);
+    const maxCost = totalSeconds * COST_PER_SECOND;
+    const savings = maxCost - totalCost;
+    const savingsPercent = totalSeconds > 0 ? (savings / maxCost * 100) : 0;
+
+    const avatarCount = avatarScenes.length;
+    const staticCount = this.scenes.length - avatarCount;
+
+    // Show/hide cost optimization panel
+    const costPanel = document.getElementById('cost-optimization-panel');
+    if (costPanel) {
+      if (this.scenes.length > 0) {
+        costPanel.style.display = 'block';
+      } else {
+        costPanel.style.display = 'none';
+      }
+    }
+
+    // Update main cost display (above Generate Avatar button)
+    const costDisplayMain = document.getElementById('cost-estimate-display-main');
+    if (costDisplayMain && this.scenes.length > 0) {
+      costDisplayMain.innerHTML = `
+        <div style="padding: 12px; background: rgba(236, 72, 153, 0.1); border: 1px solid rgba(236, 72, 153, 0.3); border-radius: 8px;">
+          <div style="font-weight: bold; margin-bottom: 8px; color: var(--text-primary, #fff);">
+            💰 Cost Estimate (p-video-avatar @ 720p)
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px;">
+            <div>
+              <span style="color: var(--text-secondary, #aaa);">🎬 Avatar scenes:</span>
+              <span style="color: #ec4899; font-weight: bold; margin-left: 8px;">${avatarCount} (${totalAvatarSeconds.toFixed(0)}s)</span>
+            </div>
+            <div>
+              <span style="color: var(--text-secondary, #aaa);">🖼️ Static scenes:</span>
+              <span style="color: #94a3b8; font-weight: bold; margin-left: 8px;">${staticCount}</span>
+            </div>
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 16px; font-weight: bold; color: var(--text-primary, #fff);">Total Cost:</span>
+              <span style="font-size: 20px; font-weight: bold; color: #22c55e;">$${totalCost.toFixed(2)}</span>
+            </div>
+            ${savings > 0 ? `
+              <div style="margin-top: 8px; font-size: 13px; color: #22c55e;">
+                ✅ Saving $${savings.toFixed(2)} (${savingsPercent.toFixed(0)}%) vs all avatar
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    console.log(`Cost estimate: ${avatarCount} avatar scenes = ${totalAvatarSeconds.toFixed(0)}s = $${totalCost.toFixed(2)}`);
   }
 
   // Preview
@@ -9798,8 +10066,9 @@ This will:
         // Draw scene image with effects
         this.drawFrameWithEffects(ctx, img, scene, time, width, height);
 
-        // Draw avatar overlay if available
-        if (avatarVideoElements.length > 0) {
+        // Draw avatar overlay if available AND scene is marked as avatar type
+        const sceneIsAvatar = (scene.sceneType || 'avatar') === 'avatar';
+        if (avatarVideoElements.length > 0 && sceneIsAvatar) {
           await this.drawAvatarOverlay(ctx, time, width, height, avatarVideoElements);
         }
 
@@ -11095,8 +11364,9 @@ function showUploadSegmentsPanel() {
       <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
         <label style="color: var(--text-secondary, #aaa); font-size: 13px;">Model:</label>
         <select id="avatar-model-select" style="padding: 8px; background: var(--bg-tertiary, #333); border: 1px solid var(--border-color, #444); border-radius: 4px; color: white; flex: 1;">
-          <option value="musetalk" selected>💰 MuseTalk (CHEAP ~$0.05/segment, fast)</option>
-          <option value="p-video-avatar">💎 p-video-avatar ($2.25/segment, premium)</option>
+          <option value="sadtalker" selected>⚡ SadTalker (~$0.025/segment, ~19 sec, fast & cheap)</option>
+          <option value="musetalk">💰 MuseTalk (~$0.19/segment, ~25 min)</option>
+          <option value="p-video-avatar">💎 p-video-avatar ($2.25/segment, 2-3 min, premium quality)</option>
         </select>
       </div>
       <button id="generate-new-audio-btn" onclick="generateSegmentWithNewAudio()" style="padding: 10px 20px; background: var(--success, #22c55e); border: none; border-radius: 4px; color: white; cursor: pointer; width: 100%;" disabled>
@@ -11179,80 +11449,43 @@ async function generateSegmentWithNewAudio() {
   btn.textContent = '⏳ Generating...';
 
   try {
-    // Get Supabase config
-    const configResponse = await fetch('/api/supabase-config');
-    if (!configResponse.ok) {
-      throw new Error('Supabase not configured. Please check server logs.');
-    }
-    const config = await configResponse.json();
-
-    // Upload avatar image
-    const avatarPath = `avatars/avatar-${Date.now()}.png`;
-    const avatarUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${avatarPath}`;
-
-    console.log('Uploading avatar to Supabase:', avatarPath);
-    const avatarUploadResponse = await fetch(avatarUploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.anonKey}`,
-        'apikey': config.anonKey,
-        'Content-Type': 'image/png',
-        'x-upsert': 'true'
-      },
-      body: videoEditor.avatarPhotoBlob
+    // Convert avatar blob to data URI (MuseTalk has issues downloading from Supabase)
+    console.log('Converting avatar to data URI...');
+    const avatarDataUri = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(videoEditor.avatarPhotoBlob);
     });
+    console.log('Avatar data URI created:', avatarDataUri.substring(0, 50) + '...');
 
-    if (!avatarUploadResponse.ok) {
-      const errorText = await avatarUploadResponse.text();
-      console.error('Avatar upload failed:', avatarUploadResponse.status, errorText);
-      throw new Error(`Failed to upload avatar: ${avatarUploadResponse.status}`);
-    }
-
-    // Get PUBLIC URL for avatar (MuseTalk requires publicly accessible URLs)
-    console.log('Getting PUBLIC URL for avatar:', avatarPath);
-    const avatarUrl = await getPublicReadUrl(avatarPath);
-    if (!avatarUrl) {
-      throw new Error('Failed to get public URL for avatar. Make sure Supabase bucket "ai-tool-images" is set to public. Check browser console for details.');
-    }
-    console.log('Avatar public URL:', avatarUrl);
-
-    // Upload audio file
-    const audioPath = `audio/segment-${segmentNum}-${Date.now()}.${audioFile.name.split('.').pop()}`;
-    const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
-
-    console.log('Uploading audio to Supabase:', audioPath);
-    const audioUploadResponse = await fetch(audioUploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.anonKey}`,
-        'apikey': config.anonKey,
-        'Content-Type': audioFile.type || 'audio/mpeg',
-        'x-upsert': 'true'
-      },
-      body: audioFile
+    // Convert audio file to data URI
+    console.log('Converting audio to data URI...');
+    const audioDataUri = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(audioFile);
     });
+    console.log('Audio data URI created:', audioDataUri.substring(0, 50) + '...');
 
-    if (!audioUploadResponse.ok) {
-      const errorText = await audioUploadResponse.text();
-      console.error('Audio upload failed:', audioUploadResponse.status, errorText);
-      throw new Error(`Failed to upload audio: ${audioUploadResponse.status}`);
-    }
-
-    // Get PUBLIC URL for audio (MuseTalk requires publicly accessible URLs)
-    console.log('Getting PUBLIC URL for audio:', audioPath);
-    const audioUrl = await getPublicReadUrl(audioPath);
-    if (!audioUrl) {
-      throw new Error('Failed to get public URL for audio. Make sure Supabase bucket "ai-tool-images" is set to public. Check browser console for details.');
-    }
-    console.log('Audio public URL:', audioUrl);
+    const avatarUrl = avatarDataUri;
+    const audioUrl = audioDataUri;
 
     // Get selected model
-    const selectedModel = document.getElementById('avatar-model-select')?.value || 'musetalk';
-    const endpoint = selectedModel === 'musetalk' ? '/api/animate-avatar-musetalk' : '/api/animate-avatar-url';
+    const selectedModel = document.getElementById('avatar-model-select')?.value || 'sadtalker';
+    let endpoint, buttonText;
 
-    btn.textContent = selectedModel === 'musetalk'
-      ? '⏳ Generating (MuseTalk - cheap mode)...'
-      : '⏳ Generating (p-video-avatar - premium)...';
+    if (selectedModel === 'sadtalker') {
+      endpoint = '/api/animate-avatar-sadtalker';
+      buttonText = '⏳ Generating (SadTalker - ~19 sec)...';
+    } else if (selectedModel === 'musetalk') {
+      endpoint = '/api/animate-avatar-musetalk';
+      buttonText = '⏳ Generating (MuseTalk - ~25 min)...';
+    } else {
+      endpoint = '/api/animate-avatar-url';
+      buttonText = '⏳ Generating (p-video-avatar - 2-3 min)...';
+    }
+
+    btn.textContent = buttonText;
 
     console.log(`Using model: ${selectedModel}, endpoint: ${endpoint}`);
 
@@ -11304,7 +11537,7 @@ async function generateSegmentWithNewAudio() {
     if (typeof videoEditor !== 'undefined') {
       videoEditor.replacedAudioSegments[segmentNum] = {
         blob: audioFile,
-        url: audioSignedUrl
+        url: audioUrl  // Use audioUrl (data URI) instead of undefined audioSignedUrl
       };
       // Clear cached stitched audio so it gets re-generated with new replacement
       videoEditor.stitchedAudioBlob = null;
@@ -11322,7 +11555,7 @@ async function generateSegmentWithNewAudio() {
           segmentNum,
           videoUrl: videoUrl,
           fileName: `avatar_segment_${segmentNum}.mp4`,
-          audioUrl: audioSignedUrl  // Save signed audio URL for persistence!
+          audioUrl: audioUrl  // Save audio URL (data URI or Supabase URL)
         })
       });
       console.log(`Saved segment ${segmentNum} to database with audio URL`);

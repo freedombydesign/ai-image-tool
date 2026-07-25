@@ -5,3 +5,6 @@ uploads/*
 .DS_Store
 *.log
 .vercel
+# Video output files (can be large)
+public/videos/avatars/
+public/temp/

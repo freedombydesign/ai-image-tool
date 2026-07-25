@@ -1348,9 +1348,9 @@ app.post('/api/animate-avatar-url', async (req, res) => {
   }
 });
 
-// MuseTalk endpoint - MUCH CHEAPER alternative (~$0.05 vs $2.25 per segment)
+// MuseTalk endpoint - Official douwantech/musetalk (~$0.19 vs $2.25 per segment, ~4 min)
 app.post('/api/animate-avatar-musetalk', async (req, res) => {
-  console.log('*** MUSETALK ENDPOINT - CHEAP MODE ***');
+  console.log('*** MUSETALK ENDPOINT - OFFICIAL MODEL ***');
   try {
     let { avatarUrl, audioUrl } = req.body;
 
@@ -1361,48 +1361,89 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
     avatarUrl = String(avatarUrl).trim().replace(/[\n\r]/g, '');
     audioUrl = String(audioUrl).trim().replace(/[\n\r]/g, '');
 
-    console.log('MuseTalk - Avatar URL:', avatarUrl);
-    console.log('MuseTalk - Audio URL:', audioUrl);
+    // Check if data URIs - if so, convert to temporary local files
+    const avatarIsDataUri = avatarUrl.startsWith('data:');
+    const audioIsDataUri = audioUrl.startsWith('data:');
 
-    // Verify URLs are accessible before sending to Replicate
-    console.log('Verifying avatar URL is accessible...');
+    let finalAvatarUrl = avatarUrl;
+    let finalAudioUrl = audioUrl;
     try {
-      const avatarCheck = await fetch(avatarUrl, { method: 'HEAD' });
-      console.log('Avatar URL check:', avatarCheck.status, avatarCheck.statusText);
-      if (!avatarCheck.ok) {
-        throw new Error(`Avatar URL not accessible: ${avatarCheck.status} ${avatarCheck.statusText}. URL: ${avatarUrl}`);
+      // Upload data URIs to Supabase (simpler and reliable)
+      if (avatarIsDataUri) {
+        console.log('Uploading avatar data URI to Supabase...');
+        const avatarMatch = avatarUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!avatarMatch) {
+          throw new Error('Invalid avatar data URI format');
+        }
+        const [, mimeType, base64Data] = avatarMatch;
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        const avatarPath = `avatars/avatar-${Date.now()}.png`;
+        const { error: uploadError } = await supabase.storage
+          .from('ai-tool-images')
+          .upload(avatarPath, buffer, {
+            contentType: mimeType,
+            upsert: true
+          });
+
+        if (uploadError) {
+          throw new Error(`Avatar upload failed: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('ai-tool-images')
+          .getPublicUrl(avatarPath);
+
+        finalAvatarUrl = publicUrl;
+        console.log('Avatar uploaded to Supabase:', finalAvatarUrl);
       }
-    } catch (error) {
-      console.error('Avatar URL verification failed:', error.message);
-      return res.status(400).json({
-        error: `Avatar URL not accessible to server. ${error.message}. Try making the Supabase bucket public or uploading the file differently.`
-      });
+
+      if (audioIsDataUri) {
+        console.log('Uploading audio data URI to Supabase...');
+        const audioMatch = audioUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!audioMatch) {
+          throw new Error('Invalid audio data URI format');
+        }
+        const [, mimeType, base64Data] = audioMatch;
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        const ext = mimeType.includes('m4a') ? 'm4a' : 'mp3';
+        const audioPath = `audio/musetalk-${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('ai-tool-images')
+          .upload(audioPath, buffer, {
+            contentType: mimeType,
+            upsert: true
+          });
+
+        if (uploadError) {
+          throw new Error(`Audio upload failed: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('ai-tool-images')
+          .getPublicUrl(audioPath);
+
+        finalAudioUrl = publicUrl;
+        console.log('Audio uploaded to Supabase:', finalAudioUrl);
+      }
+    } catch (conversionError) {
+      console.error('Supabase upload failed:', conversionError);
+      return res.status(400).json({ error: `Failed to upload files: ${conversionError.message}` });
     }
 
-    console.log('Verifying audio URL is accessible...');
-    try {
-      const audioCheck = await fetch(audioUrl, { method: 'HEAD' });
-      console.log('Audio URL check:', audioCheck.status, audioCheck.statusText);
-      if (!audioCheck.ok) {
-        throw new Error(`Audio URL not accessible: ${audioCheck.status} ${audioCheck.statusText}. URL: ${audioUrl}`);
-      }
-    } catch (error) {
-      console.error('Audio URL verification failed:', error.message);
-      return res.status(400).json({
-        error: `Audio URL not accessible to server. ${error.message}. Try making the Supabase bucket public or uploading the file differently.`
-      });
-    }
-
-    console.log('Both URLs verified accessible. Proceeding with MuseTalk...');
+    console.log('Final avatar URL:', finalAvatarUrl);
+    console.log('Final audio URL:', finalAudioUrl);
 
     const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
     if (!apiKey) {
       return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
     }
 
-    // MuseTalk model (tmappdev/lipsync) - much cheaper and real-time speed
-    // Use the same version as the default endpoint for consistency
-    const MUSETALK_VERSION = '569bcd925698ea23d4bece4528546992012d84267ce2438ecc803618ce23764c';
+    // MuseTalk model (douwantech/musetalk) - official implementation, better quality
+    // $0.19 per run, ~4 minutes (good middle ground between cheap/slow and expensive/fast)
+    const MUSETALK_VERSION = '5501004e78525e4bbd9fa20d1e75ad51fddce5a274bec07b9b16d685e34eeaf8';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -1413,8 +1454,8 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
       body: JSON.stringify({
         version: MUSETALK_VERSION,
         input: {
-          face: avatarUrl,
-          audio: audioUrl
+          video_input: finalAvatarUrl,  // Changed from 'face' to 'video_input'
+          audio_input: finalAudioUrl    // Changed from 'audio' to 'audio_input'
         }
       })
     });
@@ -1445,6 +1486,149 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
 
   } catch (error) {
     console.error('MuseTalk error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// SadTalker endpoint - Fast and cheap avatar generation
+// cjwbw/sadtalker: $0.025 per run, ~19 seconds (best value option)
+app.post('/api/animate-avatar-sadtalker', async (req, res) => {
+  console.log('*** SADTALKER ENDPOINT - FAST MODE ***');
+  try {
+    let { avatarUrl, audioUrl } = req.body;
+
+    if (!avatarUrl || !audioUrl) {
+      return res.status(400).json({ error: 'Avatar URL and Audio URL are required' });
+    }
+
+    avatarUrl = String(avatarUrl).trim().replace(/[\n\r]/g, '');
+    audioUrl = String(audioUrl).trim().replace(/[\n\r]/g, '');
+
+    // Check if data URIs - if so, convert to Supabase uploads
+    const avatarIsDataUri = avatarUrl.startsWith('data:');
+    const audioIsDataUri = audioUrl.startsWith('data:');
+
+    let finalAvatarUrl = avatarUrl;
+    let finalAudioUrl = audioUrl;
+    try {
+      // Upload data URIs to Supabase
+      if (avatarIsDataUri) {
+        console.log('Uploading avatar data URI to Supabase...');
+        const avatarMatch = avatarUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!avatarMatch) {
+          throw new Error('Invalid avatar data URI format');
+        }
+        const [, mimeType, base64Data] = avatarMatch;
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        const avatarPath = `avatars/avatar-${Date.now()}.png`;
+        const { error: uploadError } = await supabase.storage
+          .from('ai-tool-images')
+          .upload(avatarPath, buffer, {
+            contentType: mimeType,
+            upsert: true
+          });
+
+        if (uploadError) {
+          throw new Error(`Avatar upload failed: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('ai-tool-images')
+          .getPublicUrl(avatarPath);
+
+        finalAvatarUrl = publicUrl;
+        console.log('Avatar uploaded to Supabase:', finalAvatarUrl);
+      }
+
+      if (audioIsDataUri) {
+        console.log('Uploading audio data URI to Supabase...');
+        const audioMatch = audioUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!audioMatch) {
+          throw new Error('Invalid audio data URI format');
+        }
+        const [, mimeType, base64Data] = audioMatch;
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        const ext = mimeType.includes('m4a') ? 'm4a' : 'mp3';
+        const audioPath = `audio/sadtalker-${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('ai-tool-images')
+          .upload(audioPath, buffer, {
+            contentType: mimeType,
+            upsert: true
+          });
+
+        if (uploadError) {
+          throw new Error(`Audio upload failed: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('ai-tool-images')
+          .getPublicUrl(audioPath);
+
+        finalAudioUrl = publicUrl;
+        console.log('Audio uploaded to Supabase:', finalAudioUrl);
+      }
+    } catch (conversionError) {
+      console.error('Supabase upload failed:', conversionError);
+      return res.status(400).json({ error: `Failed to upload files: ${conversionError.message}` });
+    }
+
+    console.log('Final avatar URL:', finalAvatarUrl);
+    console.log('Final audio URL:', finalAudioUrl);
+
+    const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
+    }
+
+    // SadTalker model (cjwbw/sadtalker) - fast and cheap
+    // $0.025 per run, ~19 seconds, A100 GPU
+    const SADTALKER_VERSION = '3aa3dac9353cc4d6bd62a8f95957bd844003b401ca4e4a9b33baa574c549d376';
+
+    const response = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        version: SADTALKER_VERSION,
+        input: {
+          source_image: finalAvatarUrl,
+          driven_audio: finalAudioUrl
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('SadTalker error:', response.status, errorText);
+      throw new Error(`SadTalker: ${errorText}`);
+    }
+
+    let prediction = await response.json();
+    console.log('SadTalker prediction response:', JSON.stringify(prediction, null, 2));
+
+    if (!prediction.id) {
+      console.error('No prediction ID in Replicate response:', prediction);
+      throw new Error(`Replicate API did not return a prediction ID. Response: ${JSON.stringify(prediction)}`);
+    }
+
+    console.log('SadTalker prediction started:', prediction.id, 'status:', prediction.status);
+
+    res.json({
+      success: true,
+      predictionId: prediction.id,
+      status: prediction.status,
+      model: 'sadtalker',
+      pollUrl: `/api/prediction-status/${prediction.id}`
+    });
+
+  } catch (error) {
+    console.error('SadTalker error:', error);
     res.status(500).json({ error: error.message });
   }
 });
