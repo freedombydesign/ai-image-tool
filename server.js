@@ -505,8 +505,12 @@ async function generateWithStability(prompt, model, options = {}) {
 // Middleware
 app.use(cors());
 // Increase JSON limit to handle base64-encoded images and large scene batches (up to 50MB)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+const jsonParser = express.json({ limit: '50mb' });
+const urlencodedParser = express.urlencoded({ limit: '50mb', extended: true });
+
+console.log('🔧 JSON parser middleware configured with 50MB limit');
+app.use(jsonParser);
+app.use(urlencodedParser);
 
 // Cross-origin headers for allowing video/image loading
 app.use((req, res, next) => {
@@ -1194,7 +1198,7 @@ app.post('/api/animate-avatar', upload.fields([
 
     // DEFAULT TO MUSETALK - Much cheaper ($0.05 vs $2.25 per segment)
     // MuseTalk model (tmappdev/lipsync)
-    const MUSETALK_VERSION = 'fad5d41f588e8d0c9ddf861cbb491c7e7d2a957d9bc65ba80bc4fcab6e6f8891';
+    const MUSETALK_VERSION = '569bcd925698ea23d4bece4528546992012d84267ce2438ecc803618ce23764c';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -1360,6 +1364,37 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
     console.log('MuseTalk - Avatar URL:', avatarUrl);
     console.log('MuseTalk - Audio URL:', audioUrl);
 
+    // Verify URLs are accessible before sending to Replicate
+    console.log('Verifying avatar URL is accessible...');
+    try {
+      const avatarCheck = await fetch(avatarUrl, { method: 'HEAD' });
+      console.log('Avatar URL check:', avatarCheck.status, avatarCheck.statusText);
+      if (!avatarCheck.ok) {
+        throw new Error(`Avatar URL not accessible: ${avatarCheck.status} ${avatarCheck.statusText}. URL: ${avatarUrl}`);
+      }
+    } catch (error) {
+      console.error('Avatar URL verification failed:', error.message);
+      return res.status(400).json({
+        error: `Avatar URL not accessible to server. ${error.message}. Try making the Supabase bucket public or uploading the file differently.`
+      });
+    }
+
+    console.log('Verifying audio URL is accessible...');
+    try {
+      const audioCheck = await fetch(audioUrl, { method: 'HEAD' });
+      console.log('Audio URL check:', audioCheck.status, audioCheck.statusText);
+      if (!audioCheck.ok) {
+        throw new Error(`Audio URL not accessible: ${audioCheck.status} ${audioCheck.statusText}. URL: ${audioUrl}`);
+      }
+    } catch (error) {
+      console.error('Audio URL verification failed:', error.message);
+      return res.status(400).json({
+        error: `Audio URL not accessible to server. ${error.message}. Try making the Supabase bucket public or uploading the file differently.`
+      });
+    }
+
+    console.log('Both URLs verified accessible. Proceeding with MuseTalk...');
+
     const apiKey = (process.env.REPLICATE_API_TOKEN || '').trim();
     if (!apiKey) {
       return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured' });
@@ -1367,7 +1402,7 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
 
     // MuseTalk model (tmappdev/lipsync) - much cheaper and real-time speed
     // Use the same version as the default endpoint for consistency
-    const MUSETALK_VERSION = 'fad5d41f588e8d0c9ddf861cbb491c7e7d2a957d9bc65ba80bc4fcab6e6f8891';
+    const MUSETALK_VERSION = '569bcd925698ea23d4bece4528546992012d84267ce2438ecc803618ce23764c';
 
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
@@ -1391,6 +1426,13 @@ app.post('/api/animate-avatar-musetalk', async (req, res) => {
     }
 
     let prediction = await response.json();
+    console.log('MuseTalk prediction response:', JSON.stringify(prediction, null, 2));
+
+    if (!prediction.id) {
+      console.error('No prediction ID in Replicate response:', prediction);
+      throw new Error(`Replicate API did not return a prediction ID. Response: ${JSON.stringify(prediction)}`);
+    }
+
     console.log('MuseTalk prediction started:', prediction.id, 'status:', prediction.status);
 
     res.json({
@@ -4199,6 +4241,653 @@ app.post('/api/usage/reset-alerts', (req, res) => {
 });
 
 // ========== END USAGE MONITORING ENDPOINTS ==========
+
+// ========== SHORTS CLIPPER ENDPOINTS ==========
+
+// Generate YouTube Shorts from long-form video
+app.post('/api/generate-shorts', async (req, res) => {
+  console.log('*** SHORTS CLIPPER - Generate vertical shorts ***');
+  try {
+    const { source_video, source_has_captions, output_dir, clips } = req.body;
+
+    // Validate required fields
+    if (!source_video || !clips || !Array.isArray(clips)) {
+      return res.status(400).json({ error: 'source_video and clips array are required' });
+    }
+
+    // Create temporary config file
+    const configPath = path.join(os.tmpdir(), `shorts_config_${Date.now()}.json`);
+    const config = {
+      source_video,
+      source_has_captions: source_has_captions !== false, // default true
+      output_dir: output_dir || path.join(os.homedir(), 'shorts_output'),
+      clips
+    };
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    console.log('Config saved to:', configPath);
+
+    // Path to shorts_clipper.py script
+    const scriptsDir = path.join(__dirname, '..');
+    const scriptPath = path.join(scriptsDir, 'shorts_clipper.py');
+
+    // Check if script exists
+    if (!fs.existsSync(scriptPath)) {
+      throw new Error(`shorts_clipper.py not found at: ${scriptPath}`);
+    }
+
+    // Run Python script
+    console.log('Running shorts_clipper.py...');
+    const pythonProcess = spawn('python3', [scriptPath, configPath], {
+      cwd: scriptsDir
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+      console.log('[shorts_clipper]', output.trim());
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const error = data.toString();
+      stderr += error;
+      console.error('[shorts_clipper ERROR]', error.trim());
+    });
+
+    pythonProcess.on('close', async (code) => {
+      // Clean up temp config
+      try {
+        fs.unlinkSync(configPath);
+      } catch (e) {
+        console.warn('Failed to delete temp config:', e.message);
+      }
+
+      if (code !== 0) {
+        console.error('shorts_clipper failed with code:', code);
+        console.error('stderr:', stderr);
+        return res.status(500).json({
+          error: `Shorts generation failed (exit code ${code})`,
+          details: stderr || stdout
+        });
+      }
+
+      // Parse output to extract generated files
+      const files = [];
+      const outputDirPath = config.output_dir;
+
+      // Get all generated files
+      try {
+        const dirContents = fs.readdirSync(outputDirPath);
+        const videoFiles = dirContents.filter(f =>
+          f.endsWith('.mp4') && clips.some(c => f.includes(c.label))
+        );
+
+        for (const filename of videoFiles) {
+          const filePath = path.join(outputDirPath, filename);
+          const stats = fs.statSync(filePath);
+          const sizeInMB = (stats.size / (1024 * 1024)).toFixed(1);
+
+          // Try to get video duration using ffprobe
+          let duration = 'unknown';
+          try {
+            const ffprobeCmd = spawn('/opt/homebrew/Cellar/ffmpeg-full/8.1.2_1/bin/ffprobe', [
+              '-v', 'error',
+              '-show_entries', 'format=duration',
+              '-of', 'default=noprint_wrappers=1:nokey=1',
+              filePath
+            ]);
+
+            const ffprobeOutput = await new Promise((resolve, reject) => {
+              let output = '';
+              ffprobeCmd.stdout.on('data', d => output += d.toString());
+              ffprobeCmd.on('close', code => {
+                if (code === 0) resolve(output.trim());
+                else reject(new Error('ffprobe failed'));
+              });
+            });
+
+            duration = Math.round(parseFloat(ffprobeOutput));
+          } catch (e) {
+            console.warn('Could not get duration for', filename);
+          }
+
+          // Determine which clip this is
+          const clipLabel = clips.find(c => filename.includes(c.label))?.label || 'unknown';
+
+          files.push({
+            filename,
+            label: clipLabel,
+            size: `${sizeInMB} MB`,
+            duration: duration
+          });
+        }
+      } catch (e) {
+        console.error('Error reading output directory:', e);
+      }
+
+      console.log(`✓ Generated ${files.length} shorts successfully`);
+      res.json({
+        success: true,
+        files,
+        outputDir: outputDirPath,
+        message: `Generated ${files.length} vertical shorts`
+      });
+    });
+
+  } catch (error) {
+    console.error('Shorts clipper error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate YouTube Shorts with real-time progress (SSE streaming)
+app.post('/api/generate-shorts/stream', async (req, res) => {
+  console.log('*** SHORTS CLIPPER - Streaming mode with real-time progress ***');
+
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendProgress = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const { source_video, source_has_captions, output_dir, clips } = req.body;
+
+    // Validate required fields
+    if (!source_video || !clips || !Array.isArray(clips)) {
+      sendProgress({ error: 'source_video and clips array are required' });
+      res.end();
+      return;
+    }
+
+    sendProgress({ progress: 5, message: 'Creating configuration...' });
+
+    // Create temporary config file
+    const configPath = path.join(os.tmpdir(), `shorts_config_${Date.now()}.json`);
+    const config = {
+      source_video,
+      source_has_captions: source_has_captions !== false,
+      output_dir: output_dir || path.join(os.homedir(), 'shorts_output'),
+      clips
+    };
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    // Path to shorts_clipper.py script
+    const scriptsDir = path.join(__dirname, '..');
+    const scriptPath = path.join(scriptsDir, 'shorts_clipper.py');
+
+    if (!fs.existsSync(scriptPath)) {
+      sendProgress({ error: `shorts_clipper.py not found at: ${scriptPath}` });
+      res.end();
+      return;
+    }
+
+    sendProgress({ progress: 10, message: 'Starting video processing...' });
+
+    // Run Python script
+    const pythonProcess = spawn('python3', [scriptPath, configPath], {
+      cwd: scriptsDir
+    });
+
+    let currentClip = 0;
+    let stdout = '';
+    let stderr = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+      console.log('[shorts_clipper]', output.trim());
+
+      // Parse output for progress indicators
+      const lines = output.split('\n');
+      lines.forEach(line => {
+        // Look for clip processing messages
+        if (line.includes('Processing clip:') || line.includes('Trimming')) {
+          currentClip++;
+          const percent = 10 + (currentClip * 25); // 10, 35, 60, 85
+          sendProgress({
+            progress: percent,
+            message: `Processing clip ${currentClip}/3...`
+          });
+        } else if (line.includes('Cropping') || line.includes('crop')) {
+          sendProgress({
+            progress: 10 + (currentClip * 25) + 10,
+            message: `Cropping clip ${currentClip}/3 to 1080x1920...`
+          });
+        } else if (line.includes('Completed') || line.includes('SUCCESS')) {
+          sendProgress({
+            progress: 10 + (currentClip * 25) + 20,
+            message: `Completed clip ${currentClip}/3 ✓`
+          });
+        }
+      });
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const error = data.toString();
+      stderr += error;
+      console.error('[shorts_clipper ERROR]', error.trim());
+    });
+
+    pythonProcess.on('close', async (code) => {
+      // Clean up temp config
+      try {
+        fs.unlinkSync(configPath);
+      } catch (e) {
+        console.warn('Failed to delete temp config:', e.message);
+      }
+
+      if (code !== 0) {
+        console.error('shorts_clipper failed with code:', code);
+        sendProgress({
+          error: `Shorts generation failed (exit code ${code})`,
+          details: stderr || stdout
+        });
+        res.end();
+        return;
+      }
+
+      sendProgress({ progress: 90, message: 'Gathering file information...' });
+
+      // Parse output to extract generated files
+      const files = [];
+      const outputDirPath = config.output_dir;
+
+      try {
+        const dirContents = fs.readdirSync(outputDirPath);
+        const videoFiles = dirContents.filter(f =>
+          f.endsWith('.mp4') && clips.some(c => f.includes(c.label))
+        );
+
+        for (const filename of videoFiles) {
+          const filePath = path.join(outputDirPath, filename);
+          const stats = fs.statSync(filePath);
+          const sizeInMB = (stats.size / (1024 * 1024)).toFixed(1);
+
+          // Get video duration
+          let duration = 'unknown';
+          try {
+            const ffprobeCmd = spawn('/opt/homebrew/Cellar/ffmpeg-full/8.1.2_1/bin/ffprobe', [
+              '-v', 'error',
+              '-show_entries', 'format=duration',
+              '-of', 'default=noprint_wrappers=1:nokey=1',
+              filePath
+            ]);
+
+            const ffprobeOutput = await new Promise((resolve, reject) => {
+              let output = '';
+              ffprobeCmd.stdout.on('data', d => output += d.toString());
+              ffprobeCmd.on('close', code => {
+                if (code === 0) resolve(output.trim());
+                else reject(new Error('ffprobe failed'));
+              });
+            });
+
+            duration = Math.round(parseFloat(ffprobeOutput));
+          } catch (e) {
+            console.warn('Could not get duration for', filename);
+          }
+
+          const clipLabel = clips.find(c => filename.includes(c.label))?.label || 'unknown';
+
+          files.push({
+            filename,
+            label: clipLabel,
+            size: `${sizeInMB} MB`,
+            duration: duration
+          });
+        }
+      } catch (e) {
+        console.error('Error reading output directory:', e);
+      }
+
+      // Send final success message
+      sendProgress({
+        progress: 100,
+        message: `✓ All ${files.length} shorts generated successfully!`,
+        complete: true,
+        files,
+        outputDir: outputDirPath
+      });
+
+      res.end();
+    });
+
+  } catch (error) {
+    console.error('Shorts clipper streaming error:', error);
+    sendProgress({ error: error.message });
+    res.end();
+  }
+});
+
+// Open folder in Finder (macOS only)
+app.post('/api/open-folder', async (req, res) => {
+  try {
+    const { path: folderPath } = req.body;
+
+    if (!folderPath) {
+      return res.status(400).json({ error: 'path is required' });
+    }
+
+    // Check if path exists
+    if (!fs.existsSync(folderPath)) {
+      return res.status(404).json({ error: 'Folder not found: ' + folderPath });
+    }
+
+    // Open folder in Finder (macOS) or file explorer (Windows/Linux)
+    const command = process.platform === 'darwin' ? 'open' :
+                    process.platform === 'win32' ? 'explorer' : 'xdg-open';
+
+    spawn(command, [folderPath], { detached: true });
+
+    res.json({ success: true, message: 'Folder opened' });
+  } catch (error) {
+    console.error('Open folder error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== END SHORTS CLIPPER ENDPOINTS ==========
+
+// ========== AUDIO PROCESSING ENDPOINTS (SERVER-SIDE FFMPEG) ==========
+
+// Stitch multiple audio segments together
+app.post('/api/audio/stitch', async (req, res) => {
+  console.log('*** AUDIO STITCH - Server-side FFmpeg ***');
+  try {
+    const { segments, outputFormat } = req.body;
+
+    if (!segments || !Array.isArray(segments) || segments.length === 0) {
+      return res.status(400).json({ error: 'segments array is required' });
+    }
+
+    // Create temp directory for this operation
+    const tempDir = path.join(os.tmpdir(), `audio_stitch_${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    // Download all segments to temp directory
+    const segmentPaths = [];
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const segmentPath = path.join(tempDir, `segment_${i}.wav`);
+
+      // If it's a URL, download it
+      if (segment.startsWith('http')) {
+        const response = await fetch(segment);
+        const buffer = await response.arrayBuffer();
+        fs.writeFileSync(segmentPath, Buffer.from(buffer));
+      } else {
+        // It's a local path, copy it
+        fs.copyFileSync(segment, segmentPath);
+      }
+
+      segmentPaths.push(segmentPath);
+    }
+
+    // Create concat file
+    const concatFile = path.join(tempDir, 'concat.txt');
+    const concatContent = segmentPaths.map(p => `file '${p}'`).join('\n');
+    fs.writeFileSync(concatFile, concatContent);
+
+    // Output file
+    const outputExt = outputFormat || 'm4a';
+    const outputPath = path.join(tempDir, `stitched.${outputExt}`);
+
+    // Run FFmpeg concat
+    const ffmpegArgs = [
+      '-y',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatFile,
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-ar', '48000', // Normalize to 48kHz
+      outputPath
+    ];
+
+    console.log('Running FFmpeg stitch:', ffmpegArgs.join(' '));
+
+    const ffmpegProcess = spawn('/opt/homebrew/Cellar/ffmpeg-full/8.1.2_1/bin/ffmpeg', ffmpegArgs);
+
+    let stderr = '';
+    ffmpegProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpegProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error('FFmpeg stitch failed:', stderr);
+        // Cleanup
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        return res.status(500).json({ error: 'Audio stitching failed', details: stderr });
+      }
+
+      // Read stitched file
+      const stitchedBuffer = fs.readFileSync(outputPath);
+
+      // Save to permanent location
+      const userId = req.body.userId || 'default';
+      const audioDir = path.join(__dirname, 'public', 'audio');
+      fs.mkdirSync(audioDir, { recursive: true });
+
+      const finalFilename = `stitched_${Date.now()}.${outputExt}`;
+      const finalPath = path.join(audioDir, finalFilename);
+      fs.writeFileSync(finalPath, stitchedBuffer);
+
+      // Cleanup temp files
+      fs.rmSync(tempDir, { recursive: true, force: true });
+
+      const audioUrl = `/audio/${finalFilename}`;
+      console.log(`✓ Audio stitched: ${audioUrl}`);
+
+      res.json({
+        success: true,
+        audioUrl,
+        size: (stitchedBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+      });
+    });
+
+  } catch (error) {
+    console.error('Audio stitch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Split audio into segments
+app.post('/api/audio/split', async (req, res) => {
+  console.log('*** AUDIO SPLIT - Server-side FFmpeg ***');
+  try {
+    const { audioUrl, segmentDuration } = req.body;
+
+    if (!audioUrl) {
+      return res.status(400).json({ error: 'audioUrl is required' });
+    }
+
+    const duration = segmentDuration || 90; // default 90 seconds
+
+    // Create temp directory
+    const tempDir = path.join(os.tmpdir(), `audio_split_${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    // Download audio if URL
+    let audioPath;
+    if (audioUrl.startsWith('http')) {
+      audioPath = path.join(tempDir, 'input.mp3');
+      const response = await fetch(audioUrl);
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(audioPath, Buffer.from(buffer));
+    } else if (audioUrl.startsWith('/')) {
+      // Local path like /audio/file.mp3
+      audioPath = path.join(__dirname, 'public', audioUrl);
+    } else {
+      audioPath = audioUrl;
+    }
+
+    // Output pattern
+    const outputPattern = path.join(tempDir, 'segment-%03d.wav');
+
+    // Run FFmpeg split
+    const ffmpegArgs = [
+      '-y',
+      '-i', audioPath,
+      '-f', 'segment',
+      '-segment_time', String(duration),
+      '-c:a', 'pcm_s16le',
+      '-ar', '48000',
+      outputPattern
+    ];
+
+    console.log('Running FFmpeg split:', ffmpegArgs.join(' '));
+
+    const ffmpegProcess = spawn('/opt/homebrew/Cellar/ffmpeg-full/8.1.2_1/bin/ffmpeg', ffmpegArgs);
+
+    let stderr = '';
+    ffmpegProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpegProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error('FFmpeg split failed:', stderr);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        return res.status(500).json({ error: 'Audio splitting failed', details: stderr });
+      }
+
+      // Get all segment files
+      const segmentFiles = fs.readdirSync(tempDir).filter(f => f.startsWith('segment-'));
+
+      // Save segments to permanent location
+      const audioDir = path.join(__dirname, 'public', 'audio');
+      fs.mkdirSync(audioDir, { recursive: true });
+
+      const timestamp = Date.now();
+      const segments = [];
+
+      segmentFiles.forEach((file, index) => {
+        const segmentBuffer = fs.readFileSync(path.join(tempDir, file));
+        const finalFilename = `segment_${timestamp}_${index}.wav`;
+        const finalPath = path.join(audioDir, finalFilename);
+        fs.writeFileSync(finalPath, segmentBuffer);
+
+        segments.push({
+          index,
+          url: `/audio/${finalFilename}`,
+          size: (segmentBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+      });
+
+      // Cleanup temp files
+      fs.rmSync(tempDir, { recursive: true, force: true });
+
+      console.log(`✓ Audio split into ${segments.length} segments`);
+
+      res.json({
+        success: true,
+        segments,
+        count: segments.length
+      });
+    });
+
+  } catch (error) {
+    console.error('Audio split error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Resample audio to specific sample rate
+app.post('/api/audio/resample', async (req, res) => {
+  console.log('*** AUDIO RESAMPLE - Server-side FFmpeg ***');
+  try {
+    const { audioUrl, sampleRate } = req.body;
+
+    if (!audioUrl) {
+      return res.status(400).json({ error: 'audioUrl is required' });
+    }
+
+    const targetRate = sampleRate || 48000;
+
+    // Create temp directory
+    const tempDir = path.join(os.tmpdir(), `audio_resample_${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    // Download/locate audio
+    let audioPath;
+    if (audioUrl.startsWith('http')) {
+      audioPath = path.join(tempDir, 'input.wav');
+      const response = await fetch(audioUrl);
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(audioPath, Buffer.from(buffer));
+    } else if (audioUrl.startsWith('/')) {
+      audioPath = path.join(__dirname, 'public', audioUrl);
+    } else {
+      audioPath = audioUrl;
+    }
+
+    const outputPath = path.join(tempDir, 'resampled.wav');
+
+    // Run FFmpeg resample
+    const ffmpegArgs = [
+      '-y',
+      '-i', audioPath,
+      '-ar', String(targetRate),
+      '-c:a', 'pcm_s16le',
+      outputPath
+    ];
+
+    console.log('Running FFmpeg resample:', ffmpegArgs.join(' '));
+
+    const ffmpegProcess = spawn('/opt/homebrew/Cellar/ffmpeg-full/8.1.2_1/bin/ffmpeg', ffmpegArgs);
+
+    let stderr = '';
+    ffmpegProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpegProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error('FFmpeg resample failed:', stderr);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        return res.status(500).json({ error: 'Audio resampling failed', details: stderr });
+      }
+
+      // Save to permanent location
+      const resampledBuffer = fs.readFileSync(outputPath);
+      const audioDir = path.join(__dirname, 'public', 'audio');
+      fs.mkdirSync(audioDir, { recursive: true });
+
+      const finalFilename = `resampled_${Date.now()}.wav`;
+      const finalPath = path.join(audioDir, finalFilename);
+      fs.writeFileSync(finalPath, resampledBuffer);
+
+      // Cleanup
+      fs.rmSync(tempDir, { recursive: true, force: true });
+
+      const audioUrl = `/audio/${finalFilename}`;
+      console.log(`✓ Audio resampled to ${targetRate}Hz: ${audioUrl}`);
+
+      res.json({
+        success: true,
+        audioUrl,
+        sampleRate: targetRate,
+        size: (resampledBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+      });
+    });
+
+  } catch (error) {
+    console.error('Audio resample error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== END AUDIO PROCESSING ENDPOINTS ==========
 
 // Start server
 app.listen(PORT, async () => {

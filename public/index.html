@@ -47,6 +47,7 @@
         <button class="tab" data-tab="variations">Variations</button>
         <button class="tab" data-tab="history">History</button>
         <button class="tab" data-tab="scene-library">Scene Library</button>
+        <button class="tab" data-tab="shorts-clipper">Shorts Clipper</button>
       </nav>
 
       <!-- Batch Scenes Tab -->
@@ -2020,6 +2021,129 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
         </div>
       </section>
 
+      <!-- Shorts Clipper Tab -->
+      <section id="shorts-clipper" class="tab-content">
+        <div class="card">
+          <div class="shorts-header">
+            <div>
+              <h2>YouTube Shorts Clipper</h2>
+              <p>Extract 3 vertical shorts from your finished long-form video (hook, reframe, swap)</p>
+            </div>
+          </div>
+
+          <div class="shorts-config-form">
+            <!-- Source Video Selection -->
+            <div class="form-group">
+              <label for="shorts-source-video">Source Video (finished long-form video)</label>
+              <input type="text" id="shorts-source-video"
+                     placeholder="/Users/yourname/final_video_complete.mp4"
+                     class="form-control">
+              <button type="button" class="btn secondary" id="browse-source-video">Browse...</button>
+            </div>
+
+            <!-- Output Directory -->
+            <div class="form-group">
+              <label for="shorts-output-dir">Output Directory</label>
+              <input type="text" id="shorts-output-dir"
+                     value="/Users/ruthlarbie/shorts_output"
+                     class="form-control">
+            </div>
+
+            <!-- Source has captions checkbox -->
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="shorts-has-captions" checked>
+                Source video already has captions (skip caption generation)
+              </label>
+            </div>
+
+            <!-- Clip Configuration -->
+            <div class="shorts-clips-config">
+              <h3>Clip Timestamps</h3>
+
+              <!-- Hook Clip -->
+              <div class="clip-config-group">
+                <h4>1. Hook (Opening - 20-40 seconds)</h4>
+                <div class="time-inputs">
+                  <div class="form-group">
+                    <label>Start Time</label>
+                    <input type="text" id="hook-start" placeholder="00:00:00" class="form-control time-input">
+                  </div>
+                  <div class="form-group">
+                    <label>End Time</label>
+                    <input type="text" id="hook-end" placeholder="00:00:40" class="form-control time-input">
+                  </div>
+                  <div class="form-group">
+                    <label>X Offset</label>
+                    <input type="number" id="hook-offset" value="0" class="form-control">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Reframe Clip -->
+              <div class="clip-config-group">
+                <h4>2. Reframe (Counterintuitive insight - 20-40 seconds)</h4>
+                <div class="time-inputs">
+                  <div class="form-group">
+                    <label>Start Time</label>
+                    <input type="text" id="reframe-start" placeholder="00:03:30" class="form-control time-input">
+                  </div>
+                  <div class="form-group">
+                    <label>End Time</label>
+                    <input type="text" id="reframe-end" placeholder="00:04:10" class="form-control time-input">
+                  </div>
+                  <div class="form-group">
+                    <label>X Offset</label>
+                    <input type="number" id="reframe-offset" value="0" class="form-control">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Swap Clip -->
+              <div class="clip-config-group">
+                <h4>3. Swap (Actionable fix - 20-40 seconds)</h4>
+                <div class="time-inputs">
+                  <div class="form-group">
+                    <label>Start Time</label>
+                    <input type="text" id="swap-start" placeholder="00:05:00" class="form-control time-input">
+                  </div>
+                  <div class="form-group">
+                    <label>End Time</label>
+                    <input type="text" id="swap-end" placeholder="00:05:40" class="form-control time-input">
+                  </div>
+                  <div class="form-group">
+                    <label>X Offset</label>
+                    <input type="number" id="swap-offset" value="0" class="form-control">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Generate Button -->
+            <div class="shorts-actions">
+              <button type="button" class="btn primary btn-large" id="generate-shorts-btn">
+                Generate 3 Shorts (1080x1920)
+              </button>
+            </div>
+
+            <!-- Progress -->
+            <div id="shorts-progress" class="shorts-progress" style="display: none;">
+              <div class="progress-bar">
+                <div class="progress-bar-fill" id="shorts-progress-bar"></div>
+              </div>
+              <p id="shorts-progress-text">Processing...</p>
+            </div>
+
+            <!-- Results -->
+            <div id="shorts-results" class="shorts-results" style="display: none;">
+              <h3>✓ Clips Generated Successfully!</h3>
+              <div id="shorts-files-list"></div>
+              <button type="button" class="btn secondary" id="open-shorts-folder">Open Output Folder</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- History Preview Modal -->
       <div id="history-modal" class="history-modal" hidden style="display: none;">
         <div class="history-modal-content">
@@ -2468,6 +2592,7 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
 
   <script src="history.js"></script>
   <script src="scene-library.js"></script>
+  <script src="shorts-clipper.js"></script>
   <script src="app.js"></script>
   <script src="video-editor.js"></script>
   <script src="banner-creator.js"></script>

@@ -6476,3 +6476,153 @@ footer {
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+/* ========================
+   Shorts Clipper Styles
+   ======================== */
+
+.shorts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+}
+
+.shorts-header h2 {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+}
+
+.shorts-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.shorts-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.shorts-clips-config {
+  background: var(--surface-light);
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+}
+
+.shorts-clips-config h3 {
+  margin: 0 0 1.5rem 0;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.clip-config-group {
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.clip-config-group:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.clip-config-group h4 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.time-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.time-input {
+  font-family: 'Courier New', monospace;
+  font-size: 0.95rem;
+}
+
+.shorts-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.shorts-progress {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: var(--surface-light);
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+#shorts-progress-text {
+  margin: 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.shorts-results {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 0.75rem;
+}
+
+.shorts-results h3 {
+  margin: 0 0 1rem 0;
+  color: #166534;
+  font-size: 1.1rem;
+}
+
+#shorts-files-list {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 0.5rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+#shorts-files-list p {
+  margin: 0.25rem 0;
+  padding: 0.5rem;
+  background: var(--surface-light);
+  border-radius: 0.25rem;
+}
+
+#browse-source-video {
+  margin-left: 0.5rem;
+}

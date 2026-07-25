@@ -2,6 +2,23 @@
 // Handles scene import, audio recording/upload, timeline, captions, effects, and video export
 
 // Helper: Get signed URL for storage path (reduces CDN egress vs public URLs)
+async function getPublicReadUrl(path) {
+  // Get PUBLIC URL (required for MuseTalk - Replicate needs publicly accessible URLs)
+  try {
+    const configResponse = await fetch('/api/supabase-config');
+    if (!configResponse.ok) {
+      throw new Error('Failed to get Supabase config');
+    }
+    const config = await configResponse.json();
+    const publicUrl = `${config.url}/storage/v1/object/public/${config.bucket}/${path}`;
+    console.log('Generated public URL:', publicUrl);
+    return publicUrl;
+  } catch (error) {
+    console.error('Failed to generate public URL:', error.message);
+    return null;
+  }
+}
+
 async function getSignedReadUrl(path) {
   try {
     const response = await fetch('/api/signed-read-url', {
@@ -11,15 +28,15 @@ async function getSignedReadUrl(path) {
     });
 
     if (!response.ok) {
-      console.warn('Failed to get signed URL for:', path);
-      return null;
+      console.warn('Failed to get signed URL for:', path, '- falling back to public URL');
+      return await getPublicReadUrl(path);
     }
 
     const data = await response.json();
     return data.signedUrl;
   } catch (error) {
-    console.warn('Signed URL error:', error.message);
-    return null;
+    console.warn('Signed URL error:', error.message, '- falling back to public URL');
+    return await getPublicReadUrl(path);
   }
 }
 
@@ -11164,13 +11181,17 @@ async function generateSegmentWithNewAudio() {
   try {
     // Get Supabase config
     const configResponse = await fetch('/api/supabase-config');
+    if (!configResponse.ok) {
+      throw new Error('Supabase not configured. Please check server logs.');
+    }
     const config = await configResponse.json();
 
     // Upload avatar image
     const avatarPath = `avatars/avatar-${Date.now()}.png`;
     const avatarUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${avatarPath}`;
 
-    await fetch(avatarUploadUrl, {
+    console.log('Uploading avatar to Supabase:', avatarPath);
+    const avatarUploadResponse = await fetch(avatarUploadUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.anonKey}`,
@@ -11181,17 +11202,26 @@ async function generateSegmentWithNewAudio() {
       body: videoEditor.avatarPhotoBlob
     });
 
-    // Get signed URL for avatar (reduces CDN egress vs public URLs)
-    const avatarSignedUrl = await getSignedReadUrl(avatarPath);
-    if (!avatarSignedUrl) {
-      throw new Error('Failed to get signed URL for avatar');
+    if (!avatarUploadResponse.ok) {
+      const errorText = await avatarUploadResponse.text();
+      console.error('Avatar upload failed:', avatarUploadResponse.status, errorText);
+      throw new Error(`Failed to upload avatar: ${avatarUploadResponse.status}`);
     }
+
+    // Get PUBLIC URL for avatar (MuseTalk requires publicly accessible URLs)
+    console.log('Getting PUBLIC URL for avatar:', avatarPath);
+    const avatarUrl = await getPublicReadUrl(avatarPath);
+    if (!avatarUrl) {
+      throw new Error('Failed to get public URL for avatar. Make sure Supabase bucket "ai-tool-images" is set to public. Check browser console for details.');
+    }
+    console.log('Avatar public URL:', avatarUrl);
 
     // Upload audio file
     const audioPath = `audio/segment-${segmentNum}-${Date.now()}.${audioFile.name.split('.').pop()}`;
     const audioUploadUrl = `${config.url}/storage/v1/object/${config.bucket}/${audioPath}`;
 
-    await fetch(audioUploadUrl, {
+    console.log('Uploading audio to Supabase:', audioPath);
+    const audioUploadResponse = await fetch(audioUploadUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.anonKey}`,
@@ -11202,11 +11232,19 @@ async function generateSegmentWithNewAudio() {
       body: audioFile
     });
 
-    // Get signed URL for audio (reduces CDN egress vs public URLs)
-    const audioSignedUrl = await getSignedReadUrl(audioPath);
-    if (!audioSignedUrl) {
-      throw new Error('Failed to get signed URL for audio');
+    if (!audioUploadResponse.ok) {
+      const errorText = await audioUploadResponse.text();
+      console.error('Audio upload failed:', audioUploadResponse.status, errorText);
+      throw new Error(`Failed to upload audio: ${audioUploadResponse.status}`);
     }
+
+    // Get PUBLIC URL for audio (MuseTalk requires publicly accessible URLs)
+    console.log('Getting PUBLIC URL for audio:', audioPath);
+    const audioUrl = await getPublicReadUrl(audioPath);
+    if (!audioUrl) {
+      throw new Error('Failed to get public URL for audio. Make sure Supabase bucket "ai-tool-images" is set to public. Check browser console for details.');
+    }
+    console.log('Audio public URL:', audioUrl);
 
     // Get selected model
     const selectedModel = document.getElementById('avatar-model-select')?.value || 'musetalk';
@@ -11223,13 +11261,24 @@ async function generateSegmentWithNewAudio() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        avatarUrl: avatarSignedUrl,
-        audioUrl: audioSignedUrl
+        avatarUrl: avatarUrl,
+        audioUrl: audioUrl
       })
     });
 
     const result = await response.json();
-    if (!result.predictionId) throw new Error('No prediction ID');
+
+    // Check for server error
+    if (!response.ok || result.error) {
+      const errorMsg = result.error || `Server error: ${response.status}`;
+      console.error('MuseTalk API error:', errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (!result.predictionId) {
+      console.error('Server response:', result);
+      throw new Error('No prediction ID in response');
+    }
 
     // Poll for completion
     let prediction;
