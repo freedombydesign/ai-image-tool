@@ -6300,6 +6300,12 @@ footer {
 .sync-recommendation {
   font-size: 0.875rem;
   color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+#auto-split-btn {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
 }
 
 /* Audio Trim Section */

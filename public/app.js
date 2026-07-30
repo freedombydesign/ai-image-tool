@@ -3993,9 +3993,11 @@ function checkAudioSync(scriptDurationSeconds) {
   const syncInfo = document.getElementById('sync-info');
   const syncStatus = document.getElementById('sync-status');
   const syncRecommendation = document.getElementById('sync-recommendation');
+  const autoSplitBtn = document.getElementById('auto-split-btn');
 
   if (!syncInfo || !previewAudioData || previewAudioDuration === 0) {
     if (syncInfo) syncInfo.hidden = true;
+    if (autoSplitBtn) autoSplitBtn.hidden = true;
     return;
   }
 
@@ -4013,6 +4015,7 @@ function checkAudioSync(scriptDurationSeconds) {
     syncRecommendation.textContent = 'Your audio and scene timing are well aligned.';
     syncRecommendation.style.color = 'var(--success)';
     syncInfo.classList.add('synced');
+    if (autoSplitBtn) autoSplitBtn.hidden = true;
   } else if (audioDuration > scriptDurationSeconds) {
     // Audio is longer - need more scenes
     const extraScenes = Math.ceil((audioDuration - scriptDurationSeconds) / sceneDuration);
@@ -4020,6 +4023,8 @@ function checkAudioSync(scriptDurationSeconds) {
     syncRecommendation.textContent = `Consider adding ~${extraScenes} more scenes or increasing scene duration.`;
     syncRecommendation.style.color = 'var(--warning)';
     syncInfo.classList.remove('synced');
+    // Show auto-split button when audio is longer
+    if (autoSplitBtn) autoSplitBtn.hidden = false;
   } else {
     // Script is longer - too many scenes
     const excessScenes = Math.ceil((scriptDurationSeconds - audioDuration) / sceneDuration);
@@ -4027,7 +4032,51 @@ function checkAudioSync(scriptDurationSeconds) {
     syncRecommendation.textContent = `Consider removing ~${excessScenes} scenes or shortening scene duration.`;
     syncInfo.classList.remove('synced');
     syncRecommendation.style.color = 'var(--warning)';
+    if (autoSplitBtn) autoSplitBtn.hidden = true;
   }
+}
+
+// Auto-split script to match audio duration
+function autoSplitScript() {
+  if (!previewAudioData || previewAudioDuration === 0) {
+    alert('Please upload audio first!');
+    return;
+  }
+
+  const script = scriptInput.value.trim();
+  if (!script) {
+    alert('Please enter a script first!');
+    return;
+  }
+
+  const sceneDuration = getSceneDuration();
+  const targetSceneCount = Math.ceil(previewAudioDuration / sceneDuration);
+
+  // Confirm with user
+  const currentSceneCount = getCurrentSceneCount();
+  const confirm = window.confirm(
+    `Auto-split your script?\n\n` +
+    `Current: ${currentSceneCount} scenes (${formatTime(currentSceneCount * sceneDuration)})\n` +
+    `Target: ${targetSceneCount} scenes (${formatTime(previewAudioDuration)})\n\n` +
+    `This will split your script into ${targetSceneCount} equal parts to match your ${formatTime(previewAudioDuration)} audio.`
+  );
+
+  if (!confirm) return;
+
+  // Split the script using parseScriptToScenes with forced count
+  const splitScenes = parseScriptToScenes(script, targetSceneCount);
+
+  // Join scenes with double newlines (so they'll be detected as separate scenes)
+  const newScript = splitScenes.join('\n\n');
+
+  // Update the script textarea
+  scriptInput.value = newScript;
+
+  // Trigger stats update
+  updateScriptStats();
+
+  // Show success message
+  alert(`✅ Script split into ${targetSceneCount} scenes!\n\nNow generating ${targetSceneCount} scenes × ${sceneDuration}s = ${formatTime(targetSceneCount * sceneDuration)} to match your audio.`);
 }
 
 // Format seconds to MM:SS
@@ -4119,6 +4168,15 @@ function setupPreviewAudioUpload() {
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       removePreviewAudio();
+    });
+  }
+
+  // Auto-split button
+  const autoSplitBtn = document.getElementById('auto-split-btn');
+  if (autoSplitBtn) {
+    autoSplitBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      autoSplitScript();
     });
   }
 }
