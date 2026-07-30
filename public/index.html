@@ -436,7 +436,10 @@ Use [METAPHOR], [TEXT], [CTA] tags to indicate scene types."></textarea>
               <div class="form-group">
                 <label for="avatar-description">Avatar Description</label>
                 <textarea id="avatar-description" class="textarea" rows="3" placeholder="Describe your avatar's key features (e.g., young woman with curly red hair, freckles, wearing glasses, friendly smile)"></textarea>
-                <small class="help-text">AI will use this description to maintain consistency across scenes</small>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+                  <small class="help-text">AI will use this description to maintain consistency across scenes</small>
+                  <button class="btn secondary small" onclick="resetAvatarDescription()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Reset to Default</button>
+                </div>
               </div>
               <div class="avatar-toggle-row">
                 <label class="toggle-switch">
