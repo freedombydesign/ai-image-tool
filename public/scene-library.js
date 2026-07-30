@@ -549,10 +549,19 @@ function initLibraryUI() {
     document.getElementById('edit-tags-save')?.addEventListener('click', saveEditedTags);
   }
 
-  // Load library scenes on init
-  sceneLibraryManager.loadFromSupabase().then(() => {
-    renderLibraryGrid();
-  });
+  // Lazy load library scenes only when tab is first opened
+  let libraryLoaded = false;
+  const sceneLibraryTab = document.querySelector('[data-tab="scene-library"]');
+  if (sceneLibraryTab) {
+    sceneLibraryTab.addEventListener('click', async () => {
+      if (!libraryLoaded) {
+        console.log('[Library] Loading scenes (first tab open)...');
+        await sceneLibraryManager.loadFromSupabase();
+        renderLibraryGrid();
+        libraryLoaded = true;
+      }
+    });
+  }
 }
 
 // Auto-initialize when DOM is ready
