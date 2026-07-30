@@ -801,14 +801,11 @@ function toggleCharacterRef() {
   useCharacterRef = checkbox?.checked || false;
   saveAvatarState();
 
-  // Show/hide Style Priority and Outfit Variety options based on Character Match state
+  // Show/hide Style Priority option based on Character Match state
+  // Outfit Variety is now always visible and works independently
   const stylePriorityRow = document.getElementById('style-priority-row');
-  const outfitVarietyRow = document.getElementById('outfit-variety-row');
   if (stylePriorityRow) {
     stylePriorityRow.style.display = useCharacterRef ? 'flex' : 'none';
-  }
-  if (outfitVarietyRow) {
-    outfitVarietyRow.style.display = useCharacterRef ? 'flex' : 'none';
   }
 
   if (useCharacterRef && !avatarImageData) {
@@ -816,7 +813,6 @@ function toggleCharacterRef() {
     checkbox.checked = false;
     useCharacterRef = false;
     if (stylePriorityRow) stylePriorityRow.style.display = 'none';
-    if (outfitVarietyRow) outfitVarietyRow.style.display = 'none';
   } else if (useCharacterRef) {
     showToast('Character Reference enabled - scenes will match your full appearance!', false);
   }
