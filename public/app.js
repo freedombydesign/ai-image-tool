@@ -2271,6 +2271,10 @@ function updateScriptStats() {
     sceneCount.textContent = `${numScenes} scene${numScenes !== 1 ? 's' : ''} (manual)`;
   } else {
     sceneCount.textContent = `${numScenes} scene${numScenes !== 1 ? 's' : ''} detected`;
+    // Sync manual input to show current auto-detected count (eliminates UX confusion)
+    if (manualSceneCountInput) {
+      manualSceneCountInput.value = numScenes;
+    }
   }
 
   // Calculate cost estimate based on selected model
