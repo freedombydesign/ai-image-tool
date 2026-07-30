@@ -968,6 +968,23 @@ function toggleAvatarUsage() {
   showToast(avatarEnabled ? 'Avatar enabled for video overlay' : 'Avatar disabled');
 }
 
+function resetAvatarDescription() {
+  // Reset to default description
+  avatarDescription = DEFAULT_AVATAR_DESCRIPTION;
+
+  // Update textarea
+  const descInput = document.getElementById('avatar-description');
+  if (descInput) {
+    descInput.value = DEFAULT_AVATAR_DESCRIPTION;
+  }
+
+  // Save state (both localStorage and Supabase)
+  saveAvatarState();
+
+  // Show confirmation
+  showToast('Avatar description reset to default', false);
+}
+
 function toggleAvatarInScenes() {
   const checkbox = document.getElementById('include-avatar-in-scenes');
   const includeInScenes = checkbox?.checked || false;
