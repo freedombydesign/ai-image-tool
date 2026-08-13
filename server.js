@@ -2045,15 +2045,34 @@ app.post('/api/save-scene-image', async (req, res) => {
     let imageUrl;
 
     if (IS_VERCEL) {
-      // On Vercel: Use Vercel Blob Storage (no egress costs!)
-      const blobPath = `scenes/${userId}/${fileName}`;
-      const blob = await put(blobPath, buffer, {
-        access: 'public',
-        contentType: contentType
-      });
+      // On Vercel: Use Supabase Storage (small images, acceptable egress)
+      const storagePath = `scenes/${userId}/${fileName}`;
 
-      imageUrl = blob.url;
-      console.log('Scene image stored in Vercel Blob:', imageUrl);
+      // Check if file already exists (deduplication via hash)
+      const { data: existingFile } = await supabase.storage
+        .from('ai-tool-images')
+        .getPublicUrl(storagePath);
+
+      // Try to upload - if it already exists, just use the URL
+      const { data, error } = await supabase.storage
+        .from('ai-tool-images')
+        .upload(storagePath, buffer, {
+          contentType: contentType,
+          upsert: true // Overwrite if exists
+        });
+
+      if (error) {
+        console.error('Supabase storage error:', error);
+        throw new Error(`Failed to upload scene image: ${error.message}`);
+      }
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('ai-tool-images')
+        .getPublicUrl(storagePath);
+
+      imageUrl = publicUrlData.publicUrl;
+      console.log('Scene image stored in Supabase:', imageUrl);
     } else {
       // Local development: Save to local filesystem
       const userImageDir = path.join(LOCAL_IMAGES_DIR, userId);
