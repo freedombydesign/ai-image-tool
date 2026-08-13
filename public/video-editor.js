@@ -203,6 +203,8 @@ class VideoEditor {
             if (uploadResponse.ok) {
               const uploadData = await uploadResponse.json();
               imageUrl = uploadData.url; // Replace base64 with local URL
+              // CRITICAL: Update the original scene so we don't re-upload on next save
+              this.scenes[i].imageUrl = imageUrl;
               console.log(`Scene ${i + 1}: Uploaded to ${imageUrl}`);
             } else {
               console.warn(`Scene ${i + 1}: Upload failed, keeping base64 (will fail later)`);
@@ -250,6 +252,60 @@ class VideoEditor {
     } catch (e) {
       console.error('Failed to save scenes to Supabase:', e);
     }
+  }
+
+  // Convert all base64 images to URLs (call this to fix existing projects with 413 errors)
+  async migrateBase64Images() {
+    const userId = localStorage.getItem('ai_tool_user_id') || this.userId;
+    if (!userId) {
+      console.log('No user ID for migration');
+      return { migrated: 0, failed: 0 };
+    }
+
+    let migrated = 0;
+    let failed = 0;
+
+    console.log(`Starting base64 migration for ${this.scenes.length} scenes...`);
+
+    for (let i = 0; i < this.scenes.length; i++) {
+      const scene = this.scenes[i];
+      if (scene.imageUrl && scene.imageUrl.startsWith('data:image/')) {
+        try {
+          console.log(`Migrating scene ${i + 1}...`);
+          const uploadResponse = await fetch('/api/save-scene-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: userId,
+              imageData: scene.imageUrl,
+              sceneIndex: i
+            })
+          });
+
+          if (uploadResponse.ok) {
+            const uploadData = await uploadResponse.json();
+            this.scenes[i].imageUrl = uploadData.url;
+            migrated++;
+            console.log(`Scene ${i + 1}: Migrated to ${uploadData.url}`);
+          } else {
+            failed++;
+            console.warn(`Scene ${i + 1}: Migration failed`);
+          }
+        } catch (error) {
+          failed++;
+          console.error(`Scene ${i + 1}: Migration error:`, error);
+        }
+      }
+    }
+
+    console.log(`Migration complete: ${migrated} migrated, ${failed} failed`);
+
+    if (migrated > 0) {
+      this.renderImportedScenes();
+      showToast(`Migrated ${migrated} images to server storage`, 'success');
+    }
+
+    return { migrated, failed };
   }
 
   // Load scenes from Supabase on page load
@@ -748,7 +804,7 @@ class VideoEditor {
   // Save avatar video to cache
   async cacheAvatarVideo(audioHash, videoUrl, duration) {
     try {
-      await fetch('/api/db/avatar-video-cache', {
+      const response = await fetch('/api/db/avatar-video-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -758,9 +814,19 @@ class VideoEditor {
           duration: duration
         })
       });
-      console.log('Avatar video cached for hash:', audioHash);
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to cache avatar video');
+      }
+
+      console.log('✓ Avatar video cached successfully:', audioHash);
+      console.log('Permanent URL:', result.permanentUrl);
     } catch (e) {
-      console.error('Failed to cache avatar video:', e);
+      console.error('❌ Failed to cache avatar video:', e);
+      showToast(`Cache failed: ${e.message}`, 'error');
+      throw e; // Re-throw so calling code knows it failed
     }
   }
 
@@ -8355,16 +8421,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     switch (effect) {
       case 'zoom-in':
-        scale = 1 + (progress * 0.1);
+        scale = 1 + (progress * 0.2);  // 20% zoom for more engagement
         break;
       case 'zoom-out':
-        scale = 1.1 - (progress * 0.1);
+        scale = 1.2 - (progress * 0.2);  // 20% zoom for more engagement
         break;
       case 'pan-left':
-        offsetX = -progress * 50;
+        offsetX = -progress * 100;  // Double pan distance for more movement
         break;
       case 'pan-right':
-        offsetX = progress * 50;
+        offsetX = progress * 100;  // Double pan distance for more movement
         break;
       case 'random':
         // Use scene index to determine effect
@@ -8401,16 +8467,16 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
 
     switch (effectName) {
       case 'zoom-in':
-        scale = 1 + (progress * 0.1);
+        scale = 1 + (progress * 0.2);  // 20% zoom for more engagement
         break;
       case 'zoom-out':
-        scale = 1.1 - (progress * 0.1);
+        scale = 1.2 - (progress * 0.2);  // 20% zoom for more engagement
         break;
       case 'pan-left':
-        offsetX = -progress * 50;
+        offsetX = -progress * 100;  // Double pan distance for more movement
         break;
       case 'pan-right':
-        offsetX = progress * 50;
+        offsetX = progress * 100;  // Double pan distance for more movement
         break;
     }
 
@@ -8818,35 +8884,82 @@ CRITICAL: NO speech bubbles or chat bubbles with text. No dialogue text overlays
             accumulatedTime += scene.duration;
           }
 
-          // Draw scene image (full screen, no avatar)
+          // Draw scene image (full screen, no avatar) with Ken Burns effect
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, width, height);
 
           if (currentScene && sceneImages[sceneIndex]) {
             const img = sceneImages[sceneIndex];
-            // Cover the canvas (like background-size: cover)
-            const imgRatio = img.width / img.height;
-            const canvasRatio = width / height;
-            let drawWidth, drawHeight, drawX, drawY;
 
-            if (imgRatio > canvasRatio) {
-              drawHeight = height;
-              drawWidth = height * imgRatio;
-              drawX = (width - drawWidth) / 2;
-              drawY = 0;
-            } else {
-              drawWidth = width;
-              drawHeight = width / imgRatio;
-              drawX = 0;
-              drawY = (height - drawHeight) / 2;
+            // Apply Ken Burns effect (same as main export)
+            const effect = this.zoomEffect ? this.zoomEffect.value : 'zoom-in';
+            const sceneStartTime = this.scenes.slice(0, sceneIndex).reduce((sum, s) => sum + s.duration, 0);
+            const rawProgress = (currentTime - sceneStartTime) / currentScene.duration;
+            const progress = Math.max(0, Math.min(1, rawProgress));
+
+            let scale = 1;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            switch (effect) {
+              case 'zoom-in':
+                scale = 1 + (progress * 0.2);  // 20% zoom for engagement
+                break;
+              case 'zoom-out':
+                scale = 1.2 - (progress * 0.2);
+                break;
+              case 'pan-left':
+                offsetX = -progress * 100;
+                break;
+              case 'pan-right':
+                offsetX = progress * 100;
+                break;
+              case 'random':
+                const effects = ['zoom-in', 'zoom-out', 'pan-left', 'pan-right'];
+                const randomEffect = effects[sceneIndex % effects.length];
+                switch (randomEffect) {
+                  case 'zoom-in': scale = 1 + (progress * 0.2); break;
+                  case 'zoom-out': scale = 1.2 - (progress * 0.2); break;
+                  case 'pan-left': offsetX = -progress * 100; break;
+                  case 'pan-right': offsetX = progress * 100; break;
+                }
+                break;
             }
+
+            // Cover the canvas (like background-size: cover) with scale applied
+            // Use naturalWidth/naturalHeight for actual image dimensions (matches main export)
+            const imgW = img.naturalWidth || img.width || 1;
+            const imgH = img.naturalHeight || img.height || 1;
+            const imgRatio = imgW / imgH;
+            const canvasRatio = width / height;
+            let drawWidth, drawHeight;
+
+            // OVERSCALE FACTOR: AI images often have subtle black bars baked in
+            // Scale 15% larger than needed to push any edge artifacts outside visible area
+            const overscale = 1.15;
+            const totalScale = scale * overscale;
+
+            // Always use cover mode - scale to fill entire canvas
+            if (imgRatio > canvasRatio) {
+              // Image is wider than canvas - fit by height, overflow width
+              drawHeight = height * totalScale;
+              drawWidth = drawHeight * imgRatio;
+            } else {
+              // Image is taller than canvas - fit by width, overflow height
+              drawWidth = width * totalScale;
+              drawHeight = drawWidth / imgRatio;
+            }
+
+            // Center the image with Ken Burns offset
+            const drawX = (width - drawWidth) / 2 + offsetX;
+            const drawY = (height - drawHeight) / 2 + offsetY;
 
             ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
           }
 
-          // Update progress
-          const progress = 20 + (frameCount / totalFrames) * 70;
-          this.exportProgressBar.style.width = `${progress}%`;
+          // Update export progress
+          const exportProgress = 20 + (frameCount / totalFrames) * 70;
+          this.exportProgressBar.style.width = `${exportProgress}%`;
 
           if (frameCount % (fps * 10) === 0) {
             this.exportStatus.textContent = `Rendering background: ${Math.floor(currentTime)}s / ${Math.floor(totalDuration)}s`;
@@ -9519,26 +9632,26 @@ This will:
 
           switch (effect) {
             case 'zoom-in':
-              scale = 1 + (progress * 0.1);
+              scale = 1 + (progress * 0.2);  // 20% zoom for more engagement
               break;
             case 'zoom-out':
-              scale = 1.1 - (progress * 0.1);
+              scale = 1.2 - (progress * 0.2);  // 20% zoom for more engagement
               break;
             case 'pan-left':
-              offsetX = -progress * 50;
+              offsetX = -progress * 100;  // Double pan distance for more movement
               break;
             case 'pan-right':
-              offsetX = progress * 50;
+              offsetX = progress * 100;  // Double pan distance for more movement
               break;
             case 'random':
               // Use scene index to determine effect (same as preview)
               const effects = ['zoom-in', 'zoom-out', 'pan-left', 'pan-right'];
               const randomEffect = effects[sceneIndex % effects.length];
               switch (randomEffect) {
-                case 'zoom-in': scale = 1 + (progress * 0.1); break;
-                case 'zoom-out': scale = 1.1 - (progress * 0.1); break;
-                case 'pan-left': offsetX = -progress * 50; break;
-                case 'pan-right': offsetX = progress * 50; break;
+                case 'zoom-in': scale = 1 + (progress * 0.2); break;
+                case 'zoom-out': scale = 1.2 - (progress * 0.2); break;
+                case 'pan-left': offsetX = -progress * 100; break;
+                case 'pan-right': offsetX = progress * 100; break;
               }
               break;
             // 'none' - scale stays at 1, no offsets
@@ -9555,7 +9668,7 @@ This will:
           }
 
           // Warn if progress or scale is abnormal
-          if (progress < 0 || progress > 1.5 || scale > 1.2) {
+          if (progress < 0 || progress > 1.5 || scale > 1.25) {
             console.warn(`Abnormal values at ${currentTime.toFixed(2)}s: progress=${progress.toFixed(3)}, scale=${scale.toFixed(3)}, scene ${sceneIndex}`);
           }
 
@@ -9568,14 +9681,19 @@ This will:
             const imgRatio = imgW / imgH;
             const canvasRatio = width / height;
 
+            // OVERSCALE FACTOR: AI images may have subtle black bars baked in
+            // Scale 15% larger to push any edge artifacts outside visible area
+            const overscale = 1.15;
+            const totalScale = scale * overscale;
+
             let drawW, drawH;
             if (imgRatio > canvasRatio) {
               // Image is wider than canvas - fit by height
-              drawH = height * scale;
+              drawH = height * totalScale;
               drawW = drawH * imgRatio;
             } else {
               // Image is taller than canvas - fit by width
-              drawW = width * scale;
+              drawW = width * totalScale;
               drawH = drawW / imgRatio;
             }
 
@@ -10289,16 +10407,16 @@ This will:
 
     switch (effectToApply) {
       case 'zoom-in':
-        scale = 1 + (progress * 0.1);
+        scale = 1 + (progress * 0.2);  // 20% zoom for more engagement
         break;
       case 'zoom-out':
-        scale = 1.1 - (progress * 0.1);
+        scale = 1.2 - (progress * 0.2);  // 20% zoom for more engagement
         break;
       case 'pan-left':
-        offsetX = -progress * 50;
+        offsetX = -progress * 100;  // Double pan distance for more movement
         break;
       case 'pan-right':
-        offsetX = progress * 50;
+        offsetX = progress * 100;  // Double pan distance for more movement
         break;
     }
 
