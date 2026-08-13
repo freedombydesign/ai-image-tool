@@ -1,0 +1,52 @@
+{
+  "_comment": "Per-scene config for Ken Burns A/B shots. Place as scene_config.json in your images folder.",
+  "_defaults": {
+    "duration": 15,
+    "split": 0.5,
+    "motion_a": "auto (cycles through push-in, drift-left, pull-back, drift-right)",
+    "motion_b": "auto (offset from A)",
+    "crop_focus": "upper-center (face region)"
+  },
+  "_crop_focus_options": [
+    "upper-center (default - face region)",
+    "center",
+    "left",
+    "right",
+    "upper-left",
+    "upper-right",
+    "lower-center"
+  ],
+  "_motion_options": [
+    "push-in",
+    "pull-back",
+    "drift-left",
+    "drift-right"
+  ],
+
+  "scene_1": {
+    "duration": 15,
+    "split": 0.5,
+    "motion_a": "push-in",
+    "motion_b": "drift-right",
+    "crop_focus": "upper-center"
+  },
+
+  "scene_5": {
+    "_comment": "Scene with important object on the left side",
+    "crop_focus": "left",
+    "motion_b": "drift-right"
+  },
+
+  "scene_12": {
+    "_comment": "Longer scene with 60/40 A/B split",
+    "duration": 18,
+    "split": 0.6
+  },
+
+  "scene_20": {
+    "_comment": "Product shot - focus on center object",
+    "crop_focus": "center",
+    "motion_a": "pull-back",
+    "motion_b": "push-in"
+  }
+}

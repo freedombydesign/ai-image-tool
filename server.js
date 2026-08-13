@@ -1999,25 +1999,47 @@ app.post('/api/save-scene-image', async (req, res) => {
       return res.status(400).json({ error: 'userId and imageData are required' });
     }
 
-    // Validate base64 format
-    if (!imageData.startsWith('data:image/')) {
-      return res.status(400).json({ error: 'imageData must be a base64 data URL' });
+    // Validate base64 format - accept both data:image/ and data:application/octet-stream
+    let base64Data, detectedType;
+
+    if (imageData.startsWith('data:image/')) {
+      // Standard image data URL
+      const matches = imageData.match(/^data:image\/([a-z]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).json({ error: 'Invalid base64 image format' });
+      }
+      detectedType = matches[1];
+      base64Data = matches[2];
+    } else if (imageData.startsWith('data:application/octet-stream;base64,')) {
+      // Generic binary data - detect image type from content
+      base64Data = imageData.replace('data:application/octet-stream;base64,', '');
+
+      // Detect image type from base64 prefix
+      if (base64Data.startsWith('/9j/')) {
+        detectedType = 'jpeg';
+      } else if (base64Data.startsWith('iVBOR')) {
+        detectedType = 'png';
+      } else if (base64Data.startsWith('R0lGOD')) {
+        detectedType = 'gif';
+      } else if (base64Data.startsWith('UklGR')) {
+        detectedType = 'webp';
+      } else {
+        // Default to JPEG if can't detect (most common)
+        detectedType = 'jpeg';
+        console.log('Warning: Could not detect image type, defaulting to JPEG');
+      }
+      console.log(`Detected image type from content: ${detectedType}`);
+    } else {
+      return res.status(400).json({ error: 'imageData must be a base64 data URL (image/* or application/octet-stream)' });
     }
 
-    // Extract base64 data and content type
-    const matches = imageData.match(/^data:image\/([a-z]+);base64,(.+)$/);
-    if (!matches) {
-      return res.status(400).json({ error: 'Invalid base64 image format' });
-    }
-
-    const contentType = `image/${matches[1]}`;
-    const base64Data = matches[2];
+    const contentType = `image/${detectedType}`;
     const buffer = Buffer.from(base64Data, 'base64');
 
     // Generate filename based on content hash (for deduplication)
     const crypto = require('crypto');
     const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 16);
-    const extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const extension = detectedType === 'jpeg' ? 'jpg' : detectedType;
     const fileName = `scene_${hash}.${extension}`;
 
     let imageUrl;
@@ -3254,43 +3276,57 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
       return res.status(400).json({ error: 'userId, audioHash, and videoUrl are required' });
     }
 
-    // DOWNLOAD VIDEO AND STORE (locally in dev, Supabase in production)
-    let permanentUrl = videoUrl;
-    try {
-      console.log('Downloading video from Replicate:', videoUrl);
-      const videoResponse = await fetch(videoUrl);
-      if (videoResponse.ok) {
-        const videoBuffer = await videoResponse.arrayBuffer();
+    // Helper: Check if URL is a temporary Replicate delivery URL
+    const isReplicateUrl = (url) => {
+      return url && url.includes('replicate.delivery');
+    };
 
-        if (IS_VERCEL) {
-          // On Vercel: Use Vercel Blob Storage (no egress costs!)
-          const videoFileName = `avatars/${userId}/${audioHash}.mp4`;
-          const blob = await put(videoFileName, Buffer.from(videoBuffer), {
-            access: 'public',
-            contentType: 'video/mp4'
-          });
+    // DOWNLOAD VIDEO AND STORE (locally in dev, Vercel Blob in production)
+    // This is CRITICAL - we must download and permanently store the video
+    // because Replicate URLs expire after 24 hours
+    let permanentUrl = null;
 
-          permanentUrl = blob.url;
-          console.log('Video stored in Vercel Blob:', permanentUrl);
-        } else {
-          // Local development: Save to local filesystem
-          const userVideoDir = path.join(LOCAL_VIDEO_DIR, userId);
-          if (!fs.existsSync(userVideoDir)) {
-            fs.mkdirSync(userVideoDir, { recursive: true });
-          }
+    console.log('Downloading video from Replicate:', videoUrl);
+    const videoResponse = await fetch(videoUrl);
 
-          const localVideoPath = path.join(userVideoDir, `${audioHash}.mp4`);
-          fs.writeFileSync(localVideoPath, Buffer.from(videoBuffer));
-
-          permanentUrl = `/videos/avatars/${userId}/${audioHash}.mp4`;
-          console.log('Video stored locally:', permanentUrl);
-        }
-      }
-    } catch (downloadErr) {
-      console.error('Video download/storage error:', downloadErr);
-      // Fall back to storing original URL
+    if (!videoResponse.ok) {
+      throw new Error(`Failed to download video from Replicate: ${videoResponse.status} ${videoResponse.statusText}`);
     }
 
+    const videoBuffer = await videoResponse.arrayBuffer();
+    console.log(`Downloaded ${videoBuffer.byteLength} bytes from Replicate`);
+
+    if (IS_VERCEL) {
+      // On Vercel: Use Vercel Blob Storage (no egress costs!)
+      console.log('Uploading to Vercel Blob...');
+      const videoFileName = `avatars/${userId}/${audioHash}.mp4`;
+      const blob = await put(videoFileName, Buffer.from(videoBuffer), {
+        access: 'public',
+        contentType: 'video/mp4'
+      });
+
+      permanentUrl = blob.url;
+      console.log('✓ Video stored in Vercel Blob:', permanentUrl);
+    } else {
+      // Local development: Save to local filesystem
+      const userVideoDir = path.join(LOCAL_VIDEO_DIR, userId);
+      if (!fs.existsSync(userVideoDir)) {
+        fs.mkdirSync(userVideoDir, { recursive: true });
+      }
+
+      const localVideoPath = path.join(userVideoDir, `${audioHash}.mp4`);
+      fs.writeFileSync(localVideoPath, Buffer.from(videoBuffer));
+
+      permanentUrl = `/videos/avatars/${userId}/${audioHash}.mp4`;
+      console.log('✓ Video stored locally:', permanentUrl);
+    }
+
+    // CRITICAL VALIDATION: Never store temporary Replicate URLs
+    if (!permanentUrl || isReplicateUrl(permanentUrl)) {
+      throw new Error('Failed to create permanent storage URL - refusing to cache temporary Replicate URL');
+    }
+
+    // Store in database with permanent URL
     const { data, error } = await supabase
       .from('avatar_video_cache')
       .upsert({
@@ -3309,10 +3345,15 @@ app.post('/api/db/avatar-video-cache', async (req, res) => {
 
     if (error) throw error;
 
+    console.log('✓ Avatar video cache saved successfully');
     res.json({ success: true, cache: data, permanentUrl });
   } catch (error) {
-    console.error('Save avatar video cache error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ CACHE WRITE FAILED:', error.message);
+    console.error('Full error:', error);
+    res.status(500).json({
+      error: `Cache write failed: ${error.message}`,
+      details: error.stack
+    });
   }
 });
 

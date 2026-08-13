@@ -188,7 +188,12 @@ class VideoEditor {
         let imageUrl = scene.imageUrl;
 
         // If image is base64, upload to server and get local URL
-        if (imageUrl && imageUrl.startsWith('data:image/')) {
+        // Check for both data:image/ and data:application/octet-stream formats
+        const isBase64 = imageUrl && (
+          imageUrl.startsWith('data:image/') ||
+          imageUrl.startsWith('data:application/octet-stream;base64,')
+        );
+        if (isBase64) {
           try {
             const uploadResponse = await fetch('/api/save-scene-image', {
               method: 'POST',
@@ -269,7 +274,12 @@ class VideoEditor {
 
     for (let i = 0; i < this.scenes.length; i++) {
       const scene = this.scenes[i];
-      if (scene.imageUrl && scene.imageUrl.startsWith('data:image/')) {
+      // Check for both data:image/ and data:application/octet-stream formats
+      const isBase64 = scene.imageUrl && (
+        scene.imageUrl.startsWith('data:image/') ||
+        scene.imageUrl.startsWith('data:application/octet-stream;base64,')
+      );
+      if (isBase64) {
         try {
           console.log(`Migrating scene ${i + 1}...`);
           const uploadResponse = await fetch('/api/save-scene-image', {
